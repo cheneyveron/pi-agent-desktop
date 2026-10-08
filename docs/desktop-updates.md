@@ -16,10 +16,18 @@ After the reviewed changes and version bump reach `main`, run **Publish signed d
 
 ## One-time signing setup
 
-Tauri updater signatures are mandatory. Generate the updater signing key once on a trusted machine:
+Tauri updater signatures are mandatory. This distribution's signing key is stored in
+`/ssd/appdata/secrets/pi-agent-desktop.yaml` under `tauri_updater` (`private_key`,
+`public_key`, and `password`). The private and public keys are configured as the
+repository Actions secrets below. Reuse this key for subsequent releases; replacing
+it prevents installed copies from verifying the new update. Never print the key
+or put it in command arguments. The current key has an empty password, so the
+password Actions secret is intentionally unset.
+
+For a new distribution only, generate a key on a trusted machine:
 
 ```bash
-npm exec tauri signer generate -- -w ~/.tauri/pi-agent-desktop.key
+npm exec tauri signer generate -- -w /ssd/appdata/secrets/pi-agent-desktop-updater.key
 ```
 
 Store these repository Actions secrets:
