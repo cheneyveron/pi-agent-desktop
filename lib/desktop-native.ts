@@ -171,14 +171,23 @@ export async function revealItemInDirNative(path: string): Promise<void> {
   await invoke("reveal_item_in_dir", { path });
 }
 
-function triggerBrowserDownload(url: string, fileName?: string): void {
+async function triggerBrowserDownload(url: string, fileName?: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+  const bytes = await readResponseBytesWithinLimit(response, MAX_DESKTOP_SAVE_BYTES);
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: response.headers.get("content-type") ?? "application/octet-stream",
+  });
+  const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
-  anchor.href = url;
+  anchor.href = objectUrl;
   if (fileName) anchor.download = fileName;
   anchor.rel = "noopener noreferrer";
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+  // WebKit may consume the URL after the click handler has returned.
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
 /**
@@ -188,7 +197,7 @@ function triggerBrowserDownload(url: string, fileName?: string): void {
  */
 export async function downloadUrlAsFile(url: string, defaultFileName: string): Promise<boolean> {
   if (!isTauriDesktop()) {
-    triggerBrowserDownload(url, defaultFileName);
+    await triggerBrowserDownload(url, defaultFileName);
     return true;
   }
 
@@ -231,7 +240,7 @@ export async function saveLocalFileAs(
   downloadUrl: string,
 ): Promise<boolean> {
   if (!isTauriDesktop()) {
-    triggerBrowserDownload(downloadUrl, defaultFileName);
+    await triggerBrowserDownload(downloadUrl, defaultFileName);
     return true;
   }
 

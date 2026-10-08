@@ -11,7 +11,7 @@ import {
   APP_VERSION_DISPLAY,
 } from "@/lib/branding";
 import { handleExternalLinkClick } from "@/lib/desktop-native";
-import { installLatestDesktopRelease, type DesktopUpgradeProgress } from "@/lib/desktop-updater";
+import { isTauriDesktop, installLatestDesktopRelease, type DesktopUpgradeProgress } from "@/lib/desktop-updater";
 import { useI18n } from "@/hooks/useI18n";
 import { ConfigButton } from "./SettingsUi";
 
@@ -95,6 +95,8 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
   const { t } = useI18n();
   const [components, setComponents] = useState<AppComponentReleaseInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => setDesktop(isTauriDesktop()), []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [upgradeProgress, setUpgradeProgress] = useState<DesktopUpgradeProgress | null>(null);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
@@ -136,7 +138,7 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
     () => components.some((component) => component.updateAvailable),
     [components],
   );
-  const canUpgrade = !loading && updateAvailable && !upgradeProgress;
+  const canUpgrade = desktop && !loading && updateAvailable && !upgradeProgress;
   const downloadPercent = upgradeProgress?.phase === "downloading" && upgradeProgress.totalBytes
     ? Math.min(100, Math.round((upgradeProgress.downloadedBytes ?? 0) / upgradeProgress.totalBytes * 100))
     : null;
@@ -195,9 +197,9 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
       <div className="settings-updates-head">
         <div className="settings-updates-heading">
           <h3 className="settings-general-heading">{t("appSettings.updatesSection")}</h3>
-          <p className="settings-general-description" role="status">{statusText}</p>
+          <p className="settings-general-description" role="status">{desktop ? statusText : t("appSettings.serverManaged")}</p>
         </div>
-        {(updateAvailable || upgradeProgress) && (
+        {desktop && (updateAvailable || upgradeProgress) && (
           <ConfigButton variant="primary" disabled={!canUpgrade} onClick={() => void handleUpgrade()}>
             {upgradeLabel}
           </ConfigButton>

@@ -16,6 +16,7 @@ interface MarkdownBodyProps {
   className?: string;
   isStreaming?: boolean;
   cwd?: string;
+  sessionId?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
   /** Render every line ending as a line break, for text the user typed. */
   keepLineBreaks?: boolean;
@@ -25,14 +26,15 @@ function MarkdownImage({
   src,
   alt,
   cwd,
+  sessionId,
   ...props
-}: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
+}: ComponentProps<"img"> & ExtraProps & { cwd?: string; sessionId?: string }) {
   const insideLink = useContext(MarkdownLinkContext);
   delete props.node;
   const href = typeof src === "string" ? src : undefined;
   const filePath = href ? resolveLocalFileHref(href, cwd) : null;
   const imageSrc = filePath
-    ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
+    ? `/api/files/${encodeFilePathForApi(filePath)}?type=read${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ""}`
     : href;
   // Dynamic local paths are served directly by the file API.
   // eslint-disable-next-line @next/next/no-img-element
@@ -48,6 +50,7 @@ function MarkdownImage({
 function buildComponents(
   isStreaming: boolean | undefined,
   cwd: string | undefined,
+  sessionId: string | undefined,
   onOpenFile: ((filePath: string, page?: number) => void) | undefined,
 ): Components {
   return {
@@ -117,7 +120,7 @@ function buildComponents(
       );
     },
     img(props) {
-      return <MarkdownImage cwd={cwd} {...props} />;
+      return <MarkdownImage cwd={cwd} sessionId={sessionId} {...props} />;
     },
     table({ children }) {
       return (
@@ -158,12 +161,12 @@ function useStreamingThrottle(value: string, active: boolean): string {
 
 // Memoized: markdown parsing + highlighting is the most expensive render work
 // in the app, so parent re-renders with identical props must be free.
-export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, keepLineBreaks }: MarkdownBodyProps) {
+export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, sessionId, onOpenFile, keepLineBreaks }: MarkdownBodyProps) {
   const markdown = useStreamingThrottle(children, Boolean(isStreaming));
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(markdown), [markdown]);
   const components = useMemo(
-    () => buildComponents(isStreaming, cwd, onOpenFile),
-    [isStreaming, cwd, onOpenFile],
+    () => buildComponents(isStreaming, cwd, sessionId, onOpenFile),
+    [isStreaming, cwd, sessionId, onOpenFile],
   );
   // ReactMarkdown is not memoized itself; reusing the element lets the
   // throttled re-renders (text unchanged) skip parsing entirely.

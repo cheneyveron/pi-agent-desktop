@@ -227,7 +227,10 @@ function getFileApiUrl(
 function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
+    <>
+    {error && <span role="alert">{error}</span>}
     <button
       type="button"
       disabled={busy}
@@ -237,6 +240,7 @@ function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceS
       onClick={() => {
         void (async () => {
           setBusy(true);
+          setError(null);
           try {
             const { saveLocalFileAs } = await import("@/lib/desktop-native");
             await saveLocalFileAs(
@@ -245,7 +249,7 @@ function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceS
               getFileApiUrl(filePath, "download", sourceSessionId),
             );
           } catch (error) {
-            console.error("Failed to save file:", error);
+            setError(error instanceof Error ? error.message : String(error));
           } finally {
             setBusy(false);
           }
@@ -258,6 +262,7 @@ function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceS
         <line x1="12" y1="15" x2="12" y2="3" />
       </svg>
     </button>
+    </>
   );
 }
 

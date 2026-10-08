@@ -18,3 +18,11 @@
 - `lib/auth-throttle.ts` is deliberately global, not per-IP (its header says why). Failures double the delay (1 s → 60 s cap) for everyone; a success or 5 idle minutes resets it. The reset window must stay longer than the max delay, or waiting out one block restarts the burst.
 - State lives on `globalThis` under `Symbol.for("pi-web:auth-throttle")`, so it survives hot reload and `proxy.ts` and the route handlers share it under both `next dev` and `next start`. Tests reset it with `recordAuthSuccess()`.
 - `POST /api/web-auth` and every `Authorization: Basic` header on `/api/*` share the counter; `proxy.ts` checks Basic before its `/api/web-auth` exemption, so `GET /api/web-auth` is no unthrottled password oracle. A valid session cookie is checked first and never blocked. While blocked, Basic gets `429` even with the right password, and a Basic success never resets the counter (`proxy.ts` explains both).
+
+## Remote Web clients
+
+The sidebar and composer open the server directory browser in Web mode. Its start directory and `/api/home` both use `userHome()` (`PI_AGENT_HOME` when configured). Selecting a directory still passes through `/api/cwd/validate`; merely navigating does not select or authorize it.
+
+Browser image attachments read browser `File` bytes; server-rendered Markdown images use the files API with their source session, preserving the existing exact-reference authorization. Downloads check the response before saving it to the client device and report failures in the viewer. Native filesystem APIs keep their desktop-token and loopback checks; a browser never submits its local save path to them. File-manager actions remain unavailable for remote hosts.
+
+Web clients share the server connection indicator, and retry by reloading the page (including expired Access login). Only a desktop shell may restart its local application or install a desktop update. Web server updates are performed through deployment; the settings page labels them as administrator-managed.

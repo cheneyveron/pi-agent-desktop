@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNativeAppMenu } from "@/hooks/useNativeAppMenu";
-import { selectProjectDirectoryNative } from "./ProjectPicker";
+import { DirectoryPicker } from "./DirectoryPicker";
+import { selectProjectDirectoryNative, validateProjectDirectory } from "./ProjectPicker";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -704,7 +705,10 @@ export function AppShell() {
     }
   }, [desktopMode]);
 
-  const { state: connectionState, retry: retryConnection } = useDesktopConnection(desktopMode);
+  const { state: connectionState, retry: retryConnection } = useDesktopConnection();
+  const [remoteProjectPickerOpen, setRemoteProjectPickerOpen] = useState(false);
+  const [remoteProjectPickerBusy, setRemoteProjectPickerBusy] = useState(false);
+  const [remoteProjectPickerError, setRemoteProjectPickerError] = useState<string | null>(null);
 
   const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
     chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
@@ -1041,7 +1045,11 @@ export function AppShell() {
   }, [handleNewSession, selectedSession]);
 
   const handleSelectProjectFromComposer = useCallback(async () => {
-    if (!desktopMode) return;
+    if (!desktopMode) {
+      setRemoteProjectPickerError(null);
+      setRemoteProjectPickerOpen(true);
+      return;
+    }
     try {
       const cwd = await selectProjectDirectoryNative(
         selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
@@ -1732,6 +1740,27 @@ export function AppShell() {
         background: "var(--bg)",
       } as React.CSSProperties}
     >
+      {remoteProjectPickerOpen && (
+        <DirectoryPicker
+          initialPath={newSessionCwd ?? activeCwd ?? undefined}
+          busy={remoteProjectPickerBusy}
+          error={remoteProjectPickerError}
+          onCancel={() => setRemoteProjectPickerOpen(false)}
+          onSelect={async (path) => {
+            setRemoteProjectPickerBusy(true);
+            setRemoteProjectPickerError(null);
+            try {
+              const cwd = await validateProjectDirectory(path);
+              handleNewSession(`project-${Date.now()}`, cwd);
+              setRemoteProjectPickerOpen(false);
+            } catch (error) {
+              setRemoteProjectPickerError(error instanceof Error ? error.message : String(error));
+            } finally {
+              setRemoteProjectPickerBusy(false);
+            }
+          }}
+        />
+      )}
       {connectionState === "offline" && (
         <div
           role="alert"
@@ -2470,7 +2499,7 @@ export function AppShell() {
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onOpenSettings={openSettingsSection}
               onContextUsageChange={handleContextUsageChange}
-              onSelectProject={desktopMode ? () => void handleSelectProjectFromComposer() : undefined}
+              onSelectProject={() => void handleSelectProjectFromComposer()}
               projectOptions={selectedSession ? [] : availableProjectRoots}
               onProjectChange={selectedSession ? undefined : handleProjectChangeFromComposer}
               onOpenModelsConfig={() => setSettingsSection("models")}
