@@ -20,15 +20,17 @@
 
 ![Pi Agent dark mode](./docs/screenshots/pi-agent-dark@2x.png)
 
-**[⬇️ Download Pi Agent (macOS / Windows)](https://github.com/abcwyc/pi-agent-desktop/releases)**
+**[⬇️ Download Pi Agent (macOS / Windows)](https://github.com/cheneyveron/pi-agent-desktop/releases)**
 
-Repository: [abcwyc/pi-agent-desktop](https://github.com/abcwyc/pi-agent-desktop)
+Repository: [cheneyveron/pi-agent-desktop](https://github.com/cheneyveron/pi-agent-desktop)
+
+Upstream: [abcwyc/pi-agent-desktop](https://github.com/abcwyc/pi-agent-desktop).
 
 ## Installation And Usage
 
 ### Install The Desktop App
 
-Builds are available from [GitHub Releases](https://github.com/abcwyc/pi-agent-desktop/releases):
+Builds are available from [GitHub Releases](https://github.com/cheneyveron/pi-agent-desktop/releases):
 
 - Apple Silicon Mac: download the `aarch64.dmg`, open it, and drag the app into `Applications`. Official releases do not build for Intel Macs.
 - Linux x64: download the `.deb` package and install it with your distribution's package manager. A community-maintained Flatpak is also available at [flatpark.org](https://flatpark.org/apps/io.github.abcwyc.pi-agent-desktop/) — not an official release, but Flatpak works across most distributions and handles updates for you.
@@ -61,9 +63,9 @@ Model keys and session data stay on your machine. The file-browsing API only all
 
 ## Update Checks And Upgrades
 
-Pi Agent checks the latest stable release of `abcwyc/pi-agent-desktop` at most once every seven days:
+Pi Agent checks the latest stable release of `cheneyveron/pi-agent-desktop` at most once every seven days:
 
-- `abcwyc/pi-agent-desktop`
+- `cheneyveron/pi-agent-desktop`
 - `earendil-works/pi`
 - `agegr/pi-web`
 

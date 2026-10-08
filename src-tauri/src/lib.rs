@@ -1521,11 +1521,7 @@ pub fn run() {
             has_visible_windows,
             ..
         } if !has_visible_windows => {
-            if let Some(window) = app_handle.get_webview_window(WINDOW_LABEL) {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
+            show_main_window(app_handle);
         }
         _ => {}
     });

@@ -39,7 +39,7 @@ test("writes an auditable three-component manifest", () => {
       schemaVersion: 1,
       appVersion: "0.1.0",
       components: [
-        { id: "pi-agent-desktop", repository: "abcwyc/pi-agent-desktop", version: "0.1.0" },
+        { id: "pi-agent-desktop", repository: "cheneyveron/pi-agent-desktop", version: "0.1.0" },
         { id: "pi", repository: "earendil-works/pi", version: "0.81.1" },
         { id: "pi-web", repository: "agegr/pi-web", version: "0.7.17" },
       ],

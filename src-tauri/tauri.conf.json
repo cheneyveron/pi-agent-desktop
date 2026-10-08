@@ -37,7 +37,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/abcwyc/pi-agent-desktop/releases/latest/download/latest.json"
+        "https://github.com/cheneyveron/pi-agent-desktop/releases/latest/download/latest.json"
       ],
       "pubkey": ""
     }

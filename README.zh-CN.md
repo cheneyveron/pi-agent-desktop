@@ -20,15 +20,17 @@
 
 ![Pi Agent 深色模式界面](./docs/screenshots/pi-agent-dark@2x.png)
 
-**[⬇️ 下载 Pi Agent（macOS / Windows）](https://github.com/abcwyc/pi-agent-desktop/releases)**
+**[⬇️ 下载 Pi Agent（macOS / Windows）](https://github.com/cheneyveron/pi-agent-desktop/releases)**
 
-项目仓库：[abcwyc/pi-agent-desktop](https://github.com/abcwyc/pi-agent-desktop)
+项目仓库：[cheneyveron/pi-agent-desktop](https://github.com/cheneyveron/pi-agent-desktop)
+
+上游项目：[abcwyc/pi-agent-desktop](https://github.com/abcwyc/pi-agent-desktop)。
 
 ## 安装与使用
 
 ### 安装桌面 App
 
-发布版本可从 [GitHub Releases](https://github.com/abcwyc/pi-agent-desktop/releases) 下载：
+发布版本可从 [GitHub Releases](https://github.com/cheneyveron/pi-agent-desktop/releases) 下载：
 
 - Apple Silicon Mac：下载 `aarch64.dmg`，打开后将 App 拖入 `Applications`。正式 Release 不构建 Intel Mac 版本。
 - Linux x64：下载 `.deb` 包，用发行版自带的包管理器安装。社区还维护了一个 [flatpark.org](https://flatpark.org/apps/io.github.abcwyc.pi-agent-desktop/) 上的 Flatpak 版本——不是官方发布，但 Flatpak 兼容大多数发行版，也会帮你处理更新。
@@ -62,7 +64,7 @@ Pi Agent 默认读取 Pi 的本地数据目录：
 
 Pi Agent 最多每七天检查一次以下仓库的最新稳定 Release：
 
-- `abcwyc/pi-agent-desktop`
+- `cheneyveron/pi-agent-desktop`
 - `earendil-works/pi`
 - `agegr/pi-web`
 

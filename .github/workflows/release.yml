@@ -103,39 +103,21 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.5.1
+            ## Pi Agent Desktop 0.5.3
 
-            A fix release for 0.5.0. The main change: **Code mode did not work in the installed app** and now does.
+            - macOS: switch between the built-in backend and a custom Pi Web URL from Settings → Backend Connection…. The app remembers the address; remote mode does not start a local server.
+            - Remote connections use browser file upload/download workflows without access to local desktop privileges. Backend settings remain accessible when a server is unavailable.
+            - Mist, Rose, and Pine now have distinct palettes and motion.
+            - Includes upstream fixes and pi 1.1.0; bundled pi-web is 0.10.0.
+            - Future desktop updates come from cheneyveron/pi-agent-desktop.
 
-            ### Fixes
+            ## 中文
 
-            - Code mode: the packaged app was missing the sandbox's runtime files, so every session reported "Cannot find module .../quickjs-wasi/quickjs.wasm" and Code mode (and any MCP tool reachable only through it) was switched off. The sandbox files are now shipped with the app.
-            - Composer: after a run finished, the send button could do nothing when the draft was unchanged, because it still treated the session as streaming.
-            - Packaging: extension loading and the Code mode sandbox files are now placed wherever the dependency tree puts them, instead of at one fixed path.
-
-            ### Updates
-
-            - Bundled pi is now 1.0.2, which also clears a known denial-of-service advisory in a dependency.
-
-            Bundled components: pi 1.0.2, pi-web 0.10.0.
-
-            ---
-
-            ## Pi Agent Desktop 0.5.1
-
-            这是 0.5.0 的修复版本。最主要的变化：**已安装的 App 里 Code mode 无法使用，现已修复。**
-
-            ### 修复
-
-            - Code mode：打包后的 App 缺少沙箱运行所需的文件，每个会话都会提示 "Cannot find module .../quickjs-wasi/quickjs.wasm"，Code mode（以及只能通过它调用的 MCP 工具）因此被关闭。现在这些文件已随 App 一起发布。
-            - 输入框：一次运行结束后，如果草稿没有变化，发送按钮可能没有反应，因为它仍把会话当作正在流式输出。
-            - 打包：扩展加载和 Code mode 沙箱所需的文件现在会放到依赖树实际所在的位置，不再固定写死一个路径。
-
-            ### 更新
-
-            - 内置 pi 升级到 1.0.2，同时清除了一个依赖中已知的拒绝服务公告。
-
-            内置组件版本：pi 1.0.2、pi-web 0.10.0。
+            - macOS 支持在 Settings → Backend Connection… 切换内置后端或自定义 Pi Web URL，保存地址并重启生效；远程模式不启动本地服务器。
+            - 远程连接使用网页上传、下载，不获取本机桌面权限；服务器不可用时仍可打开后端设置。
+            - Mist、Rose、Pine 主题拥有独立配色与动效。
+            - 包含上游修复及 pi 1.1.0，内置 pi-web 为 0.10.0。
+            - 后续桌面更新来自 cheneyveron/pi-agent-desktop。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
