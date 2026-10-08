@@ -1,5 +1,13 @@
 # Pi Web - Development Notes
 
+## GitHub 身份与发布凭据
+
+- 本项目使用 `cheneyveron` 账户；Git 提交的 Author 和 Committer 均为 `Cheney Wang <i@cheney.wang>`。
+- GitHub API / Actions / Release 操作使用 `/ssd/appdata/secrets/github_cheneyveron.yaml` 中的 `pi_agent_telepi_pat` 字段。该凭据供 `cheneyveron/telepi` 和 `cheneyveron/pi-agent-desktop` 使用；使用前通过 GitHub API 核实账户与所需权限。
+- 使用 CLI 时，在进程内读取该字段并作为子进程的 `GH_TOKEN` 环境变量传入。禁止将 PAT 内容写入文档、命令参数、日志、Git remote 或提交。
+- Git 推送使用已配置的 SSH 别名 `github.com-cheneyveron`。SSH 推送认证与 API / Actions 认证相互独立；不能因 CLI 未登录就判定 PAT 不存在。
+- 当前 secrets 目录以 `/home/hermes/AGENTS.md` 为准：`/ssd/appdata/secrets`。旧的 `/home/hermes/.hermes/secrets` 路径已停用。
+
 ## Quick Start
 
 ```bash
