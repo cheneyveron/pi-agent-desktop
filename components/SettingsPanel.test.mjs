@@ -155,7 +155,7 @@ test("offers five palettes and system theme selection with native radios", () =>
   }
   assert.match(panelSource, /THEME_OPTIONS\.map/);
   assert.match(panelSource, /type="radio"/);
-  assert.match(panelSource, /setThemePreference\(option\.id\)/);
+  assert.match(panelSource, /setThemePreference\(option\.id[,)]/);
   assert.match(themeSource, /const setThemePreference = useCallback/);
 });
 
