@@ -1,3 +1,5 @@
+mod backend;
+
 use std::{
     env,
     fs::{self, OpenOptions},
@@ -77,10 +79,15 @@ fn get_desktop_api_token(token: tauri::State<'_, DesktopApiToken>) -> String {
 }
 
 fn show_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+    if let Some(window) = app
+        .get_webview_window(WINDOW_LABEL)
+        .or_else(|| app.get_webview_window(backend::REMOTE_WINDOW))
+    {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
+    } else {
+        let _ = backend::show_settings(app);
     }
 }
 
@@ -102,6 +109,13 @@ fn build_macos_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error
         "Model Settings…",
         true,
         Some("CmdOrCtrl+M"),
+    )?;
+    let backend_settings = MacMenuItem::with_id(
+        app,
+        "settings-backend",
+        "Backend Connection…",
+        true,
+        None::<&str>,
     )?;
     let about = PredefinedMenuItem::about(app, None, None)?;
     let services = PredefinedMenuItem::services(app, None)?;
@@ -140,8 +154,12 @@ fn build_macos_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error
             &PredefinedMenuItem::select_all(app, None)?,
         ],
     )?;
-    let settings_menu =
-        Submenu::with_items(app, "Settings", true, &[&general_settings, &model_settings])?;
+    let settings_menu = Submenu::with_items(
+        app,
+        "Settings",
+        true,
+        &[&general_settings, &model_settings, &backend_settings],
+    )?;
     let view_menu = Submenu::with_items(
         app,
         "View",
@@ -331,7 +349,6 @@ fn build_platform_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
 }
 
 impl DesktopServer {
-    #[cfg(not(feature = "custom-protocol"))]
     fn empty() -> Self {
         Self {
             child: Mutex::new(None),
@@ -1374,6 +1391,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .on_menu_event(|app, event| {
+            if event.id().as_ref() == "settings-backend" {
+                if let Err(error) = backend::show_settings(app) {
+                    eprintln!("Backend settings failed: {error}");
+                }
+                return;
+            }
             let action = match event.id().as_ref() {
                 "new-session" => Some("new-session"),
                 "settings-general" => Some("settings-general"),
@@ -1388,6 +1411,8 @@ pub fn run() {
         .manage(CloseQuits(Mutex::new(false)))
         .manage(DesktopApiToken(desktop_api_token))
         .invoke_handler(tauri::generate_handler![
+            backend::get_backend_url,
+            backend::set_backend_url,
             get_desktop_api_token,
             open_external_url,
             open_path,
@@ -1412,18 +1437,35 @@ pub fn run() {
                 )?;
             }
 
-            #[cfg(feature = "custom-protocol")]
-            let (url, server) =
-                start_packaged_server(app.handle(), &server_api_token, &server_instance_id)?;
-            #[cfg(not(feature = "custom-protocol"))]
-            let (url, server) = start_development_server(app.handle())?;
-
-            app.manage(server);
-            // Clear stale webview caches when the app version changed since the
-            // last successful launch (fixes WebKitGTK loading stale hashed
-            // Next.js assets after an upgrade).
             reconcile_webview_cache_for_version(app.handle());
-            build_window(app.handle(), url)?;
+            match backend::read(app.handle()) {
+                Ok(Some(url)) => {
+                    app.manage(DesktopServer::empty());
+                    backend::build_remote_window(app.handle(), url)?;
+                }
+                Ok(None) => {
+                    #[cfg(feature = "custom-protocol")]
+                    let started =
+                        start_packaged_server(app.handle(), &server_api_token, &server_instance_id);
+                    #[cfg(not(feature = "custom-protocol"))]
+                    let started = start_development_server(app.handle());
+                    match started {
+                        Ok((url, server)) => {
+                            app.manage(server);
+                            build_window(app.handle(), url)?;
+                        }
+                        Err(error) => {
+                            eprintln!("Local backend failed to start: {error}");
+                            app.manage(DesktopServer::empty());
+                            backend::show_settings(app.handle())?;
+                        }
+                    }
+                }
+                Err(_) => {
+                    app.manage(DesktopServer::empty());
+                    backend::show_settings(app.handle())?;
+                }
+            }
             // Record the current version only after the window built cleanly,
             // so a startup crash keeps the cache clear flagged on relaunch.
             write_last_version(app.handle());
@@ -1443,7 +1485,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == WINDOW_LABEL {
+            if window.label() == WINDOW_LABEL || window.label() == backend::REMOTE_WINDOW {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     let quit = window
                         .app_handle()

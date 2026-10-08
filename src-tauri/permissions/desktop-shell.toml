@@ -37,3 +37,13 @@ commands.allow = ["set_ui_theme"]
 identifier = "allow-get-desktop-api-token"
 description = "Allows the trusted desktop WebView to authorize native-dialog filesystem requests."
 commands.allow = ["get_desktop_api_token"]
+
+[[permission]]
+identifier = "allow-get-backend-url"
+description = "Read the selected backend from the bundled selector."
+commands.allow = ["get_backend_url"]
+
+[[permission]]
+identifier = "allow-set-backend-url"
+description = "Save the backend and restart from the bundled selector."
+commands.allow = ["set_backend_url"]

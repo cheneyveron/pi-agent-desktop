@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backend Connection</title>
+  <style>
+    :root { color-scheme: light dark; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; background: #f7f7f5; color: #202020; }
+    body { margin: 28px; }
+    h1 { font-size: 21px; margin: 0 0 12px; }
+    p { color: #666; line-height: 1.5; }
+    label { display: block; margin: 18px 0 8px; }
+    input[type=url] { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #aaa; border-radius: 7px; font: inherit; }
+    button { float: right; padding: 9px 16px; border: 0; border-radius: 7px; background: #2563eb; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    #error { color: #c03535; min-height: 22px; font-size: 13px; }
+    @media (prefers-color-scheme: dark) { :root { background: #1c1c1e; color: #eee; } p { color: #aaa; } }
+  </style>
+</head>
+<body>
+  <h1 data-en="Backend Connection" data-zh="后端连接"></h1>
+  <p data-en="Choose where Pi Agent runs. Chats and files belong to the selected server." data-zh="选择 Pi Agent 的运行位置。会话和文件保存在所选服务器上。"></p>
+  <form>
+    <label><input type="radio" name="mode" value="local" checked> <span data-en="Built-in local backend" data-zh="内置本地后端"></span></label>
+    <label><input type="radio" name="mode" value="remote"> <span data-en="Custom server URL" data-zh="自定义服务器 URL"></span></label>
+    <input id="url" type="url" aria-label="Server URL" placeholder="https://pi.example.com" autocomplete="off" spellcheck="false" disabled>
+    <p data-en="Use the Pi Web root URL, not an API endpoint. Sign in on the server page if required. Restarting stops running local tasks." data-zh="填写 Pi Web 根地址，而非 API 接口地址。如需登录，请在服务器页面完成。重启会停止正在运行的本地任务。"></p>
+    <div id="error" role="alert"></div>
+    <button type="submit" disabled data-en="Save and restart" data-zh="保存并重启"></button>
+  </form>
+  <script src="desktop-backend.js"></script>
+</body>
+</html>

@@ -55,3 +55,9 @@ src-tauri/target/release/bundle/deb/pi-agent-desktop_<version>_amd64.deb
 ```
 
 App 会把登录 shell 的 `PATH` 传给内置服务，以便从 Finder 启动时仍能找到用户通过 Homebrew、nvm、Volta 等方式安装的命令行工具。
+
+## macOS 后端切换
+
+在系统菜单 **Settings → Backend Connection…** 中选择内置本地后端，或输入自定义 Pi Web 根地址（例如 `https://pi.example.com` 或 `http://192.168.1.10:30141`），然后点击“保存并重启”。不要填写 `/api`、会话路径、账号密码或查询参数。重启会停止正在运行的本地任务。
+
+远程模式不启动内置服务器；会话、模型配置和文件都属于远程服务器，本机文件上传、下载使用网页方式。远程服务器需包含支持远程模式的 Pi Web 前端；若启用了网页密码，直接在页面登录。地址保存在应用配置目录的 `backend-url.txt` 中，重新打开应用后仍有效。即使服务器无法访问，也可以通过系统菜单重新打开后端连接窗口，修改地址或切回本地。
