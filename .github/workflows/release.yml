@@ -103,21 +103,19 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.5.3
+            ## Pi Agent Desktop 0.5.4
 
-            - macOS: switch between the built-in backend and a custom Pi Web URL from Settings → Backend Connection…. The app remembers the address; remote mode does not start a local server.
-            - Remote connections use browser file upload/download workflows without access to local desktop privileges. Backend settings remain accessible when a server is unavailable.
-            - Mist, Rose, and Pine now have distinct palettes and motion.
-            - Includes upstream fixes and pi 1.1.0; bundled pi-web is 0.10.0.
-            - Future desktop updates come from cheneyveron/pi-agent-desktop.
+            - Click the top-left logo to switch between the local backend and saved remote servers. The native menu marks the current connection.
+            - Manage named remote servers from the logo menu: add, rename, and remove addresses. Switching to local keeps your saved remotes.
+            - Existing remote settings migrate automatically. Remote pages can open the native picker without receiving local desktop privileges; pages without a compatible logo get a Pi button.
+            - Switching restarts the app and stops running local tasks.
 
             ## 中文
 
-            - macOS 支持在 Settings → Backend Connection… 切换内置后端或自定义 Pi Web URL，保存地址并重启生效；远程模式不启动本地服务器。
-            - 远程连接使用网页上传、下载，不获取本机桌面权限；服务器不可用时仍可打开后端设置。
-            - Mist、Rose、Pine 主题拥有独立配色与动效。
-            - 包含上游修复及 pi 1.1.0，内置 pi-web 为 0.10.0。
-            - 后续桌面更新来自 cheneyveron/pi-agent-desktop。
+            - 点击左上角 Logo，即可在本地后端与多个已保存的远端之间切换，原生菜单会标记当前连接。
+            - 从 Logo 菜单管理远端名称和地址：添加、改名或移除；切回本地不会丢失远端列表。
+            - 自动迁移旧版保存的远端地址。远端页面可以打开原生选择菜单，但不会获得本机权限；没有兼容 Logo 的页面会显示 π 按钮。
+            - 切换会重启应用，并停止正在运行的本地任务。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

@@ -1,6 +1,6 @@
 [package]
 name = "pi-agent-desktop"
-version = "0.5.3"
+version = "0.5.4"
 description = "Desktop shell for Pi Agent"
 authors = ["pi-agent-desktop contributors"]
 license = "MIT"
@@ -18,6 +18,7 @@ tauri-build = { version = "2.5.5", features = [] }
 dunce = "1"
 getrandom = "0.3"
 libc = "0.2"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.151"
 tauri = { version = "2.10.2", features = ["tray-icon"] }
 tauri-plugin-clipboard-manager = "^2"

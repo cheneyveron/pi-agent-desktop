@@ -809,6 +809,7 @@ fn same_origin(candidate: &Url, app_url: &Url) -> bool {
 
 fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<WebviewWindow> {
     let navigation_origin = app_url.clone();
+    let navigation_app = app.clone();
     let stored_theme = read_stored_theme(app);
 
     let mut builder = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::External(app_url))
@@ -818,7 +819,11 @@ fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<WebviewWi
         .resizable(true)
         // Pi Agent already handles browser drag/drop for image attachments.
         .disable_drag_drop_handler()
+        .initialization_script(backend::LOGO_SCRIPT)
         .on_navigation(move |url| {
+            if backend::intercept_navigation(&navigation_app, WINDOW_LABEL, url) {
+                return false;
+            }
             if same_origin(url, &navigation_origin) {
                 true
             } else {
@@ -1395,6 +1400,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .on_menu_event(|app, event| {
+            if backend::menu_event(app, event.id().as_ref()) {
+                return;
+            }
             if event.id().as_ref() == "settings-backend" {
                 if let Err(error) = backend::show_settings(app) {
                     eprintln!("Backend settings failed: {error}");
@@ -1412,11 +1420,14 @@ pub fn run() {
                 eprintln!("Pi Agent menu action failed: {error}");
             }
         })
+        .manage(backend::SwitcherMenu::default())
         .manage(CloseQuits(Mutex::new(false)))
         .manage(DesktopApiToken(desktop_api_token))
         .invoke_handler(tauri::generate_handler![
-            backend::get_backend_url,
-            backend::set_backend_url,
+            backend::get_backends,
+            backend::save_backend,
+            backend::remove_backend,
+            backend::activate_backend,
             get_desktop_api_token,
             open_external_url,
             open_path,
