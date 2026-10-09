@@ -14,6 +14,16 @@ description = "Allows revealing a local filesystem path in the OS file manager."
 commands.allow = ["reveal_item_in_dir"]
 
 [[permission]]
+identifier = "allow-list-apps-for-file"
+description = "Allows listing the applications that can open a local file (macOS Open With)."
+commands.allow = ["list_apps_for_file"]
+
+[[permission]]
+identifier = "allow-open-path-with"
+description = "Allows opening a local file with a chosen application bundle (macOS Open With)."
+commands.allow = ["open_path_with"]
+
+[[permission]]
 identifier = "allow-set-close-quits"
 description = "Allows the UI to choose whether closing the window quits or hides."
 commands.allow = ["set_close_quits"]
@@ -57,3 +67,8 @@ commands.allow = ["remove_backend"]
 identifier = "allow-activate-backend"
 description = "Allow activate_backend from the bundled backend manager only."
 commands.allow = ["activate_backend"]
+
+[[permission]]
+identifier = "allow-popup-native-menu"
+description = "Allows the UI to show a native popup menu without holding the webview resource-table lock."
+commands.allow = ["popup_native_menu"]

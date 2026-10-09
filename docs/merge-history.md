@@ -39,3 +39,9 @@ Merged 96966e5..6fcd7d4 (v0.10.0, pi SDK 1.0.0) on top of the fork's own pi-1.0 
 - **SSE**: nested tool events are slimmed (start/end only, updates dropped, `tool_execution_end` carries no `result`) and codemode snapshots truncate (`omittedCalls`); the fork's `slimToolExecutionResult` projection still runs on non-codemode updates and every `message_end` — it must NOT run on codemode updates (`details.calls` is not in `KEPT_DETAIL_KEYS` and would be dropped).
 - **`lib/startup-preferences.ts` deleted** (upstream #871): new-session model picks are session-scoped; `PUT /api/models/default` is the only writer of global defaults.
 - **Deps**: pi 1.0.0. `package-lock.json` keeps the tauri plugin versions pinned to `src-tauri/Cargo.lock` (restore HEAD's lock before `npm install --package-lock-only`, or the carets re-resolve and `release-workflows.test.mjs` fails). `scripts/upstream-css-baseline.json` re-pinned to 6fcd7d4.
+
+## Desktop upstream merge (f59e0b1, 2026-10-09)
+
+Merged `6cd5878..f59e0b1` from `abcwyc/pi-agent-desktop/main`. Adopted macOS sidebar vibrancy, the type scale and hairline separators, session controls below the composer, and file context menus with Open With. Native popup menus remain disabled upstream after the Tauri resource-table deadlock; file actions use the in-app menu, and the replacement popup command releases the lock before showing a menu.
+
+The new-session update chip and its `/api/app-update` implementation are removed; Settings › General and the existing update reminder remain the update entry points. Remote backend management, scheduled tasks, browser file downloads, named-theme animations and the project-tree layout survive the merge. Obsolete project-picker modal styles stay removed. Desktop version `0.6.0`, release notes and the `cheneyveron` release identity stay under this fork's release lifecycle.

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "main@6fcd7d4 (v0.10.0)",
+  "upstreamBaseline": "6fcd7d4",
   "note": "Single source of truth for the pi-web merge boundary. `driftedUpstreamFiles` lists files agegr/pi-web owns that this fork has also edited \u2014 every one is a potential merge conflict, and a potential SILENT semantic conflict when git merges cleanly but the two sides changed different things. The automated sync (.github/workflows/component-updates.yml) intersects each incoming upstream release with this map to decide whether it may push to main unattended. Human-facing rationale lives in docs/ownership-boundaries.md.",
   "ignored": [
     "package-lock.json",
@@ -25,65 +25,65 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 2585,
+      "drift": 3061,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 2174,
+      "structuralDrift": 2549,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 1797,
+      "drift": 2126,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the remaining 376 structural lines are the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect.",
-      "structuralDrift": 1553,
+      "structuralDrift": 1741,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
       "risk": "high",
-      "drift": 470,
+      "drift": 549,
       "reason": "Adds FileViewerToolbar and FileViewerStatus, file icons, a live-sync indicator and a retry action. Both components are defined inside FileViewer.tsx rather than moved out, so there is no cross-file resurrection risk \u2014 only a large diff. Kept deliberately.",
-      "structuralDrift": 415,
+      "structuralDrift": 420,
       "disposition": "accepted"
     },
     "components/FileExplorer.tsx": {
       "risk": "low",
-      "drift": 19,
+      "drift": 41,
       "reason": "Took upstream FileExplorer wholesale in the v0.8.11 merge (its file-search implementation won); only the selectedFilePath prop remains fork-side. Kept deliberately.",
       "structuralDrift": 19,
       "disposition": "accepted"
     },
     "components/TabBar.tsx": {
       "risk": "medium",
-      "drift": 92,
+      "drift": 102,
       "reason": "Accessibility work plus the terminal-tab affordance: role=\"tab\", aria-selected, roving tabIndex, keyboard activation, and a New terminal button. The terminal action is fork interaction design inside an upstream-owned component, so incoming TabBar changes require review.",
       "structuralDrift": 55,
       "disposition": "accepted"
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 515,
-      "reason": "Redesigned empty state \u2014 the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Part of the fork's interaction design. Kept deliberately.",
-      "structuralDrift": 722,
+      "drift": 690,
+      "reason": "Redesigned empty state \u2014 the new-session branding header (app icon + PRODUCT_NAME) and update chip are removed. Part of the fork's interaction design. Kept deliberately.",
+      "structuralDrift": 568,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
       "risk": "medium",
-      "drift": 31,
+      "drift": 45,
       "reason": "Follows the OS colour scheme until the user picks a theme explicitly, and drops the ToggleOrigin argument so the view transition always starts from the centre. The view transition itself is unchanged from upstream. Kept deliberately.",
-      "structuralDrift": 31,
+      "structuralDrift": 45,
       "disposition": "accepted"
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 868,
+      "drift": 1137,
       "reason": "Composer chrome restyle. Upstream changed this file in v0.8.1, and components/ChatInput.test.mjs covers it.",
-      "structuralDrift": 802,
+      "structuralDrift": 822,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
       "risk": "high",
-      "drift": 337,
+      "drift": 443,
       "reason": "Message bubble markup adjusted.",
-      "structuralDrift": 340,
+      "structuralDrift": 258,
       "disposition": "accepted"
     },
     "lib/i18n/registry.ts": {
@@ -114,16 +114,16 @@
     },
     "lib/rpc-manager.ts": {
       "risk": "high",
-      "drift": 109,
+      "drift": 420,
       "reason": "Small fork edit in a file upstream changes often; watch it despite the low drift count.",
-      "structuralDrift": 595,
+      "structuralDrift": 420,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
       "risk": "medium",
-      "drift": 25,
+      "drift": 117,
       "reason": "className hook only, no structural change \u2014 the intended shape for every restyled file.",
-      "structuralDrift": 32,
+      "structuralDrift": 93,
       "disposition": "accepted"
     },
     "package.json": {
@@ -165,8 +165,8 @@
     },
     "app/api/default-cwd/route.ts": {
       "risk": "low",
-      "drift": 6,
-      "structuralDrift": 12,
+      "drift": 5,
+      "structuralDrift": 5,
       "disposition": "accepted",
       "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual."
     },
@@ -234,6 +234,7 @@
     "2026-09-26 \u2014 settings: the standalone AppSettings modal and its \"Desktop\" tab were folded into the General tab, which already rendered the same language and theme pickers. The product blurb and Version & Updates now sit at the top of General (components/AppUpdatesSection.tsx); the desktop-only window/tray switches live in components/desktop/DesktopAppSection.tsx (renders nothing in a browser), and the custom-stylesheet and diff-display controls joined General's appearance/chat sections. Seven appSettings.* locale keys went dead with the duplicate pickers and were dropped from all three locales. components/AppSettings.tsx deleted.",
     "2026-09-26 \u2014 components/ChatWindow.tsx: the empty-session branding header upstream renders above the composer (app icon + product name + version badge) is removed entirely rather than rebranded; the row now carries only NewSessionUpdateLink, which self-hides, so the row keeps no margin of its own. This is a deletion, not a move, so it needed a new sentinel direction: FORK_FEATURES entries gained `forbiddenMarkers` in components/fork-extractions.test.mjs, pinning apple-touch-icon and PRODUCT_NAME out of ChatWindow.tsx. A merge that re-adopts upstream's empty state now fails that test instead of silently restoring the branding.",
     "2026-09-26 \u2014 app/globals.css and app/settings.css restored to byte-identical with upstream 96966e5: ~470 + ~220 fork lines that had accumulated in them despite the rule moved to a 'fork base layer' at the top of app/native-theme.css (cascade verified unchanged by a computed-style comparison). scripts/upstream-css-baseline.test.mjs now pins both files to hashes in scripts/upstream-css-baseline.json; the sync workflow refreshes them after a merge with `node scripts/upstream-css-baseline.mjs update`, which refuses when either file differs from upstream. Design intent recorded in docs/native-theme.md.",
-    "2026-10-04 \u2014 baseline moved 96966e5 -> 6fcd7d4. Segment G (c5a70eb) was a single-parent commit, so git never recorded 6fcd7d4 as merged: merge-base stayed at 96966e5, `npm run drift` reported structural 18077 instead of 9959, and a merge of the upstream tag would have replayed the whole range (39 conflicts in a dry run). An `-s ours` merge now records the ancestry without touching the tree. Risk levels re-measured: lib/file-access.ts low->medium, lib/directory-browser.ts and components/FileExplorer.tsx medium->low; components/FileIcons.tsx no longer differs from upstream and its entry is removed."
+    "2026-10-04 \u2014 baseline moved 96966e5 -> 6fcd7d4. Segment G (c5a70eb) was a single-parent commit, so git never recorded 6fcd7d4 as merged: merge-base stayed at 96966e5, `npm run drift` reported structural 18077 instead of 9959, and a merge of the upstream tag would have replayed the whole range (39 conflicts in a dry run). An `-s ours` merge now records the ancestry without touching the tree. Risk levels re-measured: lib/file-access.ts low->medium, lib/directory-browser.ts and components/FileExplorer.tsx medium->low; components/FileIcons.tsx no longer differs from upstream and its entry is removed.",
+    "2026-10-09 \u2014 merged abcwyc/pi-agent-desktop main@f59e0b1: desktop materials, typography, composer controls and file context menus adopted. Remote backend management, scheduled tasks, browser downloads and the fork release identity/version are preserved. The pi-web drift baseline remains 6fcd7d4; store it as a valid Git ref so npm run drift works without a pi-web-upstream remote."
   ]
 }

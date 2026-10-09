@@ -35,6 +35,9 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
 import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
+import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
+import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
+import { DomContextMenuHost } from "./DomContextMenuHost";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
@@ -218,6 +221,7 @@ export function AppShell() {
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  useNativeContextMenu();
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [settingsMenuPos, setSettingsMenuPos] = useState<{ top: number; left: number } | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
@@ -226,22 +230,6 @@ export function AppShell() {
     setSettingsMenuOpen(false);
     setSettingsMenuPos(null);
   }, []);
-  const toggleSettingsMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    if (settingsMenuOpen) {
-      closeSettingsMenu();
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    const menuWidth = 184;
-    const menuHeight = 236;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
-    const below = rect.bottom + 6;
-    const top = below + menuHeight > window.innerHeight - 8
-      ? Math.max(8, rect.top - menuHeight - 6)
-      : below;
-    setSettingsMenuPos({ top, left });
-    setSettingsMenuOpen(true);
-  }, [settingsMenuOpen, closeSettingsMenu]);
   useEffect(() => {
     if (!settingsMenuOpen) return;
     const handleMouseDown = (event: MouseEvent) => {
@@ -1441,6 +1429,29 @@ export function AppShell() {
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const toggleSettingsMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (settingsMenuOpen) {
+      closeSettingsMenu();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const openDomMenu = () => {
+      const menuWidth = 184;
+      const menuHeight = 236;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+      const below = rect.bottom + 6;
+      const top = below + menuHeight > window.innerHeight - 8
+        ? Math.max(8, rect.top - menuHeight - 6)
+        : below;
+      setSettingsMenuPos({ top, left });
+      setSettingsMenuOpen(true);
+    };
+    // Always the DOM menu, also in the desktop shell: tauri's `menu.popup` command
+    // holds the webview's resource-table lock while the main thread runs the
+    // menu, so one IPC call that needs the lock in that window freezes the app.
+    // Settings is the only way into the panel, so it must not depend on that.
+    openDomMenu();
+  }, [settingsMenuOpen, closeSettingsMenu]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -1880,7 +1891,7 @@ export function AppShell() {
             flexShrink: 0,
             padding: "7px 12px",
             background: "color-mix(in srgb, var(--danger) 14%, var(--bg-panel))",
-            borderBottom: "1px solid color-mix(in srgb, var(--danger) 35%, var(--border))",
+            borderBottom: "var(--hairline) solid color-mix(in srgb, var(--danger) 35%, var(--border))",
             color: "var(--text)",
             fontSize: 12,
             zIndex: 300,
@@ -1893,7 +1904,7 @@ export function AppShell() {
             style={{
               height: 24,
               padding: "0 10px",
-              border: "1px solid var(--border)",
+              border: "var(--hairline) solid var(--border)",
               borderRadius: 5,
               background: "var(--bg)",
               color: "var(--accent)",
@@ -1931,7 +1942,7 @@ export function AppShell() {
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
           background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
+          borderRight: "var(--hairline) solid var(--border)",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
@@ -1955,7 +1966,7 @@ export function AppShell() {
 
       {/* Main column: everything right of the sidebar. The topbar starts at the
           center column so the sidebar runs the full window height. */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+      <div className="app-main-column" style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
         {/* Top bar with sidebar toggle */}
         <div
           ref={topBarRef}
@@ -2038,23 +2049,12 @@ export function AppShell() {
                   height: "100%",
                   padding: "0 12px",
                   background: "none",
-                  border: "none",
                   color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
                   cursor: selectedSession ? "pointer" : "not-allowed",
                   opacity: selectedSession ? 1 : 0.45,
                   flexShrink: 0,
                   fontSize: 11,
                   whiteSpace: "nowrap",
-                  transition: "color 0.1s, background 0.1s, opacity 0.1s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!selectedSession) return;
-                  e.currentTarget.style.color = "var(--text)";
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
-                  e.currentTarget.style.background = "none";
                 }}
               >
                 <svg
@@ -2111,13 +2111,62 @@ export function AppShell() {
                     ? autoNameStatus.message
                     : translate("title.generateSession");
 
+                const statsSummary = (() => {
+                  const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
+                  const t = sessionStats?.tokens;
+                  const c = sessionStats?.cost ?? 0;
+                  const parts: string[] = [];
+                  if (t && t.input > 0) parts.push(`↑${fmt(t.input)}`);
+                  if (t && t.output > 0) parts.push(`↓${fmt(t.output)}`);
+                  if (c > 0) parts.push(c >= 0.01 ? `$${c.toFixed(2)}` : "<$0.01");
+                  if (contextUsage?.contextWindow && contextUsage.percent !== null) {
+                    parts.push(`${contextUsage.percent.toFixed(1)}% ctx`);
+                  }
+                  return parts.length > 0 ? parts.join(" · ") : translate("appshell.statsHint");
+                })();
+
+                // Desktop shell: the same five actions as a native popup. A
+                // native item holds one line, so the DOM menu's caption is
+                // appended to the label where it carries live state.
+                const openNativeMore = (anchor: Element) => {
+                  void showNativeMenu([
+                    { label: nameLabel, disabled: nameDisabled, onSelect: () => void handleAutoName() },
+                    {
+                      label: `${translate("system.prompt")}${systemPrompt === null ? "" : systemPrompt ? "" : ` (${translate("appshell.toolsDisabled")})`}`,
+                      checked: activeTopPanel === "system" ? true : undefined,
+                      onSelect: () => handleSystemInfoToggle("system"),
+                    },
+                    {
+                      label: translate("agentSwitcher.title"),
+                      checked: activeTopPanel === "agents" ? true : undefined,
+                      onSelect: () => toggleTopPanel("agents"),
+                    },
+                    {
+                      label: translate("tools.label"),
+                      checked: activeTopPanel === "tools" ? true : undefined,
+                      onSelect: () => handleSystemInfoToggle("tools"),
+                    },
+                    { kind: "separator" },
+                    {
+                      label: `${translate("appshell.sessionStats")} — ${statsSummary}`,
+                      disabled: !sessionStats && !contextUsage,
+                      checked: activeTopPanel === "session" ? true : undefined,
+                      onSelect: () => toggleTopPanel("session"),
+                    },
+                  ], menuPointBelow(anchor, "right")).then((shown) => { if (!shown) setTopMoreOpen(true); });
+                };
+
                 return (
                   <div className="app-topbar-more" ref={topMoreRef}>
                     <button
                       className="native-toolbar-button app-topbar-more-trigger"
                       type="button"
-                      onClick={() => {
+                      onClick={(event) => {
                         setActiveTopPanel(null);
+                        if (canUseNativeMenu()) {
+                          openNativeMore(event.currentTarget);
+                          return;
+                        }
                         setTopMoreOpen((open) => !open);
                       }}
                       title={translate("appshell.moreActions")}
@@ -2257,17 +2306,7 @@ export function AppShell() {
                           </span>
                         </button>
                         {(() => {
-                          const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
-                          const t = sessionStats?.tokens;
-                          const c = sessionStats?.cost ?? 0;
-                          const parts: string[] = [];
-                          if (t && t.input > 0) parts.push(`↑${fmt(t.input)}`);
-                          if (t && t.output > 0) parts.push(`↓${fmt(t.output)}`);
-                          if (c > 0) parts.push(c >= 0.01 ? `$${c.toFixed(2)}` : "<$0.01");
-                          if (contextUsage?.contextWindow && contextUsage.percent !== null) {
-                            parts.push(`${contextUsage.percent.toFixed(1)}% ctx`);
-                          }
-                          const summary = parts.length > 0 ? parts.join(" · ") : translate("appshell.statsHint");
+                          const summary = statsSummary;
                           return (
                             <button
                               className="app-topbar-more-item"
@@ -2355,7 +2394,7 @@ export function AppShell() {
               {activeTopPanel === "session" && (
                 <div className="session-info-popover" style={{
                   background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
+                  borderBottom: "var(--hairline) solid var(--border)",
                   boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
                   padding: "12px 16px",
                 }}>
@@ -2460,23 +2499,9 @@ export function AppShell() {
                             height: 22,
                             marginTop: -2,
                             color: copied ? "var(--accent)" : "var(--text-dim)",
-                            background: "transparent",
-                            border: "1px solid var(--border)",
-                            borderRadius: 4,
-                            cursor: "pointer",
                             flex: "0 0 auto",
-                            transition: "color 0.12s, border-color 0.12s, background 0.12s",
                           }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.color = "var(--accent)";
-                            e.currentTarget.style.borderColor = "var(--accent)";
-                            e.currentTarget.style.background = "var(--bg-hover)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.color = copied ? "var(--accent)" : "var(--text-dim)";
-                            e.currentTarget.style.borderColor = "var(--border)";
-                            e.currentTarget.style.background = "transparent";
-                          }}
+                          className="session-field-copy"
                         >
                           {copied ? (
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2733,7 +2758,7 @@ export function AppShell() {
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
           flexDirection: "column",
-          borderLeft: "1px solid var(--border)",
+          borderLeft: "var(--hairline) solid var(--border)",
           background: "var(--bg)",
         } as React.CSSProperties}
       >
@@ -3041,6 +3066,7 @@ export function AppShell() {
       />
     )}
     <UpdateReminder onOpenSettings={() => setSettingsSection("general")} />
+    <DomContextMenuHost />
     </div>
     </>
   );

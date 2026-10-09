@@ -2760,6 +2760,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "window-vibrancy",
 ]
 
 [[package]]

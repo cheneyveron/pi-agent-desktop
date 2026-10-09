@@ -67,8 +67,7 @@ the intent described here.
 
 **Palette.** The canvas is warm off-white (`--bg: #f7f7f5`), and pure white is reserved for
 controls and elevated surfaces (`--surface`). The accent is near-black (`#1d1d1f`, near-white
-in dark mode) rather than a brand colour. Emphasis comes from contrast, not hue. `--text-dim`
-stays at a value that clears 3:1 contrast because it carries real labels.
+in dark mode) rather than a brand colour. Emphasis comes from contrast, not hue. `--text-muted` clears 4.5:1 contrast for body text; `--text-dim` clears 3:1 for secondary labels. Translucent surfaces are composited over the page background when checking contrast.
 
 **Palette character.** Mist uses rounded controls, mist-line icons and a soft dissolve;
 Rose uses fuller corners, a flower that unfolds on interaction, and a reveal anchored to
@@ -108,7 +107,7 @@ existing border: hover tints it and dragging darkens it, and neither adds a seco
 and clamped with `min()` on small windows. The scrim is light but still makes the app read as
 inactive. General splits into two columns at ≥880px.
 
-**Chat.** The composer aligns with the message column. Markdown tables wrap within the panel
+**Chat.** The composer aligns with the message column. Session controls sit below the input card, and the new-session screen has no update chip above it. Markdown tables wrap within the panel
 instead of scrolling (this reverts upstream #650). While a run is busy, fork/navigate actions
 on user messages are hidden with CSS (`data-session-busy`), not props, so message memoization
 survives.
