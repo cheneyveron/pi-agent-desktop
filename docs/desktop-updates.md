@@ -44,6 +44,8 @@ Never commit the private key or its password. The public key is embedded at comp
 
 ## Publishing
 
+Merging upstream changes includes publishing updated desktop installers by default, unless the user requests a code-only merge. Delivery ends after the published installers are verified; installing the app on the user’s Mac requires a separate explicit request.
+
 After the reviewed changes and version bump are committed and pushed to `origin/main`, run:
 
 ```bash

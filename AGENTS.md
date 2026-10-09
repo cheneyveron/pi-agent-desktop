@@ -10,7 +10,7 @@
 
 ## 桌面版发布
 
-用户要求发布桌面版时，使用 `npm run desktop:release`（`scripts/publish-desktop.mjs`），不要手工重复调用 GitHub API 或逐个平台轮询。详细流程见 [desktop-updates.md](docs/desktop-updates.md)。
+合并上游改动后，默认也要更新并发布桌面安装包（包括 macOS build），除非用户明确要求只合并代码。使用 `npm run desktop:release`（`scripts/publish-desktop.mjs`）完成发布，不要手工重复调用 GitHub API 或逐个平台轮询。详细流程见 [desktop-updates.md](docs/desktop-updates.md)。
 
 - 发布前完成相关检查，准备版本号和 `.github/workflows/release.yml` 中的发布说明。版本工具为 `node scripts/bump-pi-agent-desktop-version.mjs`；随后运行 `npm run release:manifest` 同步组件清单。
 - 将发布改动提交并推送到 `origin/main`，确认工作区干净，再运行 `npm run desktop:release`。Hermes 上脚本自动读取上述凭据并核实账户，无需手工导出 token。
@@ -18,10 +18,8 @@
 - `--no-wait` 仅用于明确要求只启动、不等待的情况；只启动构建不能报告为发布完成。`npm run desktop:release -- --verify-only` 可单独核验当前版本。
 - 构建失败时保留草稿，查看脚本给出的 Actions 链接并处理失败原因；需要重试原提交时运行 `npm run desktop:release -- --retry-failed`。修复产生新提交时先提交推送，再运行默认命令。不要手动发布缺少平台产物的草稿。
 - 脚本中断或超时不会停止远端构建，重新运行即可续接。
-- 发布并核验正式 Release 后，还要自动更新用户 Mac 的 Applications 中已安装的 Pi 应用。先核实实际安装路径、bundle identifier 和版本；发布包名为 `Pi Agent.app`，用户可能称其为 `Pi Agents.app`，不要因名称不同另装一份。这里的“本机”指用户的 Mac，不是运行发布脚本的 Linux/Hermes。
-- 应用未运行时直接替换，无需另行确认。应用正在运行时，先完成下载和待安装包的校验，再明确向用户征求是否允许结束应用；取得本次明确同意后才能结束进程、替换并重新打开。拒绝或未回复时保留运行中的应用与安装文件，等待用户关闭；禁止默认同意、静默杀进程或覆盖正在运行的应用。
-- 替换前保留可回退的旧应用，替换后核验实际安装版本和启动结果；确认新版可用后再清理本次临时文件。已有 Mac 访问方式应直接复用；远程操作使用已配置的 SSH 别名。如果无法访问 Mac，说明本机安装尚未完成并索取访问方式，不得把 GitHub 发布成功等同于本机更新完成。
-- 正式 Release 与本机应用均完成验证后，再报告完整交付完成。
+- 桌面版更新默认只发布安装包，不更新用户 Mac 的 Applications 应用，不索取 Mac 访问方式，也不结束本机应用进程。只有用户明确要求本机安装时才执行安装；应用运行中必须先下载并校验安装包，再取得用户本次明确同意后才能结束进程、替换并重新打开，替换前保留可回退的旧应用。
+- 正式 Release 的 macOS、Windows、Linux 安装包、签名、组件清单、更新地址和来源提交全部核验通过后，即可报告安装包发布完成。
 
 ## Quick Start
 
