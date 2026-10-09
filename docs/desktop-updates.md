@@ -44,6 +44,35 @@ Never commit the private key or its password. The public key is embedded at comp
 
 ## Publishing
 
+After the reviewed changes and version bump are committed and pushed to `origin/main`, run:
+
+```bash
+npm run desktop:release
+```
+
+The script verifies the GitHub identity, pushed commit and component versions, starts
+(or resumes) the signed release workflow, waits for all platforms, then verifies the
+published installers, signature files, component manifest, updater targets and tag.
+It reports only status changes. Concurrent invocations in the same checkout are
+locked; rerunning follows an existing run. An already published version is verified
+without starting another release. Version bumps and release notes remain part of
+preparing the reviewed change.
+
+On Hermes it reads `pi_agent_telepi_pat` from the existing credential record above.
+Elsewhere set `GH_TOKEN` (or `GITHUB_TOKEN`) for the `cheneyveron` account with repository
+write and Actions access. Credentials stay in memory. Signing uses the existing
+Actions secrets.
+
+```bash
+npm run desktop:release -- --no-wait      # Start/resume, print the Actions URL, exit
+npm run desktop:release -- --verify-only  # Verify the current published version
+npm run desktop:release -- --retry-failed # Explicitly retry failed jobs
+```
+
+A failed build exits nonzero and leaves the release draft. Interrupting the script
+or its 90-minute timeout does not stop the remote build; rerun to resume monitoring.
+
+
 Start **Publish signed desktop release** manually after the release changes reach `main`. It verifies that the bundled `pi` and `pi-web` versions match their latest stable Releases or the documented versions in `scripts/release-component-pins.json`, then sequentially creates Apple Silicon (`aarch64`) DMG/updater artifacts, a Linux x64 `.deb`, and a Windows x64 NSIS `-setup.exe`/updater archive. Intel Mac (`x86_64-apple-darwin`) artifacts are not built. The Release stays in draft until all platforms and the component manifest are present; only then is `v<pi-agent-desktop version>` published as the latest Release.
 
 The workflow currently uses ad-hoc macOS application signing, Tauri updater signatures, and the native Linux package format. Before distributing outside a controlled environment, configure an Apple Developer ID certificate/notarization and a Windows Authenticode certificate. Without Authenticode, Windows may show a SmartScreen warning even though updater verification remains cryptographically signed.

@@ -47,6 +47,7 @@
     "release:verify": "node scripts/verify-release-components.mjs",
     "drift": "node scripts/measure-fork-drift.mjs",
     "desktop:verify": "node scripts/verify-packaged-codemode.mjs",
+    "desktop:release": "node scripts/publish-desktop.mjs",
     "test:release-tools": "node --test scripts/*.test.mjs",
     "test": "node --experimental-strip-types --test 'app/**/*.test.mjs' 'lib/**/*.test.mjs' 'scripts/**/*.test.mjs' 'components/**/*.test.mjs' 'hooks/**/*.test.mjs' 'public/**/*.test.mjs'",
     "lint": "eslint . && npm run check:branding",
