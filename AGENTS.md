@@ -8,6 +8,17 @@
 - Git 推送使用已配置的 SSH 别名 `github.com-cheneyveron`。SSH 推送认证与 API / Actions 认证相互独立；不能因 CLI 未登录就判定 PAT 不存在。
 - 当前 secrets 目录以 `/home/hermes/AGENTS.md` 为准：`/ssd/appdata/secrets`。旧的 `/home/hermes/.hermes/secrets` 路径已停用。
 
+## 桌面版发布
+
+用户要求发布桌面版时，使用 `npm run desktop:release`（`scripts/publish-desktop.mjs`），不要手工重复调用 GitHub API 或逐个平台轮询。详细流程见 [desktop-updates.md](docs/desktop-updates.md)。
+
+- 发布前完成相关检查，准备版本号和 `.github/workflows/release.yml` 中的发布说明。版本工具为 `node scripts/bump-pi-agent-desktop-version.mjs`；随后运行 `npm run release:manifest` 同步组件清单。
+- 将发布改动提交并推送到 `origin/main`，确认工作区干净，再运行 `npm run desktop:release`。Hermes 上脚本自动读取上述凭据并核实账户，无需手工导出 token。
+- 默认命令自动启动或续接构建、等待三平台成功并核验正式 Release 的安装包、签名、组件清单、更新地址及来源提交；仅在状态变化时输出。已发布的版本只核验，不会重复发布；新发布需先准备新版本号。
+- `--no-wait` 仅用于明确要求只启动、不等待的情况；只启动构建不能报告为发布完成。`npm run desktop:release -- --verify-only` 可单独核验当前版本。
+- 构建失败时保留草稿，查看脚本给出的 Actions 链接并处理失败原因；需要重试原提交时运行 `npm run desktop:release -- --retry-failed`。修复产生新提交时先提交推送，再运行默认命令。不要手动发布缺少平台产物的草稿。
+- 脚本中断或超时不会停止远端构建，重新运行即可续接；成功核验正式 Release 后再报告完成。
+
 ## Quick Start
 
 ```bash
