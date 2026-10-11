@@ -161,12 +161,14 @@ test("project header shows a session count and chips only while folded", () => {
   assert.match(source, /title=\{rowTitle\}/);
 });
 
-test("project header keeps its actions hover-only with a chevron on the right", async () => {
+test("project header keeps its actions hover-only and no separate chevron", async () => {
   const css = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
-  assert.match(source, /className="sidebar-project-tree-chevron-button"/);
+  // The folder glyph already shows open / closed; a chevron would repeat it.
+  assert.doesNotMatch(source, /sidebar-project-tree-chevron/);
+  assert.match(source, /aria-expanded=\{!isCollapsed\}/);
   assert.match(css, /\.sidebar-project-tree-row-actions \{[^}]*opacity: 0;[^}]*pointer-events: none;/);
   assert.match(css, /\.sidebar-project-tree-row\.is-menu-open \.sidebar-project-tree-row-actions/);
-  assert.match(css, /@media \(hover: none\) \{\s*\.sidebar-project-tree-row-actions \{\s*opacity: 1;/);
+  assert.match(css, /@media \(hover: none\) \{[^@]*\.sidebar-project-tree-row-actions \{\s*opacity: 1;/);
 });
 
 test("folded projects persist across reloads", () => {

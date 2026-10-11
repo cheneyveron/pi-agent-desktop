@@ -248,15 +248,8 @@
 .sidebar-project-tree-action:focus-visible,
 .sidebar-project-tree-menu:focus-visible,
 .sidebar-project-tree-add:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
-}
-.sidebar-project-tree-chevron {
-  flex-shrink: 0;
-  transition: transform 0.15s ease;
-}
-.sidebar-project-tree-group.is-collapsed .sidebar-project-tree-chevron {
-  transform: rotate(-90deg);
 }
 .sidebar-project-tree-folder {
   display: inline-flex;
@@ -424,7 +417,7 @@
 }
 
 .sidebar-empty-add:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 /* Upstream .panel-resize-handle — thinner hit line, softer tints. */
@@ -806,7 +799,8 @@
      ~2.8:1 contrast against --bg — under the 3:1 floor for UI text. This
      hits ~4:1 while staying visibly de-emphasized next to --text-muted. */
   --text-dim: #7a7a7a;
-  --text-meta: #85858b;
+  /* #707075 rather than #85858b: 10px footnotes at 3.45:1 were under the 4.5:1 floor. */
+  --text-meta: #707075;
   --accent: #1d1d1f;
   --accent-hover: #3a3a3c;
   --accent-contrast: #ffffff;
@@ -1042,6 +1036,21 @@ html:is([data-theme="mist"], [data-theme="rose"], [data-theme="pine"])
 @keyframes theme-pine-rise {
   from { transform: scaleY(0.85); opacity: 0.55; }
   to { transform: scaleY(1); opacity: 1; }
+}
+
+/* Text selection and keyboard focus follow the system accent color, as AppKit
+   does; the monochrome --accent stays the brand color for buttons and fills.
+   AccentColor resolves to the user's System Settings accent in WKWebView, and
+   browsers without it keep the neutral values above. The query names
+   color-mix as well: a custom property holding an unsupported color-mix() is
+   invalid only when it is used, which would drop the focus outline entirely
+   instead of falling back. */
+@supports (color: color-mix(in srgb, AccentColor 50%, transparent)) {
+  :root,
+  html.dark {
+    --focus-ring: color-mix(in srgb, AccentColor 55%, transparent);
+    --selection: color-mix(in srgb, AccentColor 35%, transparent);
+  }
 }
 
 /* Keep the conversation navigator visually compact: its markers cluster at
@@ -1628,7 +1637,7 @@ a:focus-visible {
 }
 
 ::selection {
-  background: var(--accent-soft);
+  background: var(--selection, var(--accent-soft));
 }
 
 ::-webkit-scrollbar {
@@ -1650,8 +1659,8 @@ a:focus-visible {
 }
 
 :root {
-  --font-mono: "SFMono-Regular", var(--font-noto-mono), "Cascadia Code",
-    "JetBrains Mono", "Fira Code", Consolas, ui-monospace, monospace;
+  --font-mono: ui-monospace, "SFMono-Regular", var(--font-noto-mono),
+    "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
 
 pre, code {
@@ -1964,16 +1973,19 @@ html.dark .sidebar-view-switcher-thumb {
   display: flex;
   align-items: center;
   height: 26px;
-  padding: 0 10px;
+  /* 18px = project row inset (10) + its padding (8), so the label lines up
+     with the folder icons below. */
+  padding: 0 10px 0 18px;
   flex: 0 0 auto;
 }
 
+/* AppKit section header: sentence case, semibold, secondary label color. */
 .sidebar-project-tree-title {
   flex: 1 1 auto;
-  font-size: var(--fs-caption);
+  font-size: var(--fs-small);
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--text-dim);
 }
 
@@ -2046,11 +2058,15 @@ html.dark .sidebar-view-switcher-thumb {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  min-height: 34px;
+  /* Same inset pill as .session-item so hover and active highlights share one
+     shape across both levels instead of a full-bleed rectangle. */
+  width: calc(100% - 20px);
+  margin: 0 10px;
+  min-height: 30px;
   height: auto;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-muted);
   font-size: var(--fs-body);
@@ -2075,15 +2091,6 @@ html.dark .sidebar-view-switcher-thumb {
 
 .sidebar-project-tree-group.is-active .sidebar-project-tree-row {
   font-weight: 500;
-}
-
-.sidebar-project-tree-chevron {
-  flex: 0 0 auto;
-  transition: transform 160ms var(--ease-native);
-}
-
-.sidebar-project-tree-group.is-collapsed .sidebar-project-tree-chevron {
-  transform: rotate(-90deg);
 }
 
 .sidebar-project-tree-folder {
@@ -2152,7 +2159,7 @@ html.dark .sidebar-view-switcher-thumb {
   background: color-mix(in srgb, #0891b2 14%, transparent);
 }
 
-/* Project header: name + chevron at rest; "+" and "…" fade in over the row's
+/* Project header: folder + name at rest; "+" and "…" fade in over the row's
    right end on hover/focus. A folded project also shows its session count. */
 .sidebar-project-tree-row {
   position: relative;
@@ -2179,8 +2186,7 @@ html.dark .sidebar-view-switcher-thumb {
 .sidebar-project-tree-row-actions {
   position: absolute;
   top: 50%;
-  /* 10px row padding + 22px chevron button + 2px gap */
-  right: 34px;
+  right: 6px;
   flex-direction: row;
   gap: 1px;
   margin: 0;
@@ -2205,8 +2211,13 @@ html.dark .sidebar-view-switcher-thumb {
   padding-right: 52px;
 }
 
-/* No hover on touch: keep the actions reachable. */
+/* No hover on touch: keep the actions reachable, and the row a finger-sized
+   target (it is 30px with a pointer). */
 @media (hover: none) {
+  .sidebar-project-tree-row {
+    min-height: 34px;
+  }
+
   .sidebar-project-tree-row-actions {
     opacity: 1;
     pointer-events: auto;
@@ -2215,26 +2226,6 @@ html.dark .sidebar-view-switcher-thumb {
   .sidebar-project-tree-row-main {
     padding-right: 52px;
   }
-}
-
-.sidebar-project-tree-chevron-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  margin-right: -2px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.sidebar-project-tree-row:hover .sidebar-project-tree-chevron-button {
-  color: var(--text-muted);
 }
 
 .sidebar-project-tree-children {
@@ -2249,8 +2240,9 @@ html.dark .sidebar-view-switcher-thumb {
   width: calc(100% - 20px);
   min-height: 24px;
   margin: 0 10px 3px;
-  /* Match the session title start: 14px row padding + 14px icon + 6px gap. */
-  padding: 0 10px 0 34px;
+  /* Match the session title start: 11px row padding + 14px icon + 6px gap
+     = the project name's left edge. */
+  padding: 0 10px 0 31px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2318,9 +2310,29 @@ html.dark .sidebar-view-switcher-thumb {
   box-shadow: none;
 }
 
+/* The chat-bubble glyph on a plain row says nothing every row does not. It
+   stays in layout so titles keep one left edge whether or not the row shows a
+   running / unread indicator in that slot. */
+.session-item-glyph {
+  visibility: hidden;
+}
+
+/* Secondary sidebar text (timestamps, counts, section label) sat at ~3.9:1 on
+   the panel; scoped here so the global --text-dim keeps its role elsewhere. */
+html:not(.dark) .app-sidebar {
+  --text-dim: #6c6c71;
+}
+
+/* On the selection fill the timestamp measured 3.8:1; the inline color on the
+   span needs !important to be replaced. */
+html:not(.dark) .session-item.is-selected .session-item-time {
+  color: var(--text-muted) !important;
+}
+
 .session-item-title {
   font-size: var(--fs-body) !important;
-  font-weight: 500 !important;
+  /* Weight comes from the row's inline 400: AppKit rows stay Regular and the
+     selection fill alone carries the state. */
   letter-spacing: -0.006em;
 }
 
@@ -3608,8 +3620,11 @@ html.dark .sidebar-view-switcher-thumb {
   /* The overlay's parent is sized to the scrollport at runtime, so the
      composer and message column share one centering axis without assuming a
      fixed scrollbar width. */
+  /* Fully opaque from 18% down: this band holds the composer card and the
+     settings row under it, and any alpha here lets the chat scrolling beneath
+     show through the buttons. Only the top edge fades. */
   background:
-    linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 94%, transparent) 18%) !important;
+    linear-gradient(to bottom, transparent, var(--bg) 18%) !important;
 }
 
 .chat-empty-state {

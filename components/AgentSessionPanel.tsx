@@ -367,7 +367,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
                     type="button"
                     disabled={!steerDraft.trim() || actionPendingId === session.id}
                     onClick={() => void submitSteer(session.id)}
-                    style={{ height: 30, padding: "0 12px", border: "none", borderRadius: 6, background: "var(--accent)", color: "#fff", fontSize: 12, cursor: !steerDraft.trim() || actionPendingId === session.id ? "default" : "pointer" }}
+                    style={{ height: 30, padding: "0 12px", border: "none", borderRadius: 6, background: "var(--accent)", color: "var(--accent-contrast)", fontSize: 12, cursor: !steerDraft.trim() || actionPendingId === session.id ? "default" : "pointer" }}
                   >
                     {t("agentSwitcher.steerSend")}
                   </button>

@@ -3405,7 +3405,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                 flex: 1, height: 26, fontSize: 11,
                                 border: "var(--hairline) solid var(--border)", borderRadius: 6,
                                 background: automation.steeringMode === mode ? "var(--accent)" : "var(--bg)",
-                                color: automation.steeringMode === mode ? "#fff" : "var(--text-muted)",
+                                color: automation.steeringMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
                                 cursor: "pointer",
                               }}
                             >
@@ -3428,7 +3428,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                 flex: 1, height: 26, fontSize: 11,
                                 border: "var(--hairline) solid var(--border)", borderRadius: 6,
                                 background: automation.followUpMode === mode ? "var(--accent)" : "var(--bg)",
-                                color: automation.followUpMode === mode ? "#fff" : "var(--text-muted)",
+                                color: automation.followUpMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
                                 cursor: "pointer",
                               }}
                             >

@@ -1288,7 +1288,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </span>
             )}
           </button>
-          {/* Hover-only overlay, left of the chevron: it covers the tail of a
+          {/* Hover-only overlay at the row's trailing edge: it covers the tail of a
               long name instead of reserving width the rest of the time. */}
           <div className="sidebar-project-tree-row-actions" data-no-drag>
             <button
@@ -1318,18 +1318,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </svg>
             </button>
           </div>
-          {/* Redundant with the row button for keyboards and screen readers. */}
-          <button
-            type="button"
-            className="sidebar-project-tree-chevron-button"
-            onClick={toggleCollapse}
-            tabIndex={-1}
-            aria-hidden="true"
-          >
-            <svg className="sidebar-project-tree-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
         </div>
         {!isCollapsed && (
           <div className="sidebar-project-tree-children">
@@ -2581,7 +2569,7 @@ function SessionItem({
         height: SESSION_LIST_ITEM_HEIGHT,
         display: "flex",
         alignItems: "center",
-        paddingLeft: 14,
+        paddingLeft: 11,
         paddingRight: 8,
         cursor: confirmDelete || renaming ? "default" : "pointer",
         background: confirmDelete
@@ -2678,7 +2666,7 @@ function SessionItem({
               <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
             </svg>
           ) : (
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg className="session-item-glyph" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
             </svg>
           )}
@@ -2692,7 +2680,7 @@ function SessionItem({
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               fontSize: 13,
-              fontWeight: isSelected ? 500 : 400,
+              fontWeight: 400,
               lineHeight: 1.4,
               color: "var(--text)",
             }}
