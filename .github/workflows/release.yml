@@ -103,41 +103,37 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.6.1
+            ## Pi Agent Desktop 0.6.2
 
             ### Improved
 
-            - Session controls now sit below the input card, leaving more room for your message.
-            - macOS uses a translucent sidebar material, with refined typography, hairline separators and hover feedback across the desktop UI.
-            - New sessions no longer show an update chip above the composer. Check updates in Settings › General.
+            - Refined sidebar spacing, folder actions, typography and system-accent keyboard focus/selection.
+            - Adopted upstream's Rust popup-menu implementation for opt-in test builds; regular releases retain in-app menus and the Settings freeze protection.
 
             ### Fixed
 
-            - File right-click actions are available in an in-app menu: Open, Open With (macOS), Reveal in Finder / Explorer and Copy Path, with keyboard navigation.
-            - Settings and other menus keep their in-app controls to avoid the Tauri native popup freeze.
+            - Steering, follow-up and sub-agent buttons now use readable contrast colors in dark mode.
+            - Corrected the macOS-only Rust test configuration.
 
-            Remote backend switching, scheduled tasks and browser file downloads remain available.
-
-            Bundled components: pi 1.1.0, pi-web 0.10.0.
+            Mist, Rose and Pine themes, remote backend switching, scheduled tasks and browser file downloads remain available.
+            Synced desktop upstream through 6280fc1. Bundled components: pi 1.1.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.6.1
+            ## Pi Agent Desktop 0.6.2
 
             ### 改进
 
-            - 会话控制移到输入卡片下方，为消息内容留出更多空间。
-            - macOS 采用半透明侧边栏材质，并统一优化桌面界面的字号、细分隔线和悬停反馈。
-            - 新会话输入框上方不再显示更新提示；请在设置 › 通用中检查更新。
+            - 优化侧边栏间距、文件夹操作、字体和使用系统强调色的键盘焦点／文本选择。
+            - 引入上游 Rust 原生菜单实现，供显式启用的测试构建使用；正式版本继续使用应用内菜单并保留设置菜单的防冻结保护。
 
             ### 修复
 
-            - 文件右键操作改用应用内菜单，支持打开、用其他应用打开（macOS）、在 Finder / 资源管理器中显示、复制路径，以及键盘导航。
-            - 设置及其他菜单保留应用内控件，避免 Tauri 原生弹出菜单导致应用冻结。
+            - 深色模式下，引导、追加及子代理按钮使用清晰可读的对比色。
+            - 修正仅适用于 macOS 的 Rust 测试配置。
 
-            保留远端后端切换、定时任务和浏览器文件下载功能。
-
-            内置组件版本：pi 1.1.0、pi-web 0.10.0。
+            保留 Mist、Rose、Pine 主题，以及远端后端切换、定时任务和浏览器文件下载。
+            桌面上游同步至 6280fc1。内置组件版本：pi 1.1.0、pi-web 0.10.0。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
