@@ -405,6 +405,7 @@ export const zhTWLocale: LocalePlugin = {
     "chat.collapseProcess": "收起處理詳細資料",
     "chat.expandProcess": "展開處理詳細資料",
     "chat.filesWritten": "已變更的檔案",
+    "chat.imageReadFailed": "無法讀取所選圖片，請重新選擇。",
     "chat.openWrittenFile": "開啟 {name}",
     "fileMenu.open": "開啟",
     "fileMenu.openWith": "開啟方式",
