@@ -103,37 +103,21 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.6.2
+            ## Pi Agent Desktop 0.6.3
 
-            ### Improved
+            - Fixed the duplicate, top-aligned Restricted mode button; the toolbar now shows one centered warning.
+            - Restored window dragging from nested title and sidebar-header content on macOS, while keeping toolbar buttons clickable.
 
-            - Refined sidebar spacing, folder actions, typography and system-accent keyboard focus/selection.
-            - Adopted upstream's Rust popup-menu implementation for opt-in test builds; regular releases retain in-app menus and the Settings freeze protection.
-
-            ### Fixed
-
-            - Steering, follow-up and sub-agent buttons now use readable contrast colors in dark mode.
-            - Corrected the macOS-only Rust test configuration.
-
-            Mist, Rose and Pine themes, remote backend switching, scheduled tasks and browser file downloads remain available.
-            Synced desktop upstream through 6280fc1. Bundled components: pi 1.1.0, pi-web 0.10.0.
+            Bundled components: pi 1.1.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.6.2
+            ## Pi Agent Desktop 0.6.3
 
-            ### 改进
+            - 修复 Restricted mode 提示重复并贴在顶部的问题，工具栏只保留一处居中提示。
+            - 修复 macOS 上拖动标题文字、侧边栏顶部内容无法移动窗口的问题，保留工具栏按钮的正常点击行为。
 
-            - 优化侧边栏间距、文件夹操作、字体和使用系统强调色的键盘焦点／文本选择。
-            - 引入上游 Rust 原生菜单实现，供显式启用的测试构建使用；正式版本继续使用应用内菜单并保留设置菜单的防冻结保护。
-
-            ### 修复
-
-            - 深色模式下，引导、追加及子代理按钮使用清晰可读的对比色。
-            - 修正仅适用于 macOS 的 Rust 测试配置。
-
-            保留 Mist、Rose、Pine 主题，以及远端后端切换、定时任务和浏览器文件下载。
-            桌面上游同步至 6280fc1。内置组件版本：pi 1.1.0、pi-web 0.10.0。
+            内置组件版本：pi 1.1.0、pi-web 0.10.0。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

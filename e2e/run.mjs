@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { checkFilePanel, filePanelFixture, filePanelStylesheet } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
+import { checkDesktopChrome } from "./desktop-chrome.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMcpManager } from "./mcp-manager.mjs";
 import { checkMissingWorkspace, MISSING_WORKSPACE, missingWorkspaceReply } from "./missing-workspace.mjs";
@@ -229,6 +230,7 @@ try {
   }
 
   browser = await chromium.launch();
+  await checkDesktopChrome(browser, base, RICH, project, artifacts);
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     context = await browser.newContext({ viewport, locale: "en-US" });
     await context.tracing.start({ screenshots: true, snapshots: true });
