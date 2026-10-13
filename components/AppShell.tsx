@@ -704,7 +704,7 @@ export function AppShell() {
     }
   }, [desktopMode]);
 
-  const { state: connectionState, retry: retryConnection } = useDesktopConnection(desktopMode);
+  const { state: connectionState, retry: retryConnection } = useDesktopConnection();
 
   const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
     chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
