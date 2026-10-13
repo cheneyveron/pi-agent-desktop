@@ -37,6 +37,18 @@
     }
     if (fallback) fallback.hidden = logos.length > 0;
   };
+  // visible() reads layout, so running refresh straight from the observer forces a
+  // synchronous layout for every DOM mutation batch; while a long transcript streams
+  // that pinned the WebContent main thread. Coalesce to one check per frame.
+  let scheduled = false;
+  const scheduleRefresh = () => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      refresh();
+    });
+  };
   document.addEventListener("click", (event) => {
     if (!(event.target instanceof Element) || !event.target.closest(selector)) return;
     event.preventDefault();
@@ -51,8 +63,8 @@
   }, true);
   const start = () => {
     refresh();
-    new MutationObserver(refresh).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
-    window.addEventListener("resize", refresh);
+    new MutationObserver(scheduleRefresh).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+    window.addEventListener("resize", scheduleRefresh);
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
   else start();
