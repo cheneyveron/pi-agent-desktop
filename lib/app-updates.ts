@@ -3,7 +3,7 @@ import type {
   AppUpdateInfo,
   AppUpdateProjectId,
 } from "@/lib/app-update-types";
-import { APP_DISTRIBUTION_NAME, APP_VERSION } from "./branding";
+import { APP_DISTRIBUTION_NAME, APP_REPOSITORY, APP_VERSION } from "./branding";
 
 export const APP_UPDATE_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 export const APP_UPDATE_RETRY_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -34,7 +34,7 @@ export const APP_UPDATE_PROJECTS: readonly AppUpdateProject[] = [
   {
     id: "pi-agent-desktop",
     name: APP_DISTRIBUTION_NAME,
-    repository: "abcwyc/pi-agent-desktop",
+    repository: APP_REPOSITORY,
     currentVersion: APP_VERSION,
   },
 ];
