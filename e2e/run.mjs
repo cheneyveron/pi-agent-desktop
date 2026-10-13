@@ -13,6 +13,7 @@ import { checkFilePanel, filePanelFixture, filePanelStylesheet } from "./file-pa
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkLocalFiles, desktopTestToken } from "./local-files.mjs";
 import { checkDesktopChrome } from "./desktop-chrome.mjs";
+import { checkComposerSelectors } from "./composer-selectors.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMcpManager } from "./mcp-manager.mjs";
 import { checkMissingWorkspace, MISSING_WORKSPACE, missingWorkspaceReply } from "./missing-workspace.mjs";
@@ -470,6 +471,7 @@ try {
     if (viewport.width > 600) {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
+      await checkComposerSelectors(page);
       await checkChatAppearance(page);
       await checkMcpManager(page, { agentDir, cwd: project });
     }
