@@ -289,6 +289,16 @@ test("renders a complete SDK skill expansion as a compact command", () => {
   assert.doesNotMatch(html, /Review the supplied files/);
 });
 
+test("puts skill command arguments below the command instead of in a side column", () => {
+  const html = renderMessage({
+    role: "user",
+    content: COMPLETE_SKILL_EXPANSION.replace("src/main.ts", "first line\nsecond line"),
+  });
+
+  assert.match(html, /flex-direction:column[^>]*><button[^>]*aria-expanded="false"/);
+  assert.match(html, /<\/button><span[^>]*>first line\nsecond line<\/span>/);
+});
+
 test("does not collapse incomplete skill-looking user text", () => {
   const html = renderMessage({
     role: "user",
