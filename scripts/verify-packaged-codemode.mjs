@@ -11,6 +11,12 @@
  * sandbox self-test in lib/builtin-extensions.ts) and reads the verdict from
  * `GET /api/mcp`, and fails on any "Cannot find module" in the server log.
  *
+ * It also imports pi-ai's Amazon Bedrock implementation from the staged tree
+ * with the bundled Node. pi-ai reaches it through a variable specifier, so the
+ * file tracer drops `@aws-sdk/client-bedrock-runtime` and a packaged
+ * amazon-bedrock session would die with ERR_MODULE_NOT_FOUND at the first
+ * stream (see stageResolvedClosure in prepare-desktop.mjs).
+ *
  * Not covered: jiti (user-extension loading). Its lib/jiti.cjs is only reached
  * on the lazy transform path, which a session start without a real extension
  * does not exercise.
@@ -83,12 +89,41 @@ async function waitForServer(baseUrl, child) {
   throw new Error(`the server did not answer within ${STARTUP_TIMEOUT_MS / 1000}s`);
 }
 
+const BEDROCK_ENTRY = join(
+  serverDir,
+  "node_modules",
+  "@earendil-works",
+  "pi-ai",
+  "dist",
+  "api",
+  "bedrock-converse-stream.js",
+);
+
+/** Imports the staged Bedrock implementation with the bundled Node; resolves to an error message or null. */
+function importStagedBedrock(nodePath) {
+  return new Promise((resolve) => {
+    const script = `import(${JSON.stringify(pathToFileURL(BEDROCK_ENTRY).href)}).then(() => process.exit(0), (error) => { console.error(error?.code ? error.code + ": " + error.message : String(error)); process.exit(1); });`;
+    const probe = spawn(nodePath, ["--input-type=module", "-e", script], { cwd: serverDir, stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    probe.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+    probe.once("error", (error) => resolve(error.message));
+    probe.once("exit", (code) => resolve(code === 0 ? null : stderr.trim().split("\n")[0] || `exit code ${code}`));
+  });
+}
+
 async function main() {
   const nodePath = NODE_CANDIDATES.find((candidate) => existsSync(candidate));
   if (!nodePath || !existsSync(join(serverDir, "server.js"))) {
     fail("no packaged server found; run `npm run desktop:prepare` first.");
     return;
   }
+
+  const bedrockError = await importStagedBedrock(nodePath);
+  if (bedrockError) {
+    fail(`the staged Amazon Bedrock implementation cannot be imported: ${bedrockError}`);
+    return;
+  }
+  console.log("bedrock: the staged Amazon Bedrock implementation imports.");
 
   const scratch = await mkdtemp(join(tmpdir(), "pi-packaged-codemode-"));
   const agentDir = join(scratch, "agent");

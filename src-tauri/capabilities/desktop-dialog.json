@@ -13,8 +13,12 @@
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-read-image",
     "notification:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     "allow-open-external-url",
     "allow-open-path",
+    "allow-open-log-dir",
     "allow-reveal-item-in-dir",
     "allow-list-apps-for-file",
     "allow-open-path-with",
@@ -23,6 +27,7 @@
     "allow-quit-app",
     "allow-show-main-window-cmd",
     "allow-set-ui-theme",
+    "allow-clear-app-cache",
     "allow-get-desktop-api-token"
   ]
 }

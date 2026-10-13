@@ -162,6 +162,13 @@ export async function openPathNative(path: string): Promise<void> {
   await invoke("open_path", { path });
 }
 
+/** Open the app log folder (desktop.log, server.log) in the file manager. */
+export async function openLogDirNative(): Promise<void> {
+  if (!isTauriDesktop()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_log_dir");
+}
+
 /** Reveal a local path in Finder / Explorer / file manager. */
 export async function revealItemInDirNative(path: string): Promise<void> {
   if (!isTauriDesktop()) {
@@ -266,35 +273,6 @@ export async function downloadUrlAsFile(url: string, defaultFileName: string): P
   return true;
 }
 
-/**
- * Desktop: save-dialog + server-side copy of an allowed local file.
- * Web: trigger download via the files API.
- */
-export async function saveLocalFileAs(
-  sourcePath: string,
-  defaultFileName: string,
-  downloadUrl: string,
-): Promise<boolean> {
-  if (!isTauriDesktop()) {
-    await triggerBrowserDownload(downloadUrl, defaultFileName);
-    return true;
-  }
-
-  const destPath = await selectSavePathNative({ defaultPath: defaultFileName });
-  if (!destPath) return false;
-
-  const response = await fetch("/api/desktop/save", {
-    method: "POST",
-    headers: await desktopApiHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ sourcePath, destPath }),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({})) as { error?: string };
-    throw new Error(data.error || `Save failed (HTTP ${response.status})`);
-  }
-  return true;
-}
-
 export type DesktopImageAttachment = {
   name: string;
   mimeType: string;
@@ -378,10 +356,31 @@ export async function setCloseQuitsNative(quit: boolean): Promise<void> {
   await invoke("set_close_quits", { quit });
 }
 
+/** Whether the OS currently launches Pi Agent at login (false in a browser). */
+export async function isAutostartEnabledNative(): Promise<boolean> {
+  if (!isTauriDesktop()) return false;
+  const { isEnabled } = await import("@tauri-apps/plugin-autostart");
+  return isEnabled();
+}
+
+/** Add or remove the OS launch-at-login entry; rejects if the OS refuses. */
+export async function setAutostartNative(enabled: boolean): Promise<void> {
+  if (!isTauriDesktop()) return;
+  const { enable, disable } = await import("@tauri-apps/plugin-autostart");
+  await (enabled ? enable() : disable());
+}
+
 export async function quitAppNative(): Promise<void> {
   if (!isTauriDesktop()) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("quit_app");
+}
+
+/** Clear the webview's disk caches; resolves to the bytes freed (0 in a browser). */
+export async function clearAppCacheNative(): Promise<number> {
+  if (!isTauriDesktop()) return 0;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<number>("clear_app_cache");
 }
 
 export async function showMainWindowNative(): Promise<void> {

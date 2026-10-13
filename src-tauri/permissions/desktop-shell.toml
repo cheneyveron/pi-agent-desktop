@@ -9,6 +9,11 @@ description = "Allows opening a local filesystem path with the OS default applic
 commands.allow = ["open_path"]
 
 [[permission]]
+identifier = "allow-open-log-dir"
+description = "Allows opening the app log directory in the OS file manager."
+commands.allow = ["open_log_dir"]
+
+[[permission]]
 identifier = "allow-reveal-item-in-dir"
 description = "Allows revealing a local filesystem path in the OS file manager."
 commands.allow = ["reveal_item_in_dir"]
@@ -72,3 +77,8 @@ commands.allow = ["activate_backend"]
 identifier = "allow-show-popup-menu"
 description = "Allows the UI to show a native popup menu described as plain data and learn which item was picked."
 commands.allow = ["show_popup_menu"]
+
+[[permission]]
+identifier = "allow-clear-app-cache"
+description = "Allows the UI to clear the webview's disk caches and learn how many bytes were freed."
+commands.allow = ["clear_app_cache"]

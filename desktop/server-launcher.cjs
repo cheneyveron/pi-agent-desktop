@@ -5,6 +5,25 @@ const fs = require("node:fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require("node:path");
 
+// Timestamp every line the server writes to stdout/stderr. Both streams are
+// redirected into server.log by the Rust shell, and Next prints no times of its
+// own, so without this a report like "it hung around 3pm" cannot be matched to
+// anything in the file. UTC ISO, matching desktop.log.
+for (const stream of [process.stdout, process.stderr]) {
+  const write = stream.write.bind(stream);
+  let atLineStart = true;
+  stream.write = (chunk, encoding, callback) => {
+    if (typeof chunk === "string" || chunk instanceof Uint8Array) {
+      const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      const stamp = `${new Date().toISOString()} `;
+      const stamped = (atLineStart ? stamp : "") + text.replace(/\n(?=[^])/g, `\n${stamp}`);
+      atLineStart = text.endsWith("\n");
+      return write(stamped, typeof encoding === "string" ? encoding : undefined, typeof encoding === "function" ? encoding : callback);
+    }
+    return write(chunk, encoding, callback);
+  };
+}
+
 const expectedParentPid = Number.parseInt(process.env.PI_WEB_PARENT_PID ?? "", 10);
 
 // A normal App quit is handled by the Rust shell. This small watchdog also
@@ -12,16 +31,26 @@ const expectedParentPid = Number.parseInt(process.env.PI_WEB_PARENT_PID ?? "", 1
 // or is force-terminated by macOS.
 const parentWatchdog = setInterval(() => {
   if (!Number.isInteger(expectedParentPid) || process.ppid === 1) {
+    console.error("[Pi Agent] desktop shell is gone (orphaned); server exiting");
     process.exit(0);
   }
 
   try {
     process.kill(expectedParentPid, 0);
   } catch {
+    console.error(`[Pi Agent] desktop shell (pid ${expectedParentPid}) is gone; server exiting`);
     process.exit(0);
   }
 }, 1_000);
 parentWatchdog.unref();
+
+// Observation only: neither listener changes how the process dies.
+process.on("uncaughtExceptionMonitor", (error, origin) => {
+  console.error(`[Pi Agent] ${origin}:`, error);
+});
+process.on("exit", (code) => {
+  console.error(`[Pi Agent] server process exit (code ${code})`);
+});
 
 // ABI-mismatch tourniquet: wrap process.dlopen so a native module compiled
 // against a different NODE_MODULE_VERSION surfaces a clear, actionable error

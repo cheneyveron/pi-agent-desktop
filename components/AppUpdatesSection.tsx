@@ -5,8 +5,6 @@ import type { AppComponentReleaseInfo, AppUpdatesResponse } from "@/lib/app-upda
 import {
   APP_DISTRIBUTION_NAME,
   APP_RELEASES_URL,
-  APP_REPOSITORY,
-  APP_REPOSITORY_URL,
   APP_VERSION,
   APP_VERSION_DISPLAY,
 } from "@/lib/branding";
@@ -18,70 +16,6 @@ import { ConfigButton } from "./SettingsUi";
 interface Props {
   /** Lets the host settings dialog stay up while a signed update is installing. */
   onBusyChange?: (busy: boolean) => void;
-}
-
-function MetaChip({ label, value, href, title }: { label: string; value: string; href: string; title: string }) {
-  return (
-    <a
-      className="settings-meta-chip"
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      title={title}
-      aria-label={`${label}: ${value}`}
-      onClick={(event) => handleExternalLinkClick(event, href)}
-    >
-      <span className="settings-meta-chip-label">{label}</span>
-      <span className="settings-meta-chip-value">{value}</span>
-      <span aria-hidden="true">↗</span>
-    </a>
-  );
-}
-
-function VersionChip({
-  currentValue,
-  latestValue,
-  updateAvailable,
-  href,
-  title,
-  ariaLabel,
-}: {
-  currentValue: string;
-  latestValue: string;
-  updateAvailable: boolean;
-  href: string;
-  title: string;
-  ariaLabel: string;
-}) {
-  const { t } = useI18n();
-  return (
-    <a
-      className={`settings-meta-chip${updateAvailable ? " is-highlight" : ""}`}
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      title={title}
-      aria-label={ariaLabel}
-      onClick={(event) => handleExternalLinkClick(event, href)}
-    >
-      {updateAvailable ? (
-        <>
-          <span className="settings-meta-chip-label">{t("appSettings.currentVersion")}</span>
-          <span className="settings-meta-chip-value">{currentValue}</span>
-          <span aria-hidden="true" className="settings-meta-chip-divider" />
-          <span className="settings-meta-chip-label">{t("appSettings.latestRelease")}</span>
-          <span className="settings-meta-chip-value is-latest">{latestValue}</span>
-          <span className="settings-meta-chip-badge">{t("appSettings.upgradeAvailable")}</span>
-        </>
-      ) : (
-        <>
-          <span className="settings-meta-chip-label">{t("appSettings.version")}</span>
-          <span className="settings-meta-chip-value">{currentValue}</span>
-        </>
-      )}
-      <span aria-hidden="true">↗</span>
-    </a>
-  );
 }
 
 /**
@@ -173,9 +107,9 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
   const currentVersion = appRelease?.currentVersion ?? APP_VERSION;
   const currentVersionText = `v${currentVersion === APP_VERSION ? APP_VERSION_DISPLAY : currentVersion}`;
   const releaseUrl = appRelease?.releaseUrl ?? null;
-  const versionAriaLabel = updateAvailable
-    ? `${t("appSettings.currentVersion")}: ${currentVersionText}. ${t("appSettings.latestRelease")}: ${latestReleaseText}. ${statusText}`
-    : `${t("appSettings.version")}: ${currentVersionText}. ${statusText}`;
+  const releaseHref = releaseUrl ?? APP_RELEASES_URL;
+  const hasLatest = !loading && !loadError && Boolean(appRelease?.latestVersion)
+    && appRelease?.releaseStatus !== "unknown" && appRelease?.releaseStatus !== "unpublished";
 
   const handleUpgrade = async () => {
     if (!canUpgrade) return;
@@ -194,32 +128,41 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
 
   return (
     <section className="settings-general-section settings-updates">
-      <div className="settings-updates-head">
-        <div className="settings-updates-heading">
-          <h3 className="settings-general-heading">{t("appSettings.updatesSection")}</h3>
-          <p className="settings-general-description" role="status">{desktop ? statusText : t("appSettings.serverManaged")}</p>
+      <h3 className="settings-general-heading">{t("appSettings.updatesSection")}</h3>
+      <div className="settings-update-card">
+        <dl className="settings-update-versions">
+          <div className="settings-update-row">
+            <dt>{t("appSettings.currentVersion")}</dt>
+            <dd>{currentVersionText}</dd>
+          </div>
+          <div className="settings-update-row">
+            <dt>{t("appSettings.latestRelease")}</dt>
+            <dd className={updateAvailable ? "is-latest" : undefined}>
+              {!hasLatest ? (
+                latestReleaseText
+              ) : (
+                <a
+                  href={releaseHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={t("appSettings.openRelease")}
+                  onClick={(event) => handleExternalLinkClick(event, releaseHref)}
+                >
+                  {latestReleaseText} <span aria-hidden="true">↗</span>
+                </a>
+              )}
+              {updateAvailable && <span className="settings-update-badge">{t("appSettings.upgradeAvailable")}</span>}
+            </dd>
+          </div>
+        </dl>
+        <div className="settings-update-side">
+          <span className="settings-update-status" role="status">{desktop ? statusText : t("appSettings.serverManaged")}</span>
+          {desktop && (updateAvailable || upgradeProgress) && (
+            <ConfigButton variant="primary" disabled={!canUpgrade} onClick={() => void handleUpgrade()}>
+              {upgradeLabel}
+            </ConfigButton>
+          )}
         </div>
-        {desktop && (updateAvailable || upgradeProgress) && (
-          <ConfigButton variant="primary" disabled={!canUpgrade} onClick={() => void handleUpgrade()}>
-            {upgradeLabel}
-          </ConfigButton>
-        )}
-      </div>
-      <div className="settings-meta-chips">
-        <VersionChip
-          currentValue={currentVersionText}
-          latestValue={latestReleaseText}
-          updateAvailable={updateAvailable}
-          href={releaseUrl ?? APP_RELEASES_URL}
-          title={statusText}
-          ariaLabel={versionAriaLabel}
-        />
-        <MetaChip
-          label={t("appSettings.repository")}
-          value={APP_REPOSITORY}
-          href={APP_REPOSITORY_URL}
-          title={t("appSettings.openRepository")}
-        />
       </div>
       {updateAvailable && (
         <p className="settings-general-description settings-updates-note">

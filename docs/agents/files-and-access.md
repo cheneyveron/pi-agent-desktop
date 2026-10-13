@@ -26,3 +26,9 @@ The sidebar and composer open the server directory browser in Web mode. Its star
 Browser image attachments read browser `File` bytes; server-rendered Markdown images use the files API with their source session, preserving the existing exact-reference authorization. Downloads check the response before saving it to the client device and report failures in the viewer. Native filesystem APIs keep their desktop-token and loopback checks; a browser never submits its local save path to them. File-manager actions remain unavailable for remote hosts.
 
 Web clients share the server connection indicator, and retry by reloading the page (including expired Access login). Only a desktop shell may restart its local application or install a desktop update. Web server updates are performed through deployment; the settings page labels them as administrator-managed.
+
+## Desktop file actions
+
+Local desktop previews expose Open with default app and the platform's Reveal action for text and media files; remote/browser views hide these actions. Native failures appear in the preview instead of becoming unhandled promises.
+
+The file tree and preview download buttons both use `downloadUrlAsFile()`. It reads the same authorized files URL as the preview (including `sessionId` for transcript references outside project roots), then writes those bytes through the token-protected `/api/desktop/save` after the native save dialog. There is no separate source-path copy authorization path. Canceling the dialog writes nothing; browsers continue to download to the client device.

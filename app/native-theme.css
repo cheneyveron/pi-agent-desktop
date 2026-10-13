@@ -606,93 +606,84 @@
   color: var(--text);
 }
 
-.settings-updates-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.settings-updates-heading {
-  min-width: 0;
-}
-
-.settings-updates-head .config-button {
-  flex-shrink: 0;
-}
-
-.settings-updates .settings-general-description {
-  margin-bottom: 0;
-}
-
-.settings-meta-chips {
+/* Version card: current and latest release side by side with the update
+   action, replacing the old version / repository link chips. */
+.settings-update-card {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--bg-panel);
 }
 
-.settings-meta-chip {
+.settings-update-versions {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.settings-update-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: var(--fs-small);
+}
+
+.settings-update-row dt {
+  min-width: 5.5em;
+  color: var(--text-dim);
+}
+
+.settings-update-row dd {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 6px 9px;
-  border: var(--hairline) solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-  color: var(--text-muted);
+  gap: 8px;
+  margin: 0;
+  color: var(--text);
   font-family: var(--font-mono);
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  line-height: 1.35;
+  font-weight: 600;
+}
+
+.settings-update-row dd.is-latest {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.settings-update-row dd a {
+  color: inherit;
   text-decoration: none;
 }
 
-.settings-meta-chip:hover {
-  border-color: var(--accent);
-  color: var(--text);
+.settings-update-row dd a:hover {
+  text-decoration: underline;
 }
 
-.settings-meta-chip.is-highlight {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.settings-meta-chip-label {
-  opacity: 0.72;
-  font-weight: 500;
-}
-
-.settings-meta-chip-value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.settings-meta-chip-value.is-latest {
-  font-weight: 800;
-}
-
-.settings-meta-chip-divider {
-  width: 1px;
-  height: 13px;
-  background: currentColor;
-  opacity: 0.2;
-}
-
-.settings-meta-chip-badge {
-  padding: 1px 5px;
+.settings-update-badge {
+  padding: 1px 6px;
   border-radius: 999px;
   background: var(--accent);
   color: var(--bg-panel);
+  font-family: var(--font-sans, inherit);
   font-size: var(--fs-micro);
   font-weight: 800;
   white-space: nowrap;
+}
+
+.settings-update-side {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  text-align: right;
 }
 
 .settings-updates-note {
@@ -706,15 +697,42 @@
   font-weight: 650;
 }
 
-/* Title + hint rows with a trailing control (custom stylesheet, desktop
-   behaviour), matching the .settings-shell-option row used above them. */
-.settings-option-list {
+/* Every General group reads the same way: a heading over one rounded panel
+   whose rows are split by hairlines (theme, chat, language, desktop), instead
+   of a mix of loose rows, per-row cards and 420px-capped blocks. */
+.settings-option-list,
+.settings-chat-options,
+.settings-language-options,
+.settings-theme-options {
+  width: 100%;
+  max-width: none;
+  background: var(--bg-panel);
+  border-radius: 8px;
+}
+
+.settings-option-list,
+.settings-chat-options {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  max-width: 420px;
-  margin-top: 12px;
+  gap: 0;
+  margin-top: 0;
+  padding: 0;
+}
+
+.settings-option,
+.settings-chat-option {
+  padding: 10px 14px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.settings-option + .settings-option,
+.settings-chat-option + .settings-chat-option {
+  border-top: var(--hairline) solid var(--border);
+}
+
+.settings-theme-options + .settings-option-list {
+  margin-top: 8px;
 }
 
 .settings-option {
@@ -723,11 +741,39 @@
   justify-content: space-between;
   gap: 16px;
   width: 100%;
-  padding: 9px 10px;
-  border-radius: 5px;
-  background: var(--bg-panel);
   color: var(--text);
   font-size: var(--fs-small);
+}
+
+.settings-language-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+}
+
+.settings-language-option {
+  justify-content: center;
+  height: 40px;
+}
+
+.settings-language-radio,
+.settings-language-code {
+  display: none;
+}
+
+.settings-language-label {
+  flex: 0 1 auto;
+  text-align: center;
+}
+
+.settings-language-option[aria-checked="true"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-shell-option {
+  max-width: none;
 }
 
 .settings-option-text {
@@ -1691,9 +1737,12 @@ pre, code {
 
 /* On macOS (titleBarStyle: Overlay) the traffic lights float over the
    sidebar's top-left; the right-aligned controls row shares that strip, so
-   only a small extra inset is needed to keep the rows below clear. */
+   only a small extra inset is needed to keep the rows below clear. The
+   controls row is 28px tall, so a 10px top inset puts its centre at 24px:
+   the same line as the 48px top bar's centre and the traffic lights
+   (MAC_TRAFFIC_LIGHT_Y in src-tauri/src/lib.rs). */
 .session-sidebar-header--mac-inset {
-  padding-top: 12px !important;
+  padding-top: 10px !important;
 }
 
 /* Window-chrome controls row at the sidebar's top-right (theme + collapse). */
@@ -3634,6 +3683,17 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 
 .chat-window {
+  background: var(--bg);
+}
+
+/* The composer floats over the scrolling transcript (ChatWindow's
+   composerOverlayRef), so the rows around its rounded card show the text
+   beneath them on purpose. The extension status shelf is different: it is a
+   bordered status strip at the very bottom of the window, and upstream leaves
+   it transparent, so a scrolled transcript read straight through it and
+   printed chat lines beside the status text (#107). Give it the page
+   background so the bottom edge is a clean band. */
+.extension-status-shelf {
   background: var(--bg);
 }
 

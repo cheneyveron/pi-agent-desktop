@@ -234,6 +234,19 @@ test("desktop staging ships node-pty native prebuilds with executable helpers", 
   assert.match(prepareSource, /chmod\(join\(ptyDestination, "prebuilds", variant, "spawn-helper"\), 0o755\)/);
 });
 
+test("desktop staging ships the Amazon Bedrock SDK the file tracer cannot see", async () => {
+  const prepareSource = await readFile(new URL("./prepare-desktop.mjs", import.meta.url), "utf8");
+  // bedrock-converse-stream.lazy.js imports through a variable specifier on
+  // purpose, so Next never traces @aws-sdk/client-bedrock-runtime into the
+  // standalone server. Packaging must stage that closure itself.
+  assert.match(prepareSource, /bedrock-converse-stream\.js/);
+  assert.match(prepareSource, /stageResolvedClosure\(/);
+  assert.match(prepareSource, /@aws-sdk\/client-bedrock-runtime/);
+  assert.match(prepareSource, /@smithy\/node-http-handler/);
+  assert.match(prepareSource, /http-proxy-agent/);
+  assert.match(prepareSource, /https-proxy-agent/);
+});
+
 test("the Tauri crates stay on the npm packages' major/minor", async () => {
   // `tauri build` aborts six minutes into every platform of a signed release
   // with "Found version mismatched Tauri packages" when a `tauri-plugin-*`

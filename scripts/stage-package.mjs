@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { access, cp, readdir, readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 /** Package directories directly under a node_modules dir, resolving @scope/name. */
 export async function listPackageDirs(nodeModulesDir) {
@@ -199,4 +199,113 @@ export async function stageCompletePackage({ name, sources, stagedNodeModulesDir
     await cp(source, destination, { recursive: true, force: true });
   }
   return destinations;
+}
+
+/** Bare package names imported by a built file. Relative and node: imports are ignored. */
+export async function externalPackageSpecifiers(file, required = []) {
+  const source = await readFile(file, "utf8");
+  const specifiers = new Set();
+  const patterns = [
+    /\bfrom\s*["']([^"']+)["']/g,
+    /\bimport\s+["']([^"']+)["']/g,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const specifier = match[1];
+      if (specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("node:")) continue;
+      specifiers.add(specifier);
+    }
+  }
+  for (const name of required) {
+    if (!specifiers.has(name)) {
+      throw new Error(`${file} does not import ${name}; desktop staging for this entry is out of date.`);
+    }
+  }
+  return [...specifiers];
+}
+
+/**
+ * Copy the Node-resolution closure of `specifiers` into the staged tree.
+ *
+ * Next's file tracer cannot see imports reached through a variable specifier.
+ * pi-ai loads Amazon Bedrock that way, so the standalone server is missing
+ * `@aws-sdk/client-bedrock-runtime` and a packaged amazon-bedrock session
+ * fails at the first stream. Resolution starts at `importer` and stops at
+ * `sourceRoot`, then each package is copied to the same path relative to
+ * node_modules. Nested copies stay nested: https-proxy-agent 9.1.0 lives
+ * under pi-ai because the hoisted copy is 7.0.6, and replacing it would
+ * break every other caller.
+ *
+ * A package's own node_modules is not copied wholesale. Declared dependencies
+ * are visited individually, so an undeclared nested leftover does not ride
+ * along, and optional dependencies that are not installed are skipped.
+ *
+ * @param {{ importer: string, specifiers: string[], sourceRoot: string, stagedNodeModulesDir: string }} options
+ * @returns {Promise<string[]>} destination directories written
+ */
+export async function stageResolvedClosure({ importer, specifiers, sourceRoot, stagedNodeModulesDir }) {
+  const sourceNodeModules = join(sourceRoot, "node_modules");
+  /** @type {{ from: string, name: string, required: boolean }[]} */
+  const pending = specifiers.map((name) => ({ from: importer, name, required: true }));
+  const seen = new Set();
+  const written = [];
+
+  while (pending.length > 0) {
+    const { from, name, required } = pending.shift();
+    const resolved = await resolveInstalledPackage(from, name, sourceRoot);
+    if (!resolved) {
+      if (required) {
+        throw new Error(
+          `${name} (required by ${from}) was not found under ${sourceRoot}; the packaged server would be broken.`,
+        );
+      }
+      continue;
+    }
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+
+    const rel = relative(sourceNodeModules, resolved);
+    if (rel.startsWith("..") || rel === "") {
+      throw new Error(`${name} resolved outside ${sourceNodeModules} (${resolved}).`);
+    }
+    const destination = join(stagedNodeModulesDir, rel);
+    await cp(resolved, destination, {
+      recursive: true,
+      force: true,
+      filter: (src) => !relative(resolved, src).split(/[\\/]/).includes("node_modules"),
+    });
+    written.push(destination);
+
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(join(resolved, "package.json"), "utf8"));
+    } catch (error) {
+      throw new Error(`${resolved} has no readable package.json.`, { cause: error });
+    }
+    const requiredDeps = Object.keys(manifest.dependencies ?? {});
+    const optionalDeps = Object.keys(manifest.optionalDependencies ?? {});
+    for (const dep of requiredDeps) {
+      pending.push({ from: join(resolved, "package.json"), name: dep, required: true });
+    }
+    for (const dep of optionalDeps) {
+      if (!requiredDeps.includes(dep)) {
+        pending.push({ from: join(resolved, "package.json"), name: dep, required: false });
+      }
+    }
+  }
+  return written;
+}
+
+async function resolveInstalledPackage(fromFile, name, sourceRoot) {
+  let dir = dirname(fromFile);
+  while (true) {
+    const candidate = join(dir, "node_modules", name);
+    if (await isDirectory(candidate)) return candidate;
+    if (dir === sourceRoot) return null;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }

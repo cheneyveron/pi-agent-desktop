@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { dedupeNestedPackages, findNestedPiScopePackages, findStagedCopies, stageCompletePackage } from "./stage-package.mjs";
+import { dedupeNestedPackages, externalPackageSpecifiers, findNestedPiScopePackages, findStagedCopies, stageCompletePackage, stageResolvedClosure } from "./stage-package.mjs";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "stage-package-"));
@@ -182,5 +182,127 @@ test("findNestedPiScopePackages ignores nested non-pi dependencies", async () =>
     assert.deepEqual(await findNestedPiScopePackages(f.staged), []);
   } finally {
     await f.cleanup();
+  }
+});
+
+async function writePackage(dir, manifest, files = {}) {
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "package.json"), JSON.stringify(manifest));
+  for (const [name, contents] of Object.entries(files)) {
+    await mkdir(dirname(join(dir, name)), { recursive: true });
+    await writeFile(join(dir, name), contents);
+  }
+}
+
+test("externalPackageSpecifiers keeps bare imports and requires the bedrock packages", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stage-specifiers-"));
+  try {
+    const file = join(root, "bedrock-converse-stream.js");
+    await writeFile(file, [
+      'import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";',
+      'import { NodeHttpHandler } from "@smithy/node-http-handler";',
+      'import { HttpProxyAgent } from "http-proxy-agent";',
+      'import { HttpsProxyAgent } from "https-proxy-agent";',
+      'import { calculateCost } from "../models.js";',
+      'import "node:fs";',
+      'const dynamic = await import("./local.js");',
+    ].join("\n"));
+    assert.deepEqual(await externalPackageSpecifiers(file, [
+      "@aws-sdk/client-bedrock-runtime",
+      "@smithy/node-http-handler",
+      "http-proxy-agent",
+      "https-proxy-agent",
+    ]), [
+      "@aws-sdk/client-bedrock-runtime",
+      "@smithy/node-http-handler",
+      "http-proxy-agent",
+      "https-proxy-agent",
+    ]);
+    await assert.rejects(
+      externalPackageSpecifiers(file, ["missing-pkg"]),
+      /does not import missing-pkg/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stageResolvedClosure copies the bedrock closure without clobbering hoisted copies", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stage-bedrock-"));
+  try {
+    const importer = join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "api", "bedrock-converse-stream.js");
+    await mkdir(dirname(importer), { recursive: true });
+    await writeFile(importer, "");
+    await writePackage(
+      join(root, "node_modules", "@aws-sdk", "client-bedrock-runtime"),
+      { name: "@aws-sdk/client-bedrock-runtime", version: "3.1127.0", dependencies: { "@smithy/core": "1.0.0" } },
+      { "dist/index.js": "sdk", "node_modules/leftover/junk.js": "no" },
+    );
+    await writePackage(
+      join(root, "node_modules", "@smithy", "core"),
+      { name: "@smithy/core", version: "1.0.0" },
+      { "dist/index.js": "smithy" },
+    );
+    await writePackage(
+      join(root, "node_modules", "https-proxy-agent"),
+      { name: "https-proxy-agent", version: "7.0.6" },
+      { "dist/index.js": "v7" },
+    );
+    await writePackage(
+      join(root, "node_modules", "agent-base"),
+      { name: "agent-base", version: "7.1.4" },
+      { "dist/index.js": "agent7" },
+    );
+    await writePackage(
+      join(root, "node_modules", "@earendil-works", "pi-ai", "node_modules", "https-proxy-agent"),
+      {
+        name: "https-proxy-agent",
+        version: "9.1.0",
+        dependencies: { "agent-base": "9.0.0" },
+        optionalDependencies: { "missing-optional": "1.0.0" },
+      },
+      { "dist/index.js": "v9" },
+    );
+    await writePackage(
+      join(root, "node_modules", "@earendil-works", "pi-ai", "node_modules", "agent-base"),
+      { name: "agent-base", version: "9.0.0" },
+      { "dist/index.js": "agent9" },
+    );
+
+    const staged = join(root, "staged", "node_modules");
+    await mkdir(staged, { recursive: true });
+    const written = await stageResolvedClosure({
+      importer,
+      specifiers: ["@aws-sdk/client-bedrock-runtime", "https-proxy-agent"],
+      sourceRoot: root,
+      stagedNodeModulesDir: staged,
+    });
+
+    assert.equal(await readFile(join(staged, "@aws-sdk", "client-bedrock-runtime", "dist", "index.js"), "utf8"), "sdk");
+    assert.equal(existsSync(join(staged, "@aws-sdk", "client-bedrock-runtime", "node_modules", "leftover")), false);
+    assert.equal(await readFile(join(staged, "@smithy", "core", "dist", "index.js"), "utf8"), "smithy");
+    assert.equal(
+      await readFile(join(staged, "@earendil-works", "pi-ai", "node_modules", "https-proxy-agent", "dist", "index.js"), "utf8"),
+      "v9",
+    );
+    assert.equal(
+      await readFile(join(staged, "@earendil-works", "pi-ai", "node_modules", "agent-base", "dist", "index.js"), "utf8"),
+      "agent9",
+    );
+    assert.equal(existsSync(join(staged, "https-proxy-agent")), false);
+    assert.equal(existsSync(join(staged, "agent-base")), false);
+    assert.equal(written.length, 4);
+
+    await assert.rejects(
+      stageResolvedClosure({
+        importer,
+        specifiers: ["not-installed"],
+        sourceRoot: root,
+        stagedNodeModulesDir: staged,
+      }),
+      /not-installed/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

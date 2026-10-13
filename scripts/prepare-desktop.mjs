@@ -1,4 +1,4 @@
-import { access, chmod, copyFile, cp, mkdir, readdir, rm } from "node:fs/promises";
+import { access, chmod, copyFile, cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -6,7 +6,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { desktopTargetTriple } from "./desktop-platform.mjs";
 import { piPackageDirNames } from "./pi-packages.mjs";
-import { dedupeNestedPackages, findNestedPiScopePackages, stageCompletePackage } from "./stage-package.mjs";
+import { dedupeNestedPackages, externalPackageSpecifiers, findNestedPiScopePackages, stageCompletePackage, stageResolvedClosure } from "./stage-package.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const desktopBuildDir = join(rootDir, ".next-desktop");
@@ -128,6 +128,35 @@ async function assembleServer() {
   await stageCompletePackage({
     name: "quickjs-wasi",
     sources: [join(piCodingAgentModules, "quickjs-wasi"), join(rootDir, "node_modules", "quickjs-wasi")],
+    stagedNodeModulesDir,
+  });
+
+  // pi-ai loads Amazon Bedrock through a variable specifier
+  // (`import(runtimeSpecifier)` in bedrock-converse-stream.lazy.js) so bundlers
+  // cannot follow it into the Node-only AWS SDK. Next's file tracer is one of
+  // those bundlers: the standalone server gets pi-ai's dist, but not
+  // @aws-sdk/client-bedrock-runtime, and a packaged session on amazon-bedrock
+  // dies with ERR_MODULE_NOT_FOUND at the first stream. Copy the closure Node
+  // actually resolves from that entry. Nested copies have to stay nested —
+  // pi-ai's https-proxy-agent is 9.1.0 because the hoisted one is 7.0.6.
+  const bedrockEntry = join(
+    rootDir,
+    "node_modules",
+    "@earendil-works",
+    "pi-ai",
+    "dist",
+    "api",
+    "bedrock-converse-stream.js",
+  );
+  await stageResolvedClosure({
+    importer: bedrockEntry,
+    specifiers: await externalPackageSpecifiers(bedrockEntry, [
+      "@aws-sdk/client-bedrock-runtime",
+      "@smithy/node-http-handler",
+      "http-proxy-agent",
+      "https-proxy-agent",
+    ]),
+    sourceRoot: rootDir,
     stagedNodeModulesDir,
   });
 

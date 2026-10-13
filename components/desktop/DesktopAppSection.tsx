@@ -1,13 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "@/lib/app-prefs";
-import { quitAppNative, setCloseQuitsNative } from "@/lib/desktop-native";
+import {
+  clearAppCacheNative,
+  isAutostartEnabledNative,
+  openLogDirNative,
+  quitAppNative,
+  setAutostartNative,
+  setCloseQuitsNative,
+} from "@/lib/desktop-native";
 import { useI18n } from "@/hooks/useI18n";
 import { ConfigButton, ConfigSwitch } from "@/components/SettingsUi";
 
 import { useDesktopChrome } from "./useDesktopChrome";
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 /**
  * Window, tray and notification behaviour for the packaged desktop app.
@@ -26,7 +39,45 @@ export function DesktopAppSection() {
     () => getPrefBool(APP_PREF_KEYS.notifyOnComplete, true),
   );
 
+  // The OS entry is the source of truth, so this is read back, not persisted.
+  // null = not read yet (switch disabled so a click cannot race the read).
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [autostartError, setAutostartError] = useState(false);
+
+  const [cacheState, setCacheState] = useState<
+    { status: "idle" | "busy" | "error" } | { status: "done"; freed: number }
+  >({ status: "idle" });
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let cancelled = false;
+    isAutostartEnabledNative()
+      .then((enabled) => { if (!cancelled) setAutostart(enabled); })
+      .catch(() => { if (!cancelled) setAutostartError(true); });
+    return () => { cancelled = true; };
+  }, [isDesktop]);
+
   if (!isDesktop) return null;
+
+  const toggleAutostart = async (next: boolean) => {
+    setAutostartError(false);
+    setAutostart(next);
+    try {
+      await setAutostartNative(next);
+    } catch {
+      setAutostart(!next);
+      setAutostartError(true);
+    }
+  };
+
+  const clearCache = async () => {
+    setCacheState({ status: "busy" });
+    try {
+      setCacheState({ status: "done", freed: await clearAppCacheNative() });
+    } catch {
+      setCacheState({ status: "error" });
+    }
+  };
 
   return (
     <section className="settings-general-section">
@@ -50,6 +101,20 @@ export function DesktopAppSection() {
         </div>
         <div className="settings-option">
           <span className="settings-option-text">
+            <span className="settings-option-title">{t("appSettings.autostart")}</span>
+            <span className="settings-option-hint" role="status">
+              {autostartError ? t("appSettings.autostartError") : t("appSettings.autostartHint")}
+            </span>
+          </span>
+          <ConfigSwitch
+            checked={autostart === true}
+            disabled={autostart === null}
+            label={t("appSettings.autostart")}
+            onChange={(next) => void toggleAutostart(next)}
+          />
+        </div>
+        <div className="settings-option">
+          <span className="settings-option-text">
             <span className="settings-option-title">{t("appSettings.notifyOnComplete")}</span>
             <span className="settings-option-hint">{t("appSettings.notifyOnCompleteHint")}</span>
           </span>
@@ -62,7 +127,25 @@ export function DesktopAppSection() {
             }}
           />
         </div>
+        <div className="settings-option">
+          <span className="settings-option-text">
+            <span className="settings-option-title">{t("appSettings.clearCache")}</span>
+            <span className="settings-option-hint" role="status">
+              {cacheState.status === "done"
+                ? t("appSettings.clearCacheDone", { size: formatBytes(cacheState.freed) })
+                : cacheState.status === "error"
+                  ? t("appSettings.clearCacheError")
+                  : t("appSettings.clearCacheHint")}
+            </span>
+          </span>
+          <ConfigButton disabled={cacheState.status === "busy"} onClick={() => void clearCache()}>
+            {cacheState.status === "busy" ? t("appSettings.clearCacheBusy") : t("appSettings.clearCache")}
+          </ConfigButton>
+        </div>
       </div>
+      <ConfigButton className="settings-option-action" onClick={() => void openLogDirNative()}>
+        {t("appSettings.openLogs")}
+      </ConfigButton>
       <ConfigButton className="settings-option-action" onClick={() => void quitAppNative()}>
         {t("appSettings.quitApp")}
       </ConfigButton>

@@ -45,10 +45,10 @@
       "disposition": "accepted"
     },
     "components/FileExplorer.tsx": {
-      "risk": "low",
-      "drift": 41,
-      "reason": "Took upstream FileExplorer wholesale in the v0.8.11 merge (its file-search implementation won); only the selectedFilePath prop remains fork-side. Kept deliberately.",
-      "structuralDrift": 19,
+      "risk": "medium",
+      "drift": 67,
+      "reason": "Preserve selectedFilePath highlighting and native save-dialog downloads with visible failures; do not restore browser-only download anchors in desktop mode.",
+      "structuralDrift": 45,
       "disposition": "accepted"
     },
     "components/TabBar.tsx": {

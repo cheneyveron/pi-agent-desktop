@@ -103,21 +103,23 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.6.3
+            ## Pi Agent Desktop 0.6.4
 
-            - Fixed the duplicate, top-aligned Restricted mode button; the toolbar now shows one centered warning.
-            - Restored window dragging from nested title and sidebar-header content on macOS, while keeping toolbar buttons clickable.
+            - Local file previews can open files in the default application or reveal them in Finder, Explorer or the file manager, with visible error messages.
+            - File-tree and preview downloads use the native save dialog. Files referenced by a chat outside the project directory retain the same authorization when saved; remote/browser downloads stay on the client device.
+            - Synced upstream through dcc573e: window geometry and launch-at-login support, macOS title-bar alignment, cache/log controls, settings refinements, translation and image fixes, Bedrock/DOCX packaging and KaTeX updates.
 
-            Bundled components: pi 1.1.0, pi-web 0.10.0.
+            Retains named themes, remote backends, scheduled tasks, in-app menus and the 0.6.3 toolbar fixes. Bundled components: pi 1.1.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.6.3
+            ## Pi Agent Desktop 0.6.4
 
-            - 修复 Restricted mode 提示重复并贴在顶部的问题，工具栏只保留一处居中提示。
-            - 修复 macOS 上拖动标题文字、侧边栏顶部内容无法移动窗口的问题，保留工具栏按钮的正常点击行为。
+            - 本地文件预览支持使用默认应用打开，以及在 Finder、资源管理器或文件管理器中定位，失败时显示错误。
+            - 文件树和预览下载统一使用本机保存对话框；聊天中引用的项目目录外文件沿用预览权限保存，远端和浏览器下载仍保存到客户端。
+            - 同步上游至 dcc573e：窗口位置记忆、开机启动、macOS 标题栏对齐、缓存和日志操作、设置优化、翻译和图片修复，以及 Bedrock/DOCX 打包和 KaTeX 更新。
 
-            内置组件版本：pi 1.1.0、pi-web 0.10.0。
+            保留命名主题、远端后端、定时任务、应用内菜单及 0.6.3 工具栏修复。内置组件：pi 1.1.0、pi-web 0.10.0。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
