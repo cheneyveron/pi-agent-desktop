@@ -12,7 +12,8 @@
 
 合并上游改动后，默认也要更新并发布桌面安装包（包括 macOS build），除非用户明确要求只合并代码。使用 `npm run desktop:release`（`scripts/publish-desktop.mjs`）完成发布，不要手工重复调用 GitHub API 或逐个平台轮询。详细流程见 [desktop-updates.md](docs/desktop-updates.md)。
 
-- 发布前完成相关检查，准备版本号和 `.github/workflows/release.yml` 中的发布说明。版本工具为 `node scripts/bump-pi-agent-desktop-version.mjs`；随后运行 `npm run release:manifest` 同步组件清单。
+- 每次发布前（包括仅修复本地问题的补丁发布），必须先运行 `git fetch upstream --prune`，检查并 merge `upstream/main` 的最新改动；没有新提交时确认已同步。有新提交时遵循本文的上游合并规则，保留 fork 的功能与界面决策，解决冲突并完成回归验证后才能发布，不得跳过上游同步直接打包。
+- 上游同步完成后，完成相关检查，准备版本号和 `.github/workflows/release.yml` 中的发布说明。版本工具为 `node scripts/bump-pi-agent-desktop-version.mjs`；随后运行 `npm run release:manifest` 同步组件清单。
 - 将发布改动提交并推送到 `origin/main`，确认工作区干净，再运行 `npm run desktop:release`。Hermes 上脚本自动读取上述凭据并核实账户，无需手工导出 token。
 - 默认命令自动启动或续接构建、等待三平台成功并核验正式 Release 的安装包、签名、组件清单、更新地址及来源提交；仅在状态变化时输出。已发布的版本只核验，不会重复发布；新发布需先准备新版本号。
 - `--no-wait` 仅用于明确要求只启动、不等待的情况；只启动构建不能报告为发布完成。`npm run desktop:release -- --verify-only` 可单独核验当前版本。
