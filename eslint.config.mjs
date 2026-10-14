@@ -11,6 +11,8 @@ const eslintConfig = [
       "src-tauri/target/**",
       // demo/ is a separate Next.js project with its own lint config.
       "demo/**",
+      // Generated, minified library bundles (scripts/build-preview-runtime.mjs).
+      "public/preview-runtime/**",
     ],
   },
   ...coreWebVitals,

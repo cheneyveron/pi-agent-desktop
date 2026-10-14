@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type CSSProperties } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import { DismissButton } from "./DismissButton";
 import {
@@ -1234,7 +1234,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       {(changesCollapsed || gitFiles.length === 0) && (!fileSearchOpen || !hasSearchQuery) && (
         <div style={{ padding: "2px 4px" }}>
           {loading ? (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>Loading files...</div>
+            <div className="file-tree-loading" role="status" aria-label={t("files.loading")}>
+              {[0, 1, 2, 3, 4, 5].map((item) => (
+                <span key={item} style={{ "--skeleton-width": `${64 + ((item * 17) % 30)}%` } as CSSProperties} />
+              ))}
+            </div>
           ) : error ? (
             <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>{error}</div>
           ) : (

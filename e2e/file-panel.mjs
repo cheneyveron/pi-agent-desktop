@@ -30,6 +30,9 @@ export async function checkFilePanel(page, filePath) {
   const hidePanelInStrip = page.locator('#file-panel [aria-label="Hide file panel"]');
   await showPanel.click();
   await panel.waitFor({ state: "visible" });
+  // The panel opens as a preview surface; the file list starts hidden.
+  const showFileList = panel.locator('.file-tree-toggle[aria-label="Show file list"]');
+  if (await showFileList.isVisible()) await showFileList.click();
   await panel.locator(`[role="button"][title="${filePath}"]`).click();
   const iframe = panel.locator("iframe");
   await iframe.waitFor();

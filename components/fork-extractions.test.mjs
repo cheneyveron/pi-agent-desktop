@@ -179,6 +179,44 @@ const FORK_FEATURES = [
     // Dropping this import silently reverts the entire restyle to upstream.
     markers: ["./native-theme.css", "PRODUCT_NAME"],
   },
+  {
+    name: "artifacts: assistant markdown renders previews and artifact cards",
+    file: "components/MarkdownBody.tsx",
+    // Inline ```html/```svg/```jsx previews and `:::artifact` cards. All the logic
+    // lives in lib/html-preview.ts, lib/artifacts.ts and the Artifact*/HtmlPreview*
+    // components; these are the hooks into the renderer a merge could drop.
+    markers: ["ARTIFACT_FENCE_LANG", "encodeArtifactsForMarkdown", "htmlPreviewKind", "<HtmlPreviewBlock"],
+  },
+  {
+    name: "artifacts: only assistant text opts into artifact rendering",
+    file: "components/MessageView.tsx",
+    markers: ["onOpenFile={onOpenFile} artifacts>{block.text}"],
+  },
+  {
+    name: "artifacts: ChatWindow publishes the session's artifacts",
+    file: "components/ChatWindow.tsx",
+    markers: ["useArtifactPublisher("],
+  },
+  {
+    name: "artifacts: the right panel hosts artifact tabs",
+    file: "components/AppShell.tsx",
+    markers: ["setArtifactOpener(", "<ArtifactPanel", "artifactPanelTab", "artifactTabs.some((tab) => tab.id === tabId)"],
+  },
+  {
+    name: "artifacts: tab bar knows the artifact tab kind",
+    file: "components/TabBar.tsx",
+    markers: ['kind?: "terminal" | "artifact"', 'tab.kind === "artifact"'],
+  },
+  {
+    name: "artifacts: normal sessions get the prompt section",
+    file: "lib/rpc-manager.ts",
+    markers: ["createArtifactGuideExtension()"],
+  },
+  {
+    name: "artifacts: General settings has the artifacts switch",
+    file: "components/SettingsPanel.tsx",
+    markers: ["<ArtifactsSettingRow />"],
+  },
 ];
 
 for (const extraction of EXTRACTIONS) {

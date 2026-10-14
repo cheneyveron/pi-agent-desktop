@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 import type { FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
@@ -8,7 +9,7 @@ export interface Tab {
   id: string;
   label: string;
   filePath: string;
-  kind?: "terminal";
+  kind?: "terminal" | "artifact";
   closing?: boolean;
   sourceSessionId?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
@@ -28,9 +29,56 @@ interface Props {
 
 export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTerminal }: Props) {
   const { t } = useI18n();
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // Flag which edges have tabs scrolled past them; the CSS turns each flag
+  // into a fade, so a tab sliding under the chips beside the bar dissolves
+  // instead of being cut off at a hard edge.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const update = () => {
+      const max = bar.scrollWidth - bar.clientWidth;
+      bar.toggleAttribute("data-overflow-start", bar.scrollLeft > 1);
+      bar.toggleAttribute("data-overflow-end", bar.scrollLeft < max - 1);
+    };
+    update();
+    bar.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(bar);
+    for (const child of Array.from(bar.children)) observer.observe(child);
+    return () => {
+      bar.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, [tabs]);
+
+  // The scrollbar is hidden, so a newly opened or activated tab would otherwise
+  // stay out of sight past the edge.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || !activeTabId) return;
+    const tab = Array.from(bar.querySelectorAll<HTMLElement>("[data-tab-id]"))
+      .find((element) => element.dataset.tabId === activeTabId);
+    tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeTabId, tabs.length]);
+
+  // A plain mouse wheel only scrolls vertically; map it onto the row.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      if (bar.scrollWidth <= bar.clientWidth) return;
+      event.preventDefault();
+      bar.scrollBy({ left: event.deltaY, behavior: "instant" });
+    };
+    bar.addEventListener("wheel", onWheel, { passive: false });
+    return () => bar.removeEventListener("wheel", onWheel);
+  }, []);
 
   return (
-    <div className="file-tab-bar" role="tablist" aria-label="Open files">
+    <div ref={barRef} className="file-tab-bar" role="tablist" aria-label="Open files">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         return (
@@ -72,6 +120,10 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
               {tab.kind === "terminal" ? (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+                </svg>
+              ) : tab.kind === "artifact" ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3 3 8l9 5 9-5-9-5Z" /><path d="m3 13 9 5 9-5" />
                 </svg>
               ) : getFileIcon(tab.label, 13)}
             </span>

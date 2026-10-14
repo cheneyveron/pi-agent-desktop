@@ -11,7 +11,6 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { selectProjectDirectoryNative, validateProjectDirectory } from "./ProjectPicker";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
-import { ScheduledView } from "./scheduled/ScheduledView";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { clearDraft } from "@/lib/draft-store";
@@ -23,6 +22,9 @@ import { TabBar, type Tab } from "./TabBar";
 // syntax highlighting a second time and only matters once a file tab opens.
 const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer), { ssr: false });
 const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileExplorer), { ssr: false });
+// Only mounted once opened; xterm alone is a large share of the page bundle.
+const TerminalPanel = dynamic(() => import("./TerminalPanel").then((m) => m.TerminalPanel), { ssr: false });
+const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SETTINGS_SECTION_ITEMS, SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
@@ -52,8 +54,10 @@ import { WindowControls, useDesktopChrome, useWindowDrag } from "./desktop";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
-import { TerminalPanel } from "./TerminalPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
+import { artifactPanelTab, artifactTabId, artifactTabsForSession, upsertArtifactTab, type ArtifactTab } from "./artifact-tabs";
+import { ArtifactPanel } from "./ArtifactPanel";
+import { setArtifactOpener } from "@/lib/artifact-store";
 import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
 import { sendAgentCommand } from "@/lib/agent-client";
@@ -109,6 +113,10 @@ const AGENT_PANEL_WIDTH = 420;
 const FILE_TREE_MIN_WIDTH = 220;
 const FILE_TREE_MAX_WIDTH = 520;
 const FILE_TREE_PREVIEW_MIN_WIDTH = 240;
+// Below this panel width the tree steps aside while a file or terminal is
+// shown: the viewer's toolbar (path, mode switch, actions) needs ~320px, and a
+// 220px tree beside it left the preview clipped.
+const FILE_TREE_AUTO_COLLAPSE_WIDTH = FILE_TREE_MIN_WIDTH + 320;
 
 function parkedNewSessionDraftKey(cwd: string): string {
   return `parked-new:${cwd}`;
@@ -166,7 +174,24 @@ export function AppShell() {
   useEffect(() => { scheduledOpenRef.current = scheduledOpen; }, [scheduledOpen]);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
-  const [fileTreeOpen, setFileTreeOpen] = useState(true);
+  // The panel is a preview surface; keep the file index hidden until asked for.
+  const [fileTreeOpen, setFileTreeOpen] = useState(false);
+  // Measured width of the panel body; drives the narrow-panel auto-collapse.
+  const [panelBodyWidth, setPanelBodyWidth] = useState(0);
+  const panelBodyObserverRef = useRef<ResizeObserver | null>(null);
+  const panelBodyRef = useCallback((node: HTMLDivElement | null) => {
+    panelBodyObserverRef.current?.disconnect();
+    panelBodyObserverRef.current = null;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      setPanelBodyWidth(Math.round(entry.contentRect.width));
+    });
+    observer.observe(node);
+    panelBodyObserverRef.current = observer;
+  }, []);
+  // The user reopened the tree while the panel is narrow; cleared whenever the
+  // panel crosses the threshold, so widening and narrowing again re-collapses.
+  const [fileTreeNarrowOverride, setFileTreeNarrowOverride] = useState(false);
   const [fileExplorerQuery, setFileExplorerQuery] = useState("");
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
@@ -264,6 +289,7 @@ export function AppShell() {
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<ProjectTrustFailure | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => !initialNavigation.sidebarCollapsed);
+  const desktopSidebarOpenRef = useRef(!initialNavigation.sidebarCollapsed);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
@@ -275,6 +301,15 @@ export function AppShell() {
   // and only needs the top bar inset for them; other platforms get the buttons
   // from <WindowControls />, which renders nothing in a browser build.
   const desktopChrome = useDesktopChrome();
+  // The macOS traffic lights float over the window's top-left corner (Overlay
+  // title bar), so whichever 48px row sits there makes room for them. The
+  // sidebar header owns that corner while the sidebar is open; the top bar does
+  // when it is hidden (or on the drawer layout); a file panel that covers the
+  // window (full width, or the mobile layout) covers the top bar too, so its tab
+  // strip takes over — and becomes the window's drag handle, since the top bar
+  // it hides was the only other one.
+  const macLightsOverTopbar = desktopChrome.isMacOS && (!sidebarOpen || isMobile);
+  const macLightsOverPanel = desktopChrome.isMacOS && rightPanelOpen && (rightPanelFullWidth || isMobile);
   const windowDrag = useWindowDrag();
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
@@ -352,7 +387,8 @@ export function AppShell() {
     cssVariable: "--file-tree-width",
     defaultWidth: FILE_TREE_DEFAULT_WIDTH,
     getMaxWidth: getFileTreeMaxWidth,
-    growthDirection: "left",
+    // The tree sits at the panel's left edge (CSS order), so it grows rightward.
+    growthDirection: "right",
     maxWidth: FILE_TREE_MAX_WIDTH,
     minWidth: FILE_TREE_MIN_WIDTH,
     storageKey: "pi-file-tree-width",
@@ -365,7 +401,7 @@ export function AppShell() {
   // On mobile the sidebar is an overlay drawer; hide it by default so the chat
   // is visible on load. Runs once the breakpoint resolves after hydration.
   useEffect(() => {
-    if (isMobile) setSidebarOpen(false);
+    setSidebarOpen(isMobile ? false : desktopSidebarOpenRef.current);
   }, [isMobile]);
   // Close right panel when viewport is too narrow for split-panel layout.
   // Uses matchMedia's change event (not just the rightPanelOpen dependency)
@@ -375,7 +411,6 @@ export function AppShell() {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mql = window.matchMedia(`(max-width: ${SPLIT_PANEL_MIN_WIDTH - 1}px)`);
     const checkWidth = () => {
-      setWideSplitLayout(!mql.matches);
       if (mql.matches) setRightPanelOpen(false);
     };
     checkWidth();
@@ -460,8 +495,6 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  // Viewport is wide enough for the file panel to split the row (not overlay)
-  const [wideSplitLayout, setWideSplitLayout] = useState(false);
 
   useEffect(() => {
     if (!sessionHasBranches) {
@@ -536,7 +569,11 @@ export function AppShell() {
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
-    setSidebarOpen((open) => !open);
+    setSidebarOpen((open) => {
+      const next = !open;
+      if (!isMobile) desktopSidebarOpenRef.current = next;
+      return next;
+    });
   }, [isMobile]);
 
   const handleRightPanelToggle = useCallback(() => {
@@ -545,7 +582,23 @@ export function AppShell() {
       setActiveTopPanel(null);
     }
     setTopMoreOpen(false);
-    setRightPanelOpen((open) => !open);
+    setRightPanelOpen((open) => {
+      if (open) setRightPanelExpanded(false);
+      return !open;
+    });
+  }, [isMobile]);
+
+  // The panel is a preview layer; the composer remains the home base. The
+  // overlay and backslash shortcut both use this same exit.
+  // Also leaves full width, like the toggle: reopening into full width would
+  // cover the topbar toggle again. Mobile skips the focus so closing the
+  // panel does not pop the software keyboard.
+  const handleRightPanelClose = useCallback(() => {
+    if (isMobile) setActiveTopPanel(null);
+    setTopMoreOpen(false);
+    setRightPanelOpen(false);
+    setRightPanelExpanded(false);
+    if (!isMobile) chatInputRef.current?.focus();
   }, [isMobile]);
 
   const handleRightPanelExpandToggle = useCallback(() => {
@@ -617,16 +670,11 @@ export function AppShell() {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
-      // The dropdowns are fixed children of the top bar's stacking context
-      // (z-index 90), so the wide-desktop file panel paints over them — keep
-      // them clear of that column. The top bar itself already starts at the
-      // sidebar's right edge (the sidebar is a full-height column of the
-      // shell), so its rect is already the sidebar-cleared region; reserving
-      // the sidebar width again here shifted the dropdown a second time and
-      // left a sidebar-wide dead band on its left.
-      const panelReserved = rightPanelOpen && !isMobile && wideSplitLayout ? rightPanelWidth : 0;
+      // The top bar spans exactly the center column: the sidebar and the
+      // file panel are full-height siblings of the main column, so its rect is
+      // already clear of both and the dropdowns can use it as-is.
       const left = topBarRect.left;
-      const available = Math.max(0, topBarRect.width - panelReserved);
+      const available = topBarRect.width;
       if (activeTopPanel === "agents") {
         setTopPanelPos({
           top: topBarRect.bottom,
@@ -641,20 +689,22 @@ export function AppShell() {
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
     return () => ro.disconnect();
-  }, [activeTopPanel, isMobile, rightPanelOpen, rightPanelWidth, wideSplitLayout]);
+  }, [activeTopPanel]);
 
   // Files unmount when inactive; workspace terminals stay mounted until closed.
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [terminalsRestored, setTerminalsRestored] = useState(false);
+  const [artifactTabs, setArtifactTabs] = useState<ArtifactTab[]>([]);
   const panelTabs: Tab[] = [...fileTabs, ...terminalTabs.map((tab) => ({
     id: tab.id,
     label: getFileName(tab.cwd) || tab.cwd,
     filePath: tab.cwd,
     kind: "terminal" as const,
     closing: Boolean(tab.closing),
-  }))];
+  })), ...artifactTabs.map(artifactPanelTab)];
+  const activeArtifactTab = artifactTabs.find((tab) => tab.id === activeFileTabId) ?? null;
 
   useEffect(() => {
     try {
@@ -1088,6 +1138,8 @@ export function AppShell() {
   useGlobalKeyboardShortcuts({
     onNewSession: (cwd: string) => handleNewSession(`kb-${Date.now()}`, cwd),
     activeCwd,
+    // Only while open: a closed panel must leave \ and focus alone.
+    onCloseRightPanel: rightPanelOpen ? handleRightPanelClose : undefined,
   });
 
   // Client-built transient SessionInfo (new session / fork) lacks the
@@ -1409,30 +1461,62 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
   }, [terminalTabs, isMobile]);
 
+  // Message cards open artifacts through lib/artifact-store. An automatic open
+  // (a streamed artifact just finished) is skipped on mobile, where the panel
+  // would cover the reply that is still being read.
+  useEffect(() => setArtifactOpener((request) => {
+    if (request.auto && isMobile) return;
+    setArtifactTabs((tabs) => upsertArtifactTab(tabs, request, Date.now()));
+    setActiveFileTabId(artifactTabId(request.sessionId, request.identifier));
+    if (request.reveal !== false) setRightPanelOpen(true);
+  }), [isMobile]);
+
+  const selectedSessionId = selectedSession?.id ?? null;
+  // Read by the effect below without re-running it on every tab change.
+  const panelTabsRef = useRef({ fileTabs, terminalTabs });
+  useEffect(() => {
+    panelTabsRef.current = { fileTabs, terminalTabs };
+  });
+  useEffect(() => {
+    setArtifactTabs((tabs) => artifactTabsForSession(tabs, selectedSessionId));
+    setActiveFileTabId((current) => (
+      current?.startsWith("artifact:") && !current.startsWith(`artifact:${selectedSessionId}:`)
+        ? panelTabsRef.current.fileTabs.at(-1)?.id ?? panelTabsRef.current.terminalTabs.at(-1)?.id ?? null
+        : current
+    ));
+  }, [selectedSessionId]);
+
   const handleTerminalClosed = (tab: TerminalTab) => {
     const replacement = tab.closing === "restart" ? newTerminalTab(tab.cwd) : null;
     const remaining = terminalTabs.filter((item) => item.id !== tab.id);
     setTerminalTabs((tabs) => tabs.flatMap((item) => item.id !== tab.id ? [item] : replacement ? [replacement] : []));
     setActiveFileTabId((current) => current !== tab.id ? current : replacement?.id ?? remaining.at(-1)?.id ?? fileTabs.at(-1)?.id ?? null);
-    if (!replacement && !remaining.length && !fileTabs.length) setRightPanelOpen(false);
+    if (!replacement && !remaining.length && !fileTabs.length && !artifactTabs.length) setRightPanelOpen(false);
   };
 
   const handleCloseFileTab = useCallback((tabId: string) => {
+    if (artifactTabs.some((tab) => tab.id === tabId)) {
+      const remaining = artifactTabs.filter((tab) => tab.id !== tabId);
+      setArtifactTabs(remaining);
+      setActiveFileTabId((cur) => cur !== tabId ? cur : remaining.at(-1)?.id ?? fileTabs.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? null);
+      if (!remaining.length && !fileTabs.length && !terminalTabs.length) setRightPanelOpen(false);
+      return;
+    }
     if (terminalTabs.some((tab) => tab.id === tabId)) {
       setTerminalTabs((tabs) => tabs.map((tab) => tab.id === tabId && !tab.closing ? { ...tab, closing: "close" } : tab));
       return;
     }
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
-      if (next.length === 0 && terminalTabs.length === 0) setRightPanelOpen(false);
+      if (next.length === 0 && terminalTabs.length === 0 && artifactTabs.length === 0) setRightPanelOpen(false);
       return next;
     });
     setActiveFileTabId((cur) => {
       if (cur !== tabId) return cur;
       const remaining = fileTabs.filter((t) => t.id !== tabId);
-      return remaining.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? null;
+      return remaining.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? artifactTabs.at(-1)?.id ?? null;
     });
-  }, [fileTabs, terminalTabs]);
+  }, [fileTabs, terminalTabs, artifactTabs]);
 
   const openFullHistory = useCallback((sessionId: string) => {
     // Absolute URL so Tauri's open_external_url (http/https only) can hand the
@@ -1668,6 +1752,27 @@ export function AppShell() {
   }, [projectTrustCwd]);
 
   const activeFileTab = fileTabs.find((tab) => tab.id === activeFileTabId) ?? null;
+  // A narrow panel collapses the tree only while something is being viewed;
+  // with nothing open the tree is the panel's whole content. The preference
+  // (fileTreeOpen) is untouched, so a wider panel brings the tree back.
+  const fileTreeNarrow = panelBodyWidth > 0 && panelBodyWidth < FILE_TREE_AUTO_COLLAPSE_WIDTH;
+  const [fileTreeNarrowSeen, setFileTreeNarrowSeen] = useState(fileTreeNarrow);
+  if (fileTreeNarrowSeen !== fileTreeNarrow) {
+    setFileTreeNarrowSeen(fileTreeNarrow);
+    setFileTreeNarrowOverride(false);
+  }
+  const panelHasViewer = Boolean(activeFileTabId && panelTabs.some((tab) => tab.id === activeFileTabId));
+  const fileTreeAutoCollapsed = fileTreeNarrow && panelHasViewer && !fileTreeNarrowOverride;
+  const fileTreeShown = fileTreeOpen && !fileTreeAutoCollapsed;
+  const handleFileTreeToggle = () => {
+    if (fileTreeShown) {
+      setFileTreeOpen(false);
+      setFileTreeNarrowOverride(false);
+    } else {
+      setFileTreeOpen(true);
+      if (fileTreeAutoCollapsed) setFileTreeNarrowOverride(true);
+    }
+  };
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - ${PRODUCT_NAME}` : PRODUCT_NAME;
   const topBarTitle = scheduledOpen
@@ -2011,7 +2116,7 @@ export function AppShell() {
         {/* Top bar with sidebar toggle */}
         <div
           ref={topBarRef}
-          className={`app-topbar${desktopChrome.isMacOS && (!sidebarOpen || isMobile) ? " app-topbar--mac-inset" : ""}${!rightPanelOpen ? " app-topbar--panel-closed" : ""}`}
+          className={`app-topbar${macLightsOverTopbar ? " app-topbar--mac-inset" : ""}${!rightPanelOpen ? " app-topbar--panel-closed" : ""}`}
           {...desktopChrome.dragRegionProps}
           {...windowDrag}
           style={{ display: "flex", alignItems: "center", flexShrink: 0, height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}
@@ -2089,7 +2194,6 @@ export function AppShell() {
                 open={activeTopPanel === "branches"}
                 onToggle={() => toggleTopPanel("branches")}
                 hasSession
-                reserveRight={rightPanelOpen && !isMobile && wideSplitLayout ? rightPanelWidth : 0}
               />
               {(() => {
                 // Persisted stats win so compressed sessions can still name
@@ -2604,7 +2708,9 @@ export function AppShell() {
             </div>
           )}
 
-          <WindowControls />
+          {/* Windows/Linux controls stay in the chat topbar while the floating
+              panel is a separate card; the topbar still owns the visible edge. */}
+          {(!rightPanelOpen || isMobile) && <WindowControls />}
         </div>
         <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
       {/* Center: chat */}
@@ -2689,8 +2795,8 @@ export function AppShell() {
                 <div>
                    <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{translate("workspace.getStarted")}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{translate("workspace.selectProject")}<br />
-                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{translate("workspace.addModels")}
+                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{translate("workspace.selectProject")}<br />
+                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{translate("workspace.addModels")}
                   </div>
                 </div>
               </div>
@@ -2715,6 +2821,8 @@ export function AppShell() {
             }}
           />
         )}
+      </div>
+        </div>
       </div>
 
       {/* Mobile keeps this fixed toggle (the desktop topbar renders its own);
@@ -2741,7 +2849,7 @@ export function AppShell() {
       <div
         aria-hidden="true"
         className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
-        onClick={() => setRightPanelOpen(false)}
+        onClick={handleRightPanelClose}
       />
       {rightPanelOpen && (
         <div
@@ -2750,7 +2858,7 @@ export function AppShell() {
           aria-controls="file-panel"
           className={`panel-resize-handle right-panel-resize-handle${rightPanelResizer.isResizing ? " is-resizing" : ""}`}
           data-resize-handle="right-panel"
-          title={`${translate("layout.resizeFilePanel")}: ${translate("layout.resizeHint")}`}
+          title={`${translate("layout.resizeFilePanel")}: ${translate("layout.resizeHint")} · ${translate("files.closePanelHint")}`}
         />
       )}
 
@@ -2763,7 +2871,7 @@ export function AppShell() {
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
           flexDirection: "column",
-          borderLeft: "var(--hairline) solid var(--border)",
+          borderLeft: "var(--hairline) solid var(--separator)",
           background: "var(--bg)",
         } as React.CSSProperties}
       >
@@ -2812,7 +2920,12 @@ export function AppShell() {
             <span>{translate("contextPanel.tabDiff")}</span>
           </button>
         */}
-        <div className="right-panel-tab-strip">
+        <div
+          className={`right-panel-tab-strip${macLightsOverPanel ? " right-panel-tab-strip--mac-inset" : ""}`}
+          // The card reaches the window top, so its header row moves the window.
+          {...desktopChrome.dragRegionProps}
+          {...windowDrag}
+        >
           <div className="file-tab-bar-slot">
             <TabBar
               tabs={panelTabs}
@@ -2825,14 +2938,16 @@ export function AppShell() {
           {activeCwd && (
             <button
               type="button"
-              className={`file-workbench-icon-button${fileTreeOpen ? " is-active" : ""}`}
-              onClick={() => setFileTreeOpen((open) => !open)}
-              title={translate(fileTreeOpen ? "contextPanel.hideFileList" : "contextPanel.showFileList")}
-              aria-label={translate(fileTreeOpen ? "contextPanel.hideFileList" : "contextPanel.showFileList")}
-              aria-pressed={fileTreeOpen}
+              className={`file-workbench-icon-button file-tree-toggle${fileTreeShown ? " is-active" : ""}`}
+              onClick={handleFileTreeToggle}
+              title={translate(fileTreeShown ? "contextPanel.hideFileList" : "contextPanel.showFileList")}
+              aria-label={translate(fileTreeShown ? "contextPanel.hideFileList" : "contextPanel.showFileList")}
+              aria-pressed={fileTreeShown}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /><path d="M15 7v10" />
+                <circle cx="4.25" cy="5.25" r="1.35" fill="currentColor" stroke="none" /><path d="M7.75 5.25H21" />
+                <circle cx="4.25" cy="12" r="1.35" fill="currentColor" stroke="none" /><path d="M7.75 12H21" />
+                <circle cx="4.25" cy="18.75" r="1.35" fill="currentColor" stroke="none" /><path d="M7.75 18.75H21" />
               </svg>
             </button>
           )}
@@ -2845,38 +2960,42 @@ export function AppShell() {
             title={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
             aria-label={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d={rightPanelFullWidth
-                ? "M9 3v6H3m12-6v6h6M9 21v-6H3m12 6v-6h6M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"
-                : "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"} />
+                ? "M4 9V4h5M20 15v5h-5M4 15v5h5M20 9V4h-5"
+                : "M15 4h5v5M9 20H4v-5M20 15v5h-5M4 9V4h5"} />
             </svg>
           </button>
-          {/* Closing from the panel itself is only reachable here: the full-width
-              panel paints over the topbar (z 100 vs 90), and on mobile the fixed
-              floating toggle sits under the panel (z 120 vs 250). In the
-              desktop split layout the topbar toggle covers this, so the chip
-              stays out of the way instead of duplicating it. */}
-          {(isMobile || rightPanelFullWidth) && (
-            <button
-              type="button"
-              className="file-workbench-icon-button"
-              onClick={() => setRightPanelOpen(false)}
-              aria-controls="file-panel"
-              aria-expanded={rightPanelOpen}
-              title={translate("files.hidePanel")}
-              aria-label={translate("files.hidePanel")}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
-              </svg>
-            </button>
-          )}
+          {/* The panel's own way out. The topbar toggle is covered whenever the
+              panel spans the chat column (full width, and always on mobile). */}
+          <button
+            type="button"
+            className="file-workbench-icon-button right-panel-close-button"
+            onClick={handleRightPanelClose}
+            aria-controls="file-panel"
+            aria-expanded={rightPanelOpen}
+            title={translate("files.hidePanel")}
+            aria-label={translate("files.hidePanel")}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          {rightPanelOpen && !isMobile && <WindowControls />}
         </div>
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
-        <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div ref={panelBodyRef} className="right-panel-body" style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {activeFileTab?.filePath ? (
+          {activeArtifactTab ? (
+            <ArtifactPanel
+              key={activeArtifactTab.id}
+              sessionId={activeArtifactTab.sessionId}
+              identifier={activeArtifactTab.identifier}
+              title={activeArtifactTab.title}
+              versionRequest={activeArtifactTab.versionRequest}
+            />
+          ) : activeFileTab?.filePath ? (
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
               filePath={activeFileTab.filePath}
@@ -2901,8 +3020,14 @@ export function AppShell() {
               )}
             />
           ) : !terminalTabs.some((tab) => tab.id === activeFileTabId) ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-               {translate("files.noneOpen")}
+            <div className="right-panel-empty">
+              <span>{translate("files.noneOpen")}</span>
+              {/* The file list starts hidden; offer it where the panel is empty. */}
+              {activeCwd && !fileTreeShown && (
+                <button type="button" className="right-panel-empty-action" onClick={handleFileTreeToggle}>
+                  {translate("contextPanel.showFileList")}
+                </button>
+              )}
             </div>
           ) : null}
           {terminalTabs.map((tab) => (
@@ -2919,7 +3044,7 @@ export function AppShell() {
         </div>
       
         {/* Explorer column — always-on project file tree */}
-          {activeCwd && fileTreeOpen && (
+          {activeCwd && fileTreeShown && (
             <>
               <div
                 {...fileTreeResizer.separatorProps}
@@ -3004,8 +3129,6 @@ export function AppShell() {
               </div>
             </>
           )}
-      </div>
-        </div>
       </div>
       </div>
     </div>

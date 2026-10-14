@@ -35,7 +35,7 @@ test("tracks the visual viewport while the software keyboard is open", () => {
   assert.match(appShellSource, /paddingLeft: "env\(safe-area-inset-left\)"/);
   assert.match(appShellSource, /paddingRight: "env\(safe-area-inset-right\)"/);
   assert.match(appShellSource, /height: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
-  assert.match(appShellSource, /className="right-panel-tab-strip"/);
+  assert.match(appShellSource, /className=\{`right-panel-tab-strip/);
   assert.match(nativeThemeSource, /\.right-panel-tab-strip \{[\s\S]*?height: 48px/);
   assert.match(appShellSource, /height: "var\(--app-viewport-height, 100dvh\)"/);
   // The desktop fork keeps the file-panel opener inside the padded shell

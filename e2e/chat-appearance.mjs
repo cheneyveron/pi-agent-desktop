@@ -93,18 +93,28 @@ export async function checkChatAppearance(page) {
   assert.equal(await width.inputValue(), "2000");
   assert.equal(await fontSize.inputValue(), "18");
   await checkChatAppearanceReset(page);
+  // Language is no longer the panel's last section (15b373d moved it above
+  // Chat), so "reachable" is checked two ways: the lowest control is hit-
+  // testable once the panel is scrolled to its end, and the last language
+  // option is hit-testable once the panel itself is scrolled to it.
   for (const viewport of [{ width: 1280, height: 600 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);
-    await page.locator(".settings-general").evaluate((el) => { el.scrollTop = el.scrollHeight; });
-    // Language now precedes Chat; Appearance follows it in the stacked layout.
-    for (const selector of [".settings-language-options button:last-child", ".settings-theme-option:last-child"]) {
-      const option = page.locator(selector);
-      await option.scrollIntoViewIfNeeded();
-      assert.equal(await option.evaluate((el) => {
-        const rect = el.getBoundingClientRect();
-        return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
-      }), true, "Language and theme options must remain reachable in a short settings panel");
-    }
+    assert.equal(await page.locator(".settings-general").evaluate((panel) => {
+      panel.scrollTop = panel.scrollHeight;
+      // Radio inputs are 1px sr-only proxies under their labels; only visible
+      // controls can be hit.
+      const controls = [...panel.querySelectorAll("button, input, select, textarea")]
+        .filter((el) => !el.classList.contains("sr-only") && el.getClientRects().length > 0);
+      const lowest = controls.reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a));
+      const rect = lowest.getBoundingClientRect();
+      return lowest.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    }), true, "The bottom of a short settings panel must remain reachable");
+    assert.equal(await page.locator(".settings-language-options button:last-child").evaluate((el) => {
+      const panel = el.closest(".settings-general");
+      panel.scrollTop += el.getBoundingClientRect().top - panel.getBoundingClientRect().top - panel.clientHeight / 2;
+      const rect = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    }), true, "Every language option must remain reachable in a short settings panel");
   }
   await fontSize.press("Home");
   await closeSettings();

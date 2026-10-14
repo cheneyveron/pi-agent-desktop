@@ -8,6 +8,10 @@ const rustSource = await readFile(
   new URL("../src-tauri/src/lib.rs", import.meta.url),
   "utf8",
 );
+const rustShellSource = await readFile(
+  new URL("../src-tauri/src/shell/macos_menu.rs", import.meta.url),
+  "utf8",
+);
 
 test("routes native macOS menu actions into app state", () => {
   assert.match(appShellSource, /useNativeAppMenu\(handleNativeMenuAction\)/);
@@ -18,10 +22,11 @@ test("routes native macOS menu actions into app state", () => {
 });
 
 test("installs the standard macOS app menu", () => {
-  assert.match(rustSource, /fn build_macos_app_menu\(app: &AppHandle\)/);
-  assert.match(rustSource, /PredefinedMenuItem::about/);
-  assert.match(rustSource, /PredefinedMenuItem::services/);
-  assert.match(rustSource, /PredefinedMenuItem::undo/);
-  assert.match(rustSource, /PredefinedMenuItem::fullscreen/);
-  assert.match(rustSource, /app\.set_menu\(menu\)\?/);
+  assert.match(rustSource, /use shell::\{[\s\S]*?build_macos_app_menu/);
+  assert.match(rustShellSource, /pub fn build_macos_app_menu\(app: &AppHandle\)/);
+  assert.match(rustShellSource, /PredefinedMenuItem::about/);
+  assert.match(rustShellSource, /PredefinedMenuItem::services/);
+  assert.match(rustShellSource, /PredefinedMenuItem::undo/);
+  assert.match(rustShellSource, /PredefinedMenuItem::fullscreen/);
+  assert.match(rustShellSource, /app\.set_menu\(menu\)\?/);
 });

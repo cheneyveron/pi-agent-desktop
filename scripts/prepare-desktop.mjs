@@ -1,4 +1,4 @@
-import { access, chmod, copyFile, cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { access, chmod, copyFile, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";

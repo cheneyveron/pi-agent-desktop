@@ -40,7 +40,7 @@ test("does not start a drag outside any drag region", () => {
 
 test("does not start a drag on an interactive descendant inside the region", () => {
   const noDragSelector =
-    'button, a, input, textarea, select, [role="button"], [contenteditable="true"], [data-no-drag]';
+    'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"], [data-no-drag]';
   assert.equal(
     shouldStartDrag(fakeTarget(["[data-tauri-drag-region]", noDragSelector])),
     false,

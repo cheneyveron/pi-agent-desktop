@@ -20,6 +20,10 @@ const source = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
  * a direct child of the outer row and the topbar moved into the main column
  * that follows it, so the topbar starts at the center column and the sidebar
  * runs the full window height (no blank strip above the sidebar).
+ *
+ * The fourth pins the right panel as a full-height embedded pane: it remains
+ * a sibling of the main column, while hairline chrome and a shared header
+ * surface tie it back into the shell.
  */
 test("chat wrapper stays inside the center column (no 50/50 topbar split)", () => {
   // The column must NOT close between the topbar and the chat content block:
@@ -45,10 +49,33 @@ test("topbar sits in the main column after the sidebar (sidebar runs full height
   const topbar = source.indexOf("Top bar with sidebar toggle");
   assert.ok(topbar > sidebarHandle, "topbar must render after the sidebar, inside the main column");
 
-  // The tail must close panel → inner row → main column → outer row → shell
-  // in direct succession; fewer closes means a wrapper was dropped.
+  // The tail must close panel → outer row → shell in direct succession; more
+  // closes means the panel slid back under the topbar inside the main column.
   const panelIdx = source.indexOf("right-panel-container");
   const tail = source.slice(panelIdx);
-  const nesting = tail.indexOf("      </div>\n        </div>\n      </div>\n      </div>\n    </div>\n    {settingsSection");
-  assert.ok(nesting !== -1, "panel close must be followed by inner row, main column, outer row, then shell close");
+  const nesting = tail.indexOf("          )}\n      </div>\n      </div>\n    </div>\n    {settingsSection");
+  assert.ok(nesting !== -1, "panel close must be followed by outer row, then shell close");
+});
+
+test("file panel stays a full-height embedded pane", () => {
+  const mainColumn = source.indexOf('className="app-main-column"');
+  const center = source.indexOf("{/* Center: chat */}");
+  const panelIdx = source.indexOf("right-panel-container");
+  assert.ok(mainColumn !== -1 && center > mainColumn && panelIdx > center, "layout markers not found in order");
+  // Between the center column and the panel, the inner row and the main
+  // column must both close; otherwise the topbar spans the panel again.
+  const between = source.slice(center, panelIdx);
+  assert.match(
+    between,
+    /\n      <\/div>\n        <\/div>\n      <\/div>\n\n      \{\/\* Mobile keeps this fixed toggle/,
+    "center column, inner row and main column must close before the panel block",
+  );
+  assert.match(
+    source,
+    /borderLeft: "var\(--hairline\) solid var\(--separator\)"/,
+    "the embedded pane must keep a neutral fallback edge for full-width mode",
+  );
+  const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
+  assert.match(css, /Right panel as an embedded workbench/);
+  assert.match(css, /\.right-panel-container:not\(\.right-panel-full-width\) \{\s*\n\s*border-left: var\(--hairline\) solid var\(--separator\) !important;/);
 });

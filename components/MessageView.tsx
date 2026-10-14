@@ -990,7 +990,7 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
 }
 
 function TextBlock({ block, isStreaming, cwd, sessionId, onOpenFile }: { block: TextContent; isStreaming?: boolean; cwd?: string; sessionId?: string; onOpenFile?: (filePath: string, page?: number) => void }) {
-  return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} sessionId={sessionId} onOpenFile={onOpenFile}>{block.text}</SafeMarkdownBody>;
+  return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} sessionId={sessionId} onOpenFile={onOpenFile} artifacts>{block.text}</SafeMarkdownBody>;
 }
 
 export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {

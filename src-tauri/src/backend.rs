@@ -331,15 +331,15 @@ pub fn build_remote_window(app: &AppHandle, url: Url) -> tauri::Result<WebviewWi
             if intercept_navigation(&handle, REMOTE_WINDOW, url) {
                 return false;
             }
-            if super::same_origin(url, &origin) {
+            if crate::native_prefs::same_origin(url, &origin) {
                 true
             } else {
-                super::open_external(url);
+                crate::shell::open_external(url);
                 false
             }
         })
         .on_new_window(|url, _| {
-            super::open_external(&url);
+            crate::shell::open_external(&url);
             tauri::webview::NewWindowResponse::Deny
         })
         .build()

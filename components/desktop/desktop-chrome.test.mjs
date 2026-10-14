@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { dirname } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { createJiti } from "jiti";
 
 /**
@@ -61,6 +62,15 @@ test("macOS keeps its native traffic lights and draws no buttons", () => {
   assert.equal(chrome.isMacOS, true);
   assert.equal(chrome.isDesktop && !chrome.isMacOS, false);
   assert.equal(chrome.dragRegionProps["data-tauri-drag-region"], true);
+});
+
+test("macOS traffic lights share the sidebar controls' centre line", () => {
+  const css = readFileSync(new URL("../../app/native-theme.css", import.meta.url), "utf8");
+  // MAC_TRAFFIC_LIGHT_Y compensates for AppKit's button offset and lands its
+  // centre at 24pt. A 48px controls row is centred at the same 24px without
+  // pushing the sidebar header down (the bug reported in #108).
+  assert.match(css, /\.session-sidebar-header--mac-inset \{[\s\S]*?padding-top: 0 !important;/);
+  assert.match(css, /\.sidebar-controls-row \{[\s\S]*?height: 48px;/);
 });
 
 test("windows and linux draw their own buttons", () => {

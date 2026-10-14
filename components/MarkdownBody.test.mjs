@@ -219,6 +219,51 @@ test("keeps Mermaid source visible while the response is streaming", () => {
   assert.match(html, /A --&gt; B/);
 });
 
+test("previews complete HTML documents in a sandboxed frame", () => {
+  const html = renderMarkdown("```html\n<!DOCTYPE html>\n<html><body><h1>Hi</h1></body></html>\n```");
+
+  assert.match(html, /<iframe[^>]*class="html-preview-frame[^"]*"/);
+  assert.match(html, /sandbox="allow-scripts[^"]*"/);
+  assert.doesNotMatch(html, /allow-same-origin/);
+  assert.match(html, />Source</);
+});
+
+test("keeps HTML source visible while streaming and for fragments", () => {
+  const streaming = renderMarkdown("```html\n<!DOCTYPE html>\n<html><body>x</body></html>\n```", { isStreaming: true });
+  const fragment = renderMarkdown("```html\n<div>fragment</div>\n```");
+
+  assert.doesNotMatch(streaming, /<iframe/);
+  assert.match(streaming, />Preview</);
+  assert.doesNotMatch(fragment, /<iframe/);
+  assert.doesNotMatch(fragment, />Preview</);
+});
+
+test("renders artifact directives only when asked to", () => {
+  const markdown = ':::artifact{identifier="calc" type="html" title="Calc"}\n```html\n<!DOCTYPE html>\n<html><body>x</body></html>\n```\n:::';
+  const withArtifacts = renderMarkdown(markdown, { artifacts: true });
+  const without = renderMarkdown(markdown);
+
+  // No panel is registered in this render, so the artifact shows in place.
+  assert.match(withArtifacts, /<iframe[^>]*class="html-preview-frame[^"]*"/);
+  assert.doesNotMatch(withArtifacts, /:::artifact/);
+  assert.match(without, /:::artifact/);
+});
+
+test("offers to run self-contained React fences, but shows source first", () => {
+  const runnable = renderMarkdown("```jsx\nexport default function App() {\n  return <h1>Hi</h1>;\n}\n```");
+  assert.doesNotMatch(runnable, /<iframe/);
+  assert.match(runnable, /title="Run React component"/);
+
+  const snippet = renderMarkdown("```jsx\nconst el = <h1>Hi</h1>;\n```");
+  assert.doesNotMatch(snippet, /Run React component/);
+});
+
+test("does not auto-run scripted pages from history", () => {
+  const html = renderMarkdown("```html\n<!DOCTYPE html>\n<html><body><script>for(;;){}</script></body></html>\n```");
+  assert.doesNotMatch(html, /<iframe/);
+  assert.match(html, />Preview</);
+});
+
 test("opens markdown images in the shared image preview", () => {
   const localHtml = renderMarkdown("![chart](docs/tmp/chart.png)");
   const remoteHtml = renderMarkdown("![logo](https://example.com/logo.png)");

@@ -2825,12 +2825,14 @@ dependencies = [
 
 [[package]]
 name = "pi-agent-desktop"
-version = "0.6.5"
+version = "0.7.0"
 dependencies = [
  "dunce",
  "getrandom 0.3.4",
  "ksni",
  "libc",
+ "objc2",
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tauri",

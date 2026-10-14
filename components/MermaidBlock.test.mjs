@@ -8,7 +8,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { MermaidBlock, CodeBlock, downloadMermaidSvg } = await jiti.import("./MermaidBlock.tsx");
+const { MermaidBlock, CodeBlock, downloadMermaidSvg, mermaidNaturalWidth } = await jiti.import("./MermaidBlock.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
 // Simple sequenceDiagram for testing
@@ -73,6 +73,16 @@ test("CodeBlock highlights code when not streaming", () => {
 
   assert.match(html, /class="token/);
   assert.match(html, /const/);
+});
+
+test("CodeBlock owns the pre background without a competing shorthand", () => {
+  for (const isStreaming of [false, true]) {
+    const html = renderCode({ code: "const x = 1;", lang: "javascript", isStreaming });
+    const pre = html.match(/<pre\b[^>]*>/)?.[0];
+    assert.ok(pre);
+    assert.match(pre, /background-color:color-mix/);
+    assert.doesNotMatch(pre, /(?:[;\"]|^)background:/);
+  }
 });
 
 test("CodeBlock renders plain text without tokenization while streaming", () => {
@@ -146,4 +156,19 @@ test("mermaid renders in strict security mode", async () => {
   for (const init of inits) assert.match(init, /securityLevel:\s*"strict"/);
   assert.doesNotMatch(source, /securityLevel:\s*"(loose|antiscript|sandbox)"/);
   assert.equal((source.match(/dangerouslySetInnerHTML/g) ?? []).length, 2, "a new HTML sink needs its own review");
+});
+
+test("reads a Mermaid diagram's natural width from its viewBox", () => {
+  const svg = (viewBox) => `<svg id="m" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 616px;" viewBox="${viewBox}"><g/></svg>`;
+  assert.equal(mermaidNaturalWidth(svg("0 0 616 305")), 616);
+  assert.equal(mermaidNaturalWidth(svg("-8 -8 1689.875 205.5")), 1689.875);
+  assert.equal(mermaidNaturalWidth(svg("0,0,320,200")), 320);
+  assert.equal(mermaidNaturalWidth('<svg width="100%"><g/></svg>'), null);
+  assert.equal(mermaidNaturalWidth(svg("0 0 0 0")), null);
+  assert.equal(mermaidNaturalWidth("not an svg"), null);
+});
+
+test("fit mode stays off unless asked for", () => {
+  const plain = renderMermaid({ code: mermaidSrc, defaultPreview: true });
+  assert.doesNotMatch(plain, /mermaid-fit/);
 });

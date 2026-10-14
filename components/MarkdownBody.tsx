@@ -9,6 +9,10 @@ import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, markdownUserRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { HtmlPreviewBlock } from "./HtmlPreviewBlock";
+import { htmlPreviewKind } from "@/lib/html-preview";
+import { ArtifactCard } from "./ArtifactCard";
+import { ARTIFACT_FENCE_LANG, decodeArtifactFence, encodeArtifactsForMarkdown } from "@/lib/artifacts";
 import { handleExternalLinkClick } from "@/lib/desktop-native";
 
 const MarkdownLinkContext = createContext(false);
@@ -22,6 +26,8 @@ interface MarkdownBodyProps {
   onOpenFile?: (filePath: string, page?: number) => void;
   /** Render every line ending as a line break, for text the user typed. */
   keepLineBreaks?: boolean;
+  /** Render `:::artifact{...}` blocks as artifact cards (assistant text only). */
+  artifacts?: boolean;
 }
 
 function MarkdownImage({
@@ -121,12 +127,28 @@ function buildComponents(
       const raw = String(children);
       const isBlock = className?.includes("language-") || raw.includes("\n");
       if (isBlock) {
+        if (lang === ARTIFACT_FENCE_LANG) {
+          const artifact = decodeArtifactFence(raw);
+          if (artifact) return <ArtifactCard block={artifact} isStreaming={isStreaming} />;
+        }
         if (lang === "mermaid") {
           return (
             <MermaidBlock
               code={raw.replace(/\n$/, "")}
               isStreaming={isStreaming}
               defaultPreview
+            />
+          );
+        }
+        const previewKind = htmlPreviewKind(lang, raw);
+        if (previewKind) {
+          return (
+            <HtmlPreviewBlock
+              code={raw.replace(/\n$/, "")}
+              lang={lang}
+              kind={previewKind}
+              isStreaming={isStreaming}
+              defaultPreview={previewKind !== "react"}
             />
           );
         }
@@ -216,9 +238,12 @@ function useStreamingThrottle(value: string, active: boolean): string {
 
 // Memoized: markdown parsing + highlighting is the most expensive render work
 // in the app, so parent re-renders with identical props must be free.
-export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, sessionId, onOpenFile, keepLineBreaks }: MarkdownBodyProps) {
+export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, sessionId, onOpenFile, keepLineBreaks, artifacts }: MarkdownBodyProps) {
   const markdown = useStreamingThrottle(children, Boolean(isStreaming));
-  const normalizedMarkdown = useMemo(() => normalizeDisplayMath(markdown), [markdown]);
+  const normalizedMarkdown = useMemo(
+    () => normalizeDisplayMath(artifacts ? encodeArtifactsForMarkdown(markdown) : markdown),
+    [markdown, artifacts],
+  );
   const components = useMemo(
     () => buildComponents(isStreaming, cwd, sessionId, onOpenFile),
     [isStreaming, cwd, sessionId, onOpenFile],

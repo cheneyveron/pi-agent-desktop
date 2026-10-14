@@ -8,11 +8,120 @@ import {
   getApplyPatchInputText,
   parseApplyPatchInput,
 } from "./apply-patch";
-import type { SplitDiffFile } from "./patch";
+import { parseUnifiedPatch, type SplitDiffFile } from "./patch";
 
 export interface WrittenFile {
   /** Resolved absolute path of a file this turn wrote. */
   filePath: string;
+  /** Lines added across the turn's calls on this file, when any call reported them. */
+  added?: number;
+  /** Lines removed across the turn's calls on this file, when any call reported them. */
+  removed?: number;
+}
+
+interface LineStats {
+  added: number;
+  removed: number;
+}
+
+function countTextLines(text: string): number {
+  return splitLines(text).length;
+}
+
+function splitLines(text: string): string[] {
+  if (text.length === 0) return [];
+  const lines = text.split(/\r?\n/);
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+/**
+ * Lines one replacement changed. Models quote surrounding context in oldText
+ * and newText, so counting both whole would report a one-line fix as +10 −10;
+ * lines the two share at the start and end are not changes.
+ */
+export function changedLineCounts(before: string, after: string): LineStats {
+  const a = splitLines(before);
+  const b = splitLines(after);
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let end = 0;
+  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
+  return { removed: a.length - start - end, added: b.length - start - end };
+}
+
+function statsFromRows(file: SplitDiffFile): LineStats {
+  const stats = { added: 0, removed: 0 };
+  for (const row of file.rows) {
+    if (row.type !== "line") continue;
+    if (row.left.type === "removed") stats.removed++;
+    if (row.right.type === "added") stats.added++;
+  }
+  return stats;
+}
+
+/**
+ * Line counts for one write/edit call. `write` reports its whole content as
+ * added — the tool does not say what it replaced. `edit` reads pi's numbered
+ * diff (`+12 text` / `-12 text`) or a unified patch from `details`, and falls
+ * back to the old/new text in its input.
+ */
+function readWriteEditStats(toolName: string, input: Record<string, unknown> | undefined, result: ToolResultMessage): LineStats | null {
+  if (isWriteToolName(toolName)) {
+    const content = input?.content;
+    return typeof content === "string" ? { added: countTextLines(content), removed: 0 } : null;
+  }
+
+  const details = result.details;
+  if (details && typeof details === "object" && !Array.isArray(details)) {
+    const record = details as Record<string, unknown>;
+    if (typeof record.diff === "string" && record.diff.length > 0) {
+      const stats = { added: 0, removed: 0 };
+      for (const line of record.diff.split(/\r?\n/)) {
+        if (/^\+\s*\d+ /.test(line)) stats.added++;
+        else if (/^-\s*\d+ /.test(line)) stats.removed++;
+      }
+      if (stats.added > 0 || stats.removed > 0) return stats;
+    }
+    if (typeof record.patch === "string") {
+      const files = parseUnifiedPatch(record.patch);
+      if (files) {
+        return files.map(statsFromRows).reduce((sum, s) => ({ added: sum.added + s.added, removed: sum.removed + s.removed }), { added: 0, removed: 0 });
+      }
+    }
+  }
+
+  const edits = Array.isArray(input?.edits) ? input.edits : input ? [input] : [];
+  let found = false;
+  const stats = { added: 0, removed: 0 };
+  for (const edit of edits) {
+    if (!edit || typeof edit !== "object") continue;
+    const { oldText, newText, old_string, new_string } = edit as Record<string, unknown>;
+    const before = oldText ?? old_string;
+    const after = newText ?? new_string;
+    if (typeof before !== "string" || typeof after !== "string") continue;
+    found = true;
+    const changed = changedLineCounts(before, after);
+    stats.removed += changed.removed;
+    stats.added += changed.added;
+  }
+  return found ? stats : null;
+}
+
+/** Per-path line counts of one apply_patch call, keyed by the path each file landed at. */
+function readApplyPatchStats(input: Record<string, unknown> | undefined, result: ToolResultMessage): Map<string, LineStats> {
+  const details = result.details;
+  const files = (details && typeof details === "object" && !Array.isArray(details)
+    ? applyPatchPreviewToFiles((details as Record<string, unknown>).preview)
+    : null) ?? parseApplyPatchInput(getApplyPatchInputText(input));
+  const stats = new Map<string, LineStats>();
+  for (const file of files ?? []) {
+    if (!file.newPath) continue;
+    const prev = stats.get(file.newPath) ?? { added: 0, removed: 0 };
+    const next = statsFromRows(file);
+    stats.set(file.newPath, { added: prev.added + next.added, removed: prev.removed + next.removed });
+  }
+  return stats;
 }
 
 function isFileWritingToolName(toolName: string): boolean {
@@ -88,15 +197,15 @@ function readApplyPatchPaths(input: Record<string, unknown> | undefined, result:
  * touched, so it is not a source here; the tool call is the record of what
  * happened.
  *
- * Paths are resolved against `cwd`, deduped, and kept in first-seen order.
+ * Paths are resolved against `cwd`, deduped, and kept in first-seen order;
+ * line counts of repeated calls on one file are summed.
  */
 export function extractTurnWrittenFiles(
   content: AssistantContentBlock[],
   toolResults: Map<string, ToolResultMessage> | undefined,
   cwd?: string,
 ): WrittenFile[] {
-  const seen = new Set<string>();
-  const writtenFiles: WrittenFile[] = [];
+  const byPath = new Map<string, WrittenFile>();
 
   for (const block of content) {
     if (block.type !== "toolCall") continue;
@@ -105,9 +214,11 @@ export function extractTurnWrittenFiles(
     const result = toolResults?.get(block.toolCallId);
     if (!result || result.isError) continue;
 
-    const rawPaths = isApplyPatchToolName(block.toolName)
+    const isPatch = isApplyPatchToolName(block.toolName);
+    const rawPaths = isPatch
       ? readApplyPatchPaths(block.input, result)
       : [readToolPath(block.input)];
+    const patchStats = isPatch ? readApplyPatchStats(block.input, result) : null;
 
     for (const rawPath of rawPaths) {
       if (!rawPath) continue;
@@ -117,11 +228,18 @@ export function extractTurnWrittenFiles(
       const filePath = resolveLocalFilePath(rawPath, cwd);
       if (!filePath) continue;
 
-      if (seen.has(filePath)) continue;
-      seen.add(filePath);
-      writtenFiles.push({ filePath });
+      let entry = byPath.get(filePath);
+      if (!entry) {
+        entry = { filePath };
+        byPath.set(filePath, entry);
+      }
+      const stats = patchStats ? patchStats.get(rawPath) : readWriteEditStats(block.toolName, block.input, result);
+      if (stats) {
+        entry.added = (entry.added ?? 0) + stats.added;
+        entry.removed = (entry.removed ?? 0) + stats.removed;
+      }
     }
   }
 
-  return writtenFiles;
+  return [...byPath.values()];
 }

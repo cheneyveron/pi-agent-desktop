@@ -1,6 +1,6 @@
 [package]
 name = "pi-agent-desktop"
-version = "0.6.5"
+version = "0.7.0"
 description = "Desktop shell for Pi Agent"
 authors = ["pi-agent-desktop contributors"]
 license = "MIT"
@@ -32,6 +32,11 @@ tauri-plugin-window-state = "^2"
 [target.'cfg(target_os = "macos")'.dependencies]
 # NSVisualEffectView behind the (transparent) webview: the sidebar material.
 window-vibrancy = "0.8"
+# Re-applies the traffic-light inset after AppKit's own title-bar layout
+# (`refresh_traffic_lights` in src/lib.rs). Same versions window-vibrancy
+# already pulls in.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Avoid libappindicator's GTK menu bridge, which can render blank labels under GNOME.

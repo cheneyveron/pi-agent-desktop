@@ -1,7 +1,7 @@
 {
   "pi": {
-    "version": "1.1.0",
-    "reason": "Upgrade the bundled SDK to pi 1.1.0; packaged Code mode re-verified (quickjs-wasi is hoisted, see scripts/stage-package.mjs)."
+    "version": "1.2.0",
+    "reason": "Upgrade the bundled SDK to pi 1.2.0; packaged Code mode re-verified with desktop:verify, and MCP test results report resources as a flag (pi no longer lists them at connect)."
   },
   "pi-web": {
     "version": "0.10.0",

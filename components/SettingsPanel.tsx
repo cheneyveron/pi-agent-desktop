@@ -38,6 +38,7 @@ import { AppUpdatesSection } from "./AppUpdatesSection";
 import { DesktopAppSection } from "./desktop";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
 
 interface Props {
   cwd: string | null;
@@ -295,6 +296,7 @@ function GeneralSettings({
                   onChange={onQuoteSelectionChange}
                 />
               </div>
+              <ArtifactsSettingRow />
               <div className="settings-chat-option settings-chat-switch-option" role="radiogroup" aria-label={t("settings.enterSendMode")}>
                 <span>{t("settings.enterSendMode")}</span>
                 <div className="settings-send-mode-options">

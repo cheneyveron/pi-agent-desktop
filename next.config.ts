@@ -98,6 +98,15 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // The bundled React preview runtime. The app page fetches it and
+        // inlines it into preview documents; revalidate so an app update is
+        // picked up at once.
+        source: "/preview-runtime/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+        ],
+      },
+      {
         source: "/manifest.webmanifest",
         headers: [
           { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },

@@ -7,7 +7,7 @@ import { startDraggingWindow, toggleMaximizeWindow } from "@/lib/desktop-window"
 import { useDesktopChrome } from "./useDesktopChrome";
 
 const NO_DRAG_SELECTOR =
-  'button, a, input, textarea, select, [role="button"], [contenteditable="true"], [data-no-drag]';
+  'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"], [data-no-drag]';
 
 /** Element with just enough DOM API to test the drag decision without a browser. */
 interface ClosestTarget {

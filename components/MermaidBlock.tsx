@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
@@ -11,6 +11,29 @@ interface MermaidBlockProps {
   code: string;
   isStreaming?: boolean;
   defaultPreview?: boolean;
+  /**
+   * Scale the diagram to the width it is shown in (see `.mermaid-fit` in
+   * native-theme.css). Mermaid sizes its SVG to `width: 100%` capped at the
+   * diagram's natural width, so by default a narrow diagram stays small and a
+   * wide one shrinks until its text is unreadable.
+   */
+  fit?: boolean;
+  /** An artifact action shown beside the preview/source toggle. */
+  headerAction?: ReactNode;
+}
+
+// Without a readable viewBox the variable stays unset and the CSS falls back
+// to the plain width: a 0px natural width would hide the diagram entirely.
+function fitStyle(fit: boolean, svg: string): CSSProperties | undefined {
+  const width = fit ? mermaidNaturalWidth(svg) : null;
+  return width ? ({ "--mermaid-natural-width": `${width}px` } as CSSProperties) : undefined;
+}
+
+/** The natural width of a rendered Mermaid SVG, from its viewBox. */
+export function mermaidNaturalWidth(svg: string): number | null {
+  const match = /<svg\b[^>]*?\sviewBox="\s*-?[\d.]+[\s,]+-?[\d.]+[\s,]+([\d.]+)[\s,]+[\d.]+\s*"/i.exec(svg);
+  const width = match ? Number(match[1]) : NaN;
+  return Number.isFinite(width) && width > 0 ? width : null;
 }
 
 const ZOOM_STEP = 0.25;
@@ -33,15 +56,41 @@ type RenderState =
   | { key: string; status: "error" }
   | { key: string; status: "ready"; svg: string };
 
-export function MermaidBlock({ code, isStreaming, defaultPreview = false }: MermaidBlockProps) {
+export function MermaidBlock({ code, isStreaming, defaultPreview = false, fit = false, headerAction }: MermaidBlockProps) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [showPreview, setShowPreview] = useState(defaultPreview);
   const [renderState, setRenderState] = useState<RenderState | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const previewRef = useRef<HTMLButtonElement>(null);
+  const [previewZoom, setPreviewZoom] = useState(1);
   const currentKey = `${isDark ? "dark" : "light"}\n${code}`;
   const previewVisible = showPreview && !isStreaming;
+
+  const updatePreviewZoom = useCallback((delta: number) => {
+    setPreviewZoom((zoom) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom + delta)));
+  }, []);
+
+  const resetPreviewZoom = useCallback(() => setPreviewZoom(1), []);
+
+  useEffect(() => {
+    if (previewVisible) setPreviewZoom(1);
+  }, [previewVisible]);
+
+  // Ctrl/⌘ + wheel zooms the diagram. React attaches wheel listeners as
+  // passive, where preventDefault is ignored and the whole page zooms too.
+  const previewMounted = previewVisible && !zoomOpen && renderState?.key === currentKey && renderState.status === "ready";
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (!previewMounted || !preview) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      updatePreviewZoom(event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP);
+    };
+    preview.addEventListener("wheel", onWheel, { passive: false });
+    return () => preview.removeEventListener("wheel", onWheel);
+  }, [previewMounted, updatePreviewZoom]);
 
   useEffect(() => {
     if (!previewVisible) return;
@@ -106,10 +155,33 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
           <button
             ref={previewRef}
             type="button"
-            className="mermaid-block mermaid-preview-button"
+            className={`mermaid-block mermaid-preview-button${fit ? " mermaid-fit" : ""}`}
+            style={{
+              ...fitStyle(fit, renderState.svg),
+              "--mermaid-preview-zoom": previewZoom,
+            } as CSSProperties}
             title={t("i18n.openMermaidViewer")}
             aria-label={t("i18n.openMermaidViewer")}
             onClick={() => setZoomOpen(true)}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              resetPreviewZoom();
+            }}
+            onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
+              if (isImeComposing(event)) return;
+              if (event.key === "+" || event.key === "=") {
+                event.preventDefault();
+                updatePreviewZoom(ZOOM_STEP);
+              }
+              if (event.key === "-" || event.key === "_") {
+                event.preventDefault();
+                updatePreviewZoom(-ZOOM_STEP);
+              }
+              if (event.key === "0") {
+                event.preventDefault();
+                resetPreviewZoom();
+              }
+            }}
             dangerouslySetInnerHTML={{ __html: renderState.svg }}
           />
         )}
@@ -122,6 +194,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
       <div className="markdown-code-header">
         <span className="markdown-code-lang">mermaid</span>
         <div className="markdown-code-actions">
+          {headerAction}
           {renderState?.key === currentKey && renderState.status === "ready" && (
             <button
               type="button"
@@ -255,6 +328,17 @@ interface CodeBlockProps {
   isStreaming?: boolean;
 }
 
+// Prism's light theme uses backgroundColor, while its dark theme uses the
+// background shorthand. Keep the pre background solely in customStyle so a
+// theme switch cannot remove/update one and reset the other in React's diff.
+const codeBlockDarkTheme = {
+  ...vscDarkPlus,
+  'pre[class*="language-"]': {
+    ...vscDarkPlus['pre[class*="language-"]'],
+  },
+};
+delete codeBlockDarkTheme['pre[class*="language-"]'].background;
+
 /**
  * Syntax-highlighted code block with copy button.
  * Used as the "source" view for mermaid blocks and for all non-mermaid code fences.
@@ -297,7 +381,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.62,
             overflowX: "auto",
-            background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
           }}
         >
           <code style={{ fontFamily: "var(--font-mono)" }}>{code}</code>
@@ -305,7 +389,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
       ) : (
         <SyntaxHighlighter
           language={lang || "text"}
-          style={isDark ? vscDarkPlus : vs}
+          style={isDark ? codeBlockDarkTheme : vs}
           showLineNumbers
           lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
           customStyle={{
@@ -317,7 +401,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             // block's wrapper already draws the frame.
             border: "none",
             borderRadius: 0,
-            background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
           }}
           codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
         >

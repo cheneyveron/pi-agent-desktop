@@ -369,12 +369,12 @@
   width: 12px;
   flex: 0 0 12px;
   color: var(--accent);
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
 }
 .sidebar-project-context-menu-branch-tag {
   margin-left: auto;
   color: var(--text-dim);
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
   font-size: var(--fs-micro);
 }
 .sidebar-project-context-menu-branch-spinner {
@@ -731,6 +731,13 @@
   border-top: var(--hairline) solid var(--border);
 }
 
+/* The Send key choice does not shrink (its labels are nowrap), so on a phone
+   it ran past the card's right edge. Let it drop under its label instead. */
+.settings-chat-switch-option:has(.settings-send-mode-options) {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
 .settings-theme-options + .settings-option-list {
   margin-top: 8px;
 }
@@ -827,13 +834,17 @@
 
   /* Native-inspired semantic colors. Keep the canvas warm and reserve pure
      white for controls and elevated content. */
-  --bg: #f7f7f5;
-  --bg-panel: rgba(241, 241, 239, 0.92);
+  --bg: #f6f6f7;
+  --bg-panel: rgba(242, 242, 244, 0.92);
   --bg-hover: rgba(29, 29, 31, 0.055);
   --bg-selected: rgba(29, 29, 31, 0.08);
   --border: rgba(60, 60, 67, 0.16);
   --separator: rgba(60, 60, 67, 0.12);
   --surface: #ffffff;
+  /* The reading surface shared by the topbar, chat and right panel. Light: the
+     white content canvas next to the recessed sidebar. Dark: the deepest tone,
+     with the sidebar and floating surfaces a step lighter (Apple's order). */
+  --workbench-bg: #ffffff;
   --surface-muted: rgba(255, 255, 255, 0.64);
   --surface-elevated: #ffffff;
   --text: #1d1d1f;
@@ -901,6 +912,7 @@ html.dark:not([data-theme="pine"]) {
   --border: rgba(235, 235, 245, 0.15);
   --separator: rgba(235, 235, 245, 0.1);
   --surface: #252527;
+  --workbench-bg: #1c1c1e;
   --surface-muted: rgba(44, 44, 46, 0.72);
   --surface-elevated: #2c2c2e;
   --text: #f5f5f7;
@@ -1266,7 +1278,7 @@ html.dark .conversation-navigator-preview {
   align-items: center;
   gap: 4px;
   position: relative;
-  background: color-mix(in srgb, var(--bg) 88%, var(--surface));
+  background: var(--surface);
   border-bottom: none;
 }
 
@@ -1290,6 +1302,29 @@ html.dark .conversation-navigator-preview {
   overflow: hidden;
 }
 
+/* Only the tab area gives way when the row is narrow: the chips after it keep
+   their 28px box. As flex items they default to `flex-shrink: 1`, so the row
+   used to squeeze the folder / expand chips (and their hover plates) instead
+   of scrolling the tabs. */
+.right-panel-tab-strip > :not(.file-tab-bar-slot) {
+  flex-shrink: 0;
+}
+
+/* Edge fades, sized by TabBar's `data-overflow-*` flags. Registered so the
+   fade grows in and out instead of popping when the first tab starts to pass
+   under the chips. */
+@property --file-tab-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --file-tab-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 .file-tab-bar {
   display: flex;
   height: 100%;
@@ -1299,6 +1334,28 @@ html.dark .conversation-navigator-preview {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  --file-tab-fade-start: 0px;
+  --file-tab-fade-end: 0px;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--file-tab-fade-start), #000 calc(100% - var(--file-tab-fade-end)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--file-tab-fade-start), #000 calc(100% - var(--file-tab-fade-end)), transparent 100%);
+  transition: --file-tab-fade-start 180ms ease, --file-tab-fade-end 180ms ease;
+}
+
+.file-tab-bar[data-overflow-start] {
+  --file-tab-fade-start: 24px;
+}
+
+.file-tab-bar[data-overflow-end] {
+  --file-tab-fade-end: 32px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-tab-bar {
+    scroll-behavior: auto;
+    transition: none;
+  }
 }
 
 .file-tab-bar::-webkit-scrollbar {
@@ -1735,14 +1792,12 @@ pre, code {
   border-bottom: 0 !important;
 }
 
-/* On macOS (titleBarStyle: Overlay) the traffic lights float over the
-   sidebar's top-left; the right-aligned controls row shares that strip, so
-   only a small extra inset is needed to keep the rows below clear. The
-   controls row is 28px tall, so a 10px top inset puts its centre at 24px:
-   the same line as the 48px top bar's centre and the traffic lights
-   (MAC_TRAFFIC_LIGHT_Y in src-tauri/src/lib.rs). */
+/* On macOS (titleBarStyle: Overlay) the native traffic lights float over the
+   sidebar's top-left. Keep the sidebar's own 48px chrome row flush with the
+   window top: padding it down made the right-hand menu sit below the lights'
+   24px centre line. The rows below already clear the 16px-tall buttons. */
 .session-sidebar-header--mac-inset {
-  padding-top: 10px !important;
+  padding-top: 0 !important;
 }
 
 /* Window-chrome controls row at the sidebar's top-right (theme + collapse). */
@@ -1751,7 +1806,8 @@ pre, code {
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
-  padding: 0 2px 4px;
+  height: 48px;
+  padding: 0 2px;
 }
 
 .sidebar-chrome-button {
@@ -2745,6 +2801,15 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   letter-spacing: 0.06em !important;
 }
 
+/* Title bar, chat and right panel are one reading surface (--workbench-bg).
+   Inside the main column --bg is re-pointed at it, so the chat canvas,
+   composer fade and status shelf follow and no two shades meet at the
+   topbar's lower edge. Only the sidebar keeps its own recessed tone. */
+.app-main-column {
+  --bg: var(--workbench-bg);
+  background: var(--bg);
+}
+
 .app-topbar {
   position: relative;
   z-index: 90;
@@ -2846,9 +2911,20 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   transform: scale(0.96);
 }
 
-/* Reserve room for the macOS traffic-light controls overlaid by titleBarStyle: Overlay. */
-.app-topbar--mac-inset {
-  padding-left: 72px !important;
+/* Reserve room for the macOS traffic lights overlaid by titleBarStyle: Overlay
+   on whichever 48px row currently owns the window's top-left corner: the top
+   bar while the sidebar is hidden, the file panel's tab strip while it covers
+   the window (full width, or the mobile-width layout). The lights end at
+   14 + 2 x 20 + 12 = 66pt (MAC_TRAFFIC_LIGHT_X in src-tauri/src/lib.rs); the
+   rest is a gap so a filled chip (the active file tab) does not touch them.
+   The sidebar header keeps its own layout: its controls row is right-aligned. */
+:root {
+  --mac-traffic-light-inset: 78px;
+}
+
+.app-topbar--mac-inset,
+.right-panel-tab-strip--mac-inset {
+  padding-left: var(--mac-traffic-light-inset) !important;
 }
 
 /* Custom window chrome for platforms where the native title bar is fully removed. */
@@ -4128,6 +4204,11 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   background: var(--bg-selected);
   color: var(--text);
 }
+.artifact-inline-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .mermaid-block {
   padding: 12px;
@@ -4147,8 +4228,349 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   font-size: var(--fs-small);
 }
 
-/* File workbench */
-@media (min-width: 769px) {
+/* Inline ```html / ```svg previews (components/HtmlPreviewBlock.tsx). The
+   frame stays white unless the page sets no colours of its own (.is-themed),
+   because generated pages assume a light canvas. */
+.html-preview-frame,
+.html-preview-placeholder {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+.html-preview-placeholder,
+.html-preview-frame.is-themed {
+  background: var(--bg);
+}
+.html-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+.html-preview-dialog-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.html-preview-dialog-frame.is-themed {
+  background: var(--bg);
+}
+
+/* Error strip under a preview (components/HtmlPreviewErrorBar.tsx). */
+.html-preview-error-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 8px 6px 12px;
+  border-top: var(--hairline) solid var(--separator);
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+.html-preview-error-icon {
+  flex: 0 0 auto;
+  color: var(--danger);
+}
+.html-preview-error-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+.html-preview-error-title {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+.html-preview-error-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.html-preview-error-more {
+  margin-left: 6px;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+}
+.html-preview-error-fix {
+  flex: 0 0 auto;
+  height: var(--control-height-sm);
+  padding: 0 10px;
+  border: var(--hairline) solid var(--separator);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: var(--shadow-control);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 140ms var(--ease-native), transform 120ms var(--ease-native);
+}
+.html-preview-error-fix:hover {
+  background: var(--bg-hover);
+}
+.html-preview-error-fix:active {
+  transform: scale(0.97);
+}
+.html-preview-error-dismiss {
+  display: inline-flex;
+  flex: 0 0 var(--control-height-sm);
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.html-preview-error-dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.html-preview-error-fix:focus-visible,
+.html-preview-error-dismiss:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+/* Artifacts: the card in a message (components/ArtifactCard.tsx). It is an
+   elevated surface like the composer, so it takes --surface and a control
+   shadow rather than the code-block tint. */
+.artifact-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 440px;
+  margin: 8px 0;
+  padding: 8px 12px 8px 8px;
+  border: var(--hairline) solid var(--separator);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-control);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms var(--ease-native), border-color 140ms var(--ease-native), transform 120ms var(--ease-native);
+}
+.artifact-card:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+.artifact-card:active {
+  transform: scale(0.99);
+}
+.artifact-card:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.artifact-card-icon {
+  display: inline-flex;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.artifact-card.is-generating .artifact-card-icon {
+  animation: artifact-card-pulse 1.4s var(--ease-native) infinite;
+}
+.artifact-card.artifact-ready {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--separator));
+  box-shadow: var(--shadow-control), 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+@keyframes artifact-card-pulse {
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-card.is-generating .artifact-card-icon {
+    animation: none;
+  }
+}
+.artifact-card-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.artifact-card-title {
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.artifact-card-subtitle {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+.artifact-card-action {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+.artifact-card:hover .artifact-card-action {
+  color: var(--text);
+}
+
+/* Artifact tab in the right panel (components/ArtifactPanel.tsx). The toolbar
+   reuses FileViewer's classes; these rules only cover what is new. */
+.artifact-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--bg);
+}
+.artifact-panel-empty {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+.artifact-panel-toolbar .file-viewer-identity {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.artifact-panel-toolbar .file-viewer-file-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.artifact-panel-toolbar .file-viewer-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.artifact-panel-toolbar .file-viewer-icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.artifact-panel-toolbar .file-viewer-icon-button:disabled:hover {
+  background: transparent !important;
+  color: var(--text-muted);
+}
+.artifact-panel-toolbar .file-viewer-mode-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.artifact-panel-versions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  white-space: nowrap;
+}
+.artifact-panel-version-label {
+  min-width: 52px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.artifact-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.artifact-panel-body.is-frame {
+  overflow: hidden;
+}
+.artifact-panel-body > .markdown-code-block {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+/* Upstream caps an inline Mermaid preview at min(600px, 60dvh) so a big
+   diagram cannot fill the chat. The panel scrolls on its own, and the cap cut
+   tall diagrams off with free space below. */
+.artifact-panel-body .mermaid-preview-button {
+  max-height: none;
+}
+/* Fit the diagram to the panel width (MermaidBlock `fit`). Mermaid's inline
+   `max-width: <natural>px` is what keeps narrow diagrams small; !important
+   beats it. Grow at most 1.75x so a two-node diagram is not blown up, and
+   shrink at most to 0.6x so a wide one stays legible: past that the button
+   scrolls sideways, and a click opens the zoomable viewer. The factors apply
+   to the natural width, which MermaidBlock passes as --mermaid-natural-width. */
+.mermaid-fit svg {
+  width: 100%;
+  height: auto;
+  max-width: calc(var(--mermaid-natural-width, 100%) * 1.75) !important;
+  min-width: calc(var(--mermaid-natural-width, 0px) * 0.6) !important;
+  transform: scale(var(--mermaid-preview-zoom, 1));
+  transform-origin: top center;
+}
+/* The panel toolbar already has Source / Copy / Download. */
+.artifact-panel-body > .markdown-code-block > .markdown-code-header {
+  display: none;
+}
+.artifact-panel-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.artifact-panel-frame.is-themed {
+  background: var(--bg);
+}
+.artifact-panel-markdown {
+  max-width: 820px;
+  padding: 24px 32px;
+}
+.artifact-panel > .html-preview-error-bar {
+  border-top: 0;
+  border-bottom: var(--hairline) solid var(--separator);
+}
+
+/* Settings › General › Chat: the artifacts switch carries a hint line. */
+.artifacts-setting-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.artifacts-setting-hint {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .artifact-panel-toolbar .file-viewer-meta {
+    display: none;
+  }
+  .artifact-panel-markdown {
+    padding: 16px;
+  }
+}
+
+/* File workbench. Only the wide split layout puts the panel in flow; below
+   960px upstream's compact rules make it a fixed overlay, and a `relative`
+   here pulled it back into the row (closed, it still took 560px and squeezed
+   the composer to a sliver). */
+@media (min-width: 960px) {
   .right-panel-container {
     position: relative;
   }
@@ -5166,11 +5588,12 @@ span.linenumber {
 }
 
 
-/* Right panel: animate width */
+/* Right panel: animate width (split layout) and slide (compact overlay), with
+   the left sidebar's timing so both sides open and close alike. */
 @media (min-width: 641px) {
   .right-panel-container {
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition: width 0.2s ease, min-width 0.2s ease, transform 0.2s ease;
     flex-shrink: 0;
   }
   .right-panel-container.right-panel-open {
@@ -5264,18 +5687,25 @@ span.linenumber {
     height: var(--app-viewport-height, 100dvh) !important;
     z-index: 250;
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition: transform 0.25s ease, visibility 0s linear 0s;
     flex-shrink: 0;
   }
   .right-panel-container.right-panel-open {
     width: 100%;
     min-width: 0;
   }
+  /* Slides like the mobile sidebar. `visibility` waits for the slide to end,
+     then takes the closed panel out of hit testing and the accessibility tree. */
   .right-panel-container.right-panel-closed {
-    width: 0 !important;
+    /* Beats upstream's `display: none !important`, which cannot animate. */
+    display: flex !important;
+    width: 100% !important;
     min-width: 0 !important;
     border-left: none !important;
-    display: none !important;
+    transform: translateX(100%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform 0.25s ease, visibility 0s linear 0.25s;
   }
 
   .context-panel-mode-strip {
@@ -5296,7 +5726,7 @@ span.linenumber {
 /* Final workbench pass: keep these rules after the responsive shell rules. */
 
 .right-panel-container {
-  background: var(--bg) !important;
+  background: var(--workbench-bg) !important;
 }
 
 
@@ -5513,6 +5943,15 @@ span.linenumber {
   color: var(--text-muted);
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease;
+  /* Pinned to the right edge on its own. The actions group that otherwise
+     pushes it there only renders once a chat is shown, so on load the toggle
+     sat after the title and then jumped right. */
+  margin-left: auto;
+}
+/* With the actions group present, its own auto margin does the pushing; a
+   second one here would split the free space and float both mid-bar. */
+.app-topbar-actions ~ .main-file-toggle {
+  margin-left: 0;
 }
 
 .main-file-toggle:hover:not(:disabled),
@@ -6426,9 +6865,7 @@ html.native-vibrancy .app-shell {
 }
 
 html.native-vibrancy .app-main-column {
-  background:
-    radial-gradient(circle at 55% -30%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 46%),
-    var(--bg);
+  background: var(--bg);
 }
 
 html.native-vibrancy .app-sidebar {
@@ -6616,4 +7053,217 @@ html.native-desktop :is(
   white-space: nowrap;
   color: var(--text-dim);
   font-size: 11px;
+}
+
+/* Right panel as an embedded workbench: the panel is part of the shell, with
+   one shared 48px header row above the chat and panel and no floating-card
+   chrome. Content gets a calmer surface than the canvas, with hairline
+   dividers carrying hierarchy. */
+.right-panel-body > .file-tree-panel {
+  order: -2;
+  border-left: none;
+  border-right: var(--hairline) solid var(--separator);
+}
+.right-panel-body > .file-tree-resize-handle {
+  order: -1;
+}
+.right-panel-tab-strip > .file-tree-toggle {
+  order: -1;
+}
+
+@media (min-width: 641px) {
+  /* One 48px chrome row spans the chat and panel. Keep its background and
+     rule continuous so the shell reads as a split pane instead of two cards. */
+  .app-topbar {
+    background: var(--workbench-bg) !important;
+  }
+
+  .right-panel-container:not(.right-panel-full-width) {
+    border-left: var(--hairline) solid var(--separator) !important;
+    background: var(--workbench-bg) !important;
+  }
+
+  .right-panel-container:not(.right-panel-full-width) .right-panel-tab-strip {
+    background: var(--workbench-bg);
+  }
+  .right-panel-container:not(.right-panel-full-width) .right-panel-tab-strip::after,
+  .right-panel-container:not(.right-panel-full-width) .context-panel-files-toolbar::after {
+    background: var(--separator);
+  }
+  .right-panel-container:not(.right-panel-full-width) .context-panel-files-toolbar,
+  .right-panel-container:not(.right-panel-full-width) .file-viewer-toolbar,
+  .right-panel-container:not(.right-panel-full-width) .file-workbench-toolbar {
+    background: transparent !important;
+    border-bottom-color: var(--separator) !important;
+  }
+  .right-panel-container:not(.right-panel-full-width) .file-tree-panel {
+    background: transparent;
+  }
+}
+
+/* The panel edge is the shell boundary; give its resize target a soft hover
+   state without pretending there is a floating card. */
+@media (min-width: 960px) {
+  .right-panel-resize-handle:not(:hover):not(:focus-visible):not(.is-resizing)::after {
+    background: transparent !important;
+  }
+  .right-panel-resize-handle:is(:hover, :focus-visible, .is-resizing)::after {
+    background: color-mix(in srgb, var(--separator) 68%, var(--text-muted)) !important;
+  }
+}
+
+/* Compact overlay (641-959px): a plain drawer that stays anchored to the
+   window edge; no card gutters, radius, or extra shadow. */
+@media (min-width: 641px) and (max-width: 959px) {
+  /* The generic >=641px width rules above would otherwise size this overlay
+     (and collapse it to 0 when closed, losing the slide). */
+  .right-panel-container:not(.right-panel-full-width),
+  .right-panel-container.right-panel-open:not(.right-panel-full-width),
+  .right-panel-container.right-panel-closed {
+    /* Flush with the window edge. These once read --right-panel-gutter, which
+       7d3d13e1 removed: an undefined variable made top/right/bottom/width
+       invalid, so the closed drawer peeked over the topbar and the open one
+       shrank into the top-left corner. */
+    top: 0;
+    right: env(safe-area-inset-right);
+    bottom: 0;
+    width: min(560px, calc(100vw - 48px));
+    min-width: 300px;
+  }
+  .right-panel-container:not(.right-panel-full-width) > * {
+    width: 100%;
+    min-width: 0;
+  }
+  .right-panel-container.right-panel-open:not(.right-panel-full-width) {
+    background: var(--workbench-bg) !important;
+    box-shadow: var(--shadow-popover);
+  }
+  .right-panel-container.right-panel-closed {
+    width: min(560px, calc(100vw - 48px));
+    transform: translateX(100%);
+    box-shadow: none;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Files a turn changed (TurnWrittenFiles)                                    */
+/* -------------------------------------------------------------------------- */
+
+/* Spans the reply's full width and uses the table / process-details card
+   recipe (hairline border, 10px radius, translucent surface) so it reads as
+   part of the transcript under vibrancy and in both themes. */
+.turn-files-card {
+  width: 100%;
+  margin-top: 10px;
+  overflow: hidden;
+  border: var(--hairline) solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 48%, transparent);
+}
+
+.turn-files-header,
+.turn-files-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.turn-files-header:hover,
+.turn-files-row:hover {
+  background: var(--bg-hover);
+}
+.turn-files-row {
+  border-top: var(--hairline) solid var(--separator);
+}
+
+.turn-files-header-icon,
+.turn-files-chevron,
+.turn-files-row-chevron {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+.turn-files-chevron {
+  transition: transform 150ms ease;
+}
+.turn-files-header[aria-expanded="true"] .turn-files-chevron {
+  transform: rotate(90deg);
+}
+
+.turn-files-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.turn-files-title,
+.turn-files-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.turn-files-title {
+  font-weight: 500;
+}
+.turn-files-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+
+.turn-files-stats {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+.turn-files-added {
+  color: var(--success);
+}
+.turn-files-removed {
+  color: var(--danger);
+}
+
+/* Right panel with nothing open: the message and, while the file list is
+   hidden, the way to show it. */
+.right-panel-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.right-panel-empty-action {
+  padding: 4px 12px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.right-panel-empty-action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .right-panel-container,
+  .right-panel-container.right-panel-closed {
+    transition: none !important;
+  }
 }

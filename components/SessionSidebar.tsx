@@ -190,9 +190,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
-  // On macOS the window has no native title bar — the traffic-light controls
-  // float over whatever sits in the top-left corner, which is this sidebar's
-  // header row. Push it down to clear them (see .session-sidebar-header--mac-inset).
+  // On macOS the native traffic lights float over this header. The mac-inset
+  // class keeps its control row 48px tall so it shares the lights' centre line.
   const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>(null);
   useEffect(() => {
     if (isTauriDesktop()) setDesktopPlatform(getDesktopPlatform());
@@ -1406,8 +1405,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           flexShrink: 0,
         }}
       >
-        {/* Window-chrome controls row: right-aligned (theme + collapse); on macOS
-            the traffic lights share this row's left side. */}
+        {/* Window-chrome controls row: right-aligned (theme + collapse). On
+            macOS the native traffic lights share the row's 48px centre line. */}
         {headerControls && (
           <div className="sidebar-controls-row">
             {headerControls}

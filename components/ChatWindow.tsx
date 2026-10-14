@@ -22,6 +22,7 @@ import { phaseLabel } from "@/lib/chat-phase-label";
 import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
+import { useArtifactPublisher } from "@/hooks/useArtifactPublisher";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -1040,6 +1041,18 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   useLayoutEffect(() => {
     promptAnchorUpdateRef.current?.();
   }, [streamState.streamingMessage]);
+
+  useArtifactPublisher(
+    session?.id ?? sessionIdRef.current,
+    messages,
+    streamState.isStreaming ? streamState.streamingMessage : null,
+    // While an earlier message is being edited, sending would replace that
+    // branch, so the request waits in the composer instead.
+    (text) => {
+      if (editEntryId) chatInputRef?.current?.insertText(text);
+      else void handleSend(text);
+    },
+  );
 
 
   const availableThinkingLevels = displayModelValue

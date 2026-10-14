@@ -128,6 +128,9 @@ try {
 
       // The fork's file tree lives inside the right panel, so note.txt is only
       // reachable while the panel stays open (there is no sidebar explorer).
+      // The list starts hidden.
+      const showFileList = page.locator('#file-panel .file-tree-toggle[aria-label="Show file list"]');
+      if (await showFileList.isVisible()) await showFileList.click();
       await page.locator("#file-panel").getByText("note.txt", { exact: true }).click();
       await page.getByText("File viewer fixture", { exact: true }).waitFor();
       assert.equal(await page.locator(".terminal-panel").count(), 1);

@@ -32,3 +32,15 @@ test("renders a button per file showing the basename and full path", () => {
 test("renders nothing when no files were written", () => {
   assert.equal(render({ files: [], onOpenFile() {} }), "");
 });
+
+test("shows a summary header with total and per-file line counts", () => {
+  const html = render({
+    files: [{ filePath: "/abs/a.ts", added: 17, removed: 2 }, { filePath: "/abs/b.css", added: 7, removed: 0 }],
+    onOpenFile() {},
+  });
+  assert.match(html, /Edited 2 files/);
+  assert.match(html, />\+24</);
+  assert.match(html, />−2</);
+  assert.match(html, />\+17</);
+  assert.match(html, />\+7</);
+});

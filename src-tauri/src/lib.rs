@@ -1,5 +1,3 @@
-mod backend;
-
 use std::{
     env,
     fs::{self, OpenOptions},
@@ -7,7 +5,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{Mutex, OnceLock},
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
@@ -17,26 +15,34 @@ use std::os::unix::process::CommandExt as _;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt as _;
 
-#[cfg(not(target_os = "linux"))]
-use tauri::menu::Menu;
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Url};
+
+mod backend;
+mod logging;
+mod native_prefs;
+mod shell;
+
+use logging::{desktop_log, install_panic_hook};
+use native_prefs::{
+    clear_app_cache, reconcile_webview_cache_for_version, set_ui_theme, write_last_version,
+};
+#[cfg(feature = "custom-protocol")]
+use native_prefs::{read_last_server_port, write_last_server_port};
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-use tauri::menu::MenuItem;
+use shell::build_platform_tray;
+use shell::popup::{show_popup_menu, PopupMenuSelection, POPUP_ID_PREFIX};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use shell::show_main_window;
+#[cfg(target_os = "linux")]
+use shell::build_linux_tray;
 #[cfg(target_os = "macos")]
-use tauri::menu::{MenuItem as MacMenuItem, PredefinedMenuItem, Submenu};
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-#[cfg(not(target_os = "macos"))]
-use tauri::webview::Color;
-use tauri::{
-    webview::NewWindowResponse,
-    AppHandle, Emitter, Manager, RunEvent, Theme, Url, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+use shell::build_macos_app_menu;
+use shell::{
+    build_window, launched_at_login, open_external, quit_app, quit_application, set_close_quits,
+    show_main_window_cmd, CloseQuits, DesktopApiToken, DesktopServer, AUTOSTART_ARG,
+    WINDOW_LABEL,
 };
 
-const WINDOW_LABEL: &str = "main";
-/// Argument the launch-at-login entry passes, so a login start can be told
-/// apart from the user opening the app.
-const AUTOSTART_ARG: &str = "--autostart";
 const DESKTOP_API_TOKEN_ENV: &str = "PI_DESKTOP_API_TOKEN";
 const DESKTOP_INSTANCE_ID_ENV: &str = "PI_DESKTOP_INSTANCE_ID";
 const DESKTOP_INSTANCE_ID_HEADER: &str = "x-pi-desktop-instance";
@@ -50,20 +56,6 @@ const DESKTOP_SERVER_PORT: u16 = 38471;
 const SERVER_START_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-#[cfg(not(target_os = "macos"))]
-const LIGHT_WINDOW_BG: Color = Color(247, 247, 245, 255);
-#[cfg(not(target_os = "macos"))]
-const DARK_WINDOW_BG: Color = Color(28, 28, 30, 255);
-
-struct DesktopServer {
-    child: Mutex<Option<Child>>,
-}
-
-/// When true, closing the main window quits the app; otherwise it hides to tray.
-struct CloseQuits(Mutex<bool>);
-
-struct DesktopApiToken(String);
 
 fn generate_random_hex() -> Result<String, String> {
     let mut bytes = [0_u8; 32];
@@ -85,383 +77,6 @@ fn load_or_generate_desktop_api_token() -> Result<String, String> {
 #[tauri::command]
 fn get_desktop_api_token(token: tauri::State<'_, DesktopApiToken>) -> String {
     token.0.clone()
-}
-
-fn show_main_window(app: &AppHandle) {
-    if let Some(window) = app
-        .get_webview_window(WINDOW_LABEL)
-        .or_else(|| app.get_webview_window(backend::REMOTE_WINDOW))
-    {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    } else {
-        let _ = backend::show_settings(app);
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn build_macos_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let app_name = app.package_info().name.clone();
-    let new_session =
-        MacMenuItem::with_id(app, "new-session", "New Session", true, Some("CmdOrCtrl+N"))?;
-    let general_settings = MacMenuItem::with_id(
-        app,
-        "settings-general",
-        "General Settings…",
-        true,
-        Some("CmdOrCtrl+,"),
-    )?;
-    let model_settings = MacMenuItem::with_id(
-        app,
-        "settings-models",
-        "Model Settings…",
-        true,
-        Some("CmdOrCtrl+M"),
-    )?;
-    let backend_settings = MacMenuItem::with_id(
-        app,
-        "settings-backend",
-        "Backend Connection…",
-        true,
-        None::<&str>,
-    )?;
-    let about = PredefinedMenuItem::about(app, None, None)?;
-    let services = PredefinedMenuItem::services(app, None)?;
-    let hide = PredefinedMenuItem::hide(app, None)?;
-    let hide_others = PredefinedMenuItem::hide_others(app, None)?;
-    let quit = PredefinedMenuItem::quit(app, None)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-
-    let app_menu = Submenu::with_items(
-        app,
-        app_name,
-        true,
-        &[
-            &about,
-            &separator,
-            &services,
-            &separator,
-            &hide,
-            &hide_others,
-            &separator,
-            &quit,
-        ],
-    )?;
-    let file_menu = Submenu::with_items(app, "File", true, &[&new_session])?;
-    let edit_menu = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
-            &separator,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
-        ],
-    )?;
-    let settings_menu = Submenu::with_items(
-        app,
-        "Settings",
-        true,
-        &[&general_settings, &model_settings, &backend_settings],
-    )?;
-    let view_menu = Submenu::with_items(
-        app,
-        "View",
-        true,
-        &[&PredefinedMenuItem::fullscreen(app, None)?],
-    )?;
-    let window_menu = Submenu::with_items(
-        app,
-        "Window",
-        true,
-        &[
-            &PredefinedMenuItem::minimize(app, None)?,
-            &PredefinedMenuItem::maximize(app, None)?,
-            &separator,
-            &PredefinedMenuItem::close_window(app, None)?,
-        ],
-    )?;
-
-    let menu = Menu::with_items(
-        app,
-        &[
-            &app_menu,
-            &file_menu,
-            &edit_menu,
-            &settings_menu,
-            &view_menu,
-            &window_menu,
-        ],
-    )?;
-    app.set_menu(menu)?;
-    Ok(())
-}
-
-fn quit_application(app: &AppHandle) {
-    if let Some(server) = app.try_state::<DesktopServer>() {
-        server.stop();
-    }
-    app.exit(0);
-}
-
-#[cfg(target_os = "linux")]
-const LINUX_TRAY_SHOW_LABEL: &str = "Show Pi Agent";
-#[cfg(target_os = "linux")]
-const LINUX_TRAY_QUIT_LABEL: &str = "Quit Pi Agent";
-
-#[cfg(target_os = "linux")]
-struct LinuxTray {
-    app: AppHandle,
-    icon: ksni::Icon,
-}
-
-#[cfg(target_os = "linux")]
-impl ksni::Tray for LinuxTray {
-    fn id(&self) -> String {
-        "pi-agent-desktop".into()
-    }
-
-    fn title(&self) -> String {
-        "Pi Agent".into()
-    }
-
-    fn icon_name(&self) -> String {
-        "pi-agent-desktop".into()
-    }
-
-    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![self.icon.clone()]
-    }
-
-    fn tool_tip(&self) -> ksni::ToolTip {
-        ksni::ToolTip {
-            title: "Pi Agent".into(),
-            ..Default::default()
-        }
-    }
-
-    fn activate(&mut self, _x: i32, _y: i32) {
-        show_main_window_on_main_thread(&self.app);
-    }
-
-    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        let show_app = self.app.clone();
-        let quit_app = self.app.clone();
-
-        vec![
-            visible_linux_tray_item(LINUX_TRAY_SHOW_LABEL, move |_| {
-                show_main_window_on_main_thread(&show_app)
-            }),
-            visible_linux_tray_item(LINUX_TRAY_QUIT_LABEL, move |_| {
-                quit_application_on_main_thread(&quit_app)
-            }),
-        ]
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn visible_linux_tray_item<T: 'static>(
-    label: &str,
-    activate: impl Fn(&mut T) + 'static,
-) -> ksni::MenuItem<T> {
-    ksni::menu::StandardItem {
-        label: label.into(),
-        enabled: true,
-        visible: true,
-        activate: Box::new(activate),
-        ..Default::default()
-    }
-    .into()
-}
-
-#[cfg(target_os = "linux")]
-fn show_main_window_on_main_thread(app: &AppHandle) {
-    let app_handle = app.clone();
-    let _ = app.run_on_main_thread(move || show_main_window(&app_handle));
-}
-
-#[cfg(target_os = "linux")]
-fn quit_application_on_main_thread(app: &AppHandle) {
-    let app_handle = app.clone();
-    let _ = app.run_on_main_thread(move || quit_application(&app_handle));
-}
-
-#[cfg(target_os = "linux")]
-fn linux_tray_icon(icon: &tauri::image::Image<'_>) -> ksni::Icon {
-    let mut data = Vec::with_capacity(icon.rgba().len());
-    for rgba in icon.rgba().chunks_exact(4) {
-        data.extend_from_slice(&[rgba[3], rgba[0], rgba[1], rgba[2]]);
-    }
-
-    ksni::Icon {
-        width: icon.width() as i32,
-        height: icon.height() as i32,
-        data,
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn build_linux_tray(app: &tauri::App) -> Result<(), std::io::Error> {
-    let icon = app
-        .default_window_icon()
-        .ok_or_else(|| std::io::Error::other("missing default window icon"))?;
-    let service = ksni::TrayService::new(LinuxTray {
-        app: app.handle().clone(),
-        icon: linux_tray_icon(icon),
-    });
-
-    std::thread::spawn(move || {
-        if let Err(error) = service.run() {
-            eprintln!("Pi Agent Linux tray stopped: {error}");
-        }
-    });
-    Ok(())
-}
-
-// macOS has no tray icon: the Dock icon re-shows a hidden window (the `Reopen`
-// handler below) and the app menu owns Quit, so a menu-bar item would only
-// duplicate both. Windows keeps it, since it is the only way back to a window
-// hidden on close.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn build_platform_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let show_item = MenuItem::with_id(app, "show", "Show Pi Agent", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit Pi Agent", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or_else(|| std::io::Error::other("missing default window icon"))?;
-
-    let _tray = TrayIconBuilder::new()
-        .icon(icon)
-        .menu(&menu)
-        .tooltip("Pi Agent")
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => show_main_window(app),
-            "quit" => quit_application(app),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                show_main_window(tray.app_handle());
-            }
-        })
-        .build(app)?;
-
-    Ok(())
-}
-
-impl DesktopServer {
-    fn empty() -> Self {
-        Self {
-            child: Mutex::new(None),
-        }
-    }
-
-    fn running(child: Child) -> Self {
-        Self {
-            child: Mutex::new(Some(child)),
-        }
-    }
-
-    fn stop(&self) {
-        let Ok(mut guard) = self.child.lock() else {
-            return;
-        };
-        let Some(child) = guard.take() else {
-            return;
-        };
-
-        terminate_process_tree(child);
-    }
-}
-
-fn terminate_process_tree(mut child: Child) {
-    #[cfg(unix)]
-    {
-        let pid = child.id();
-        unsafe {
-            // The Node server owns its process group, so this also stops any
-            // agent/tool subprocesses that are active when the App quits.
-            libc::kill(-(pid as i32), libc::SIGTERM);
-        }
-
-        // Reap on a detached thread so the quit/exit path never blocks on the
-        // Node server's shutdown. The packaged server installs no SIGTERM
-        // handler, so it normally dies immediately, but any child that ignores
-        // SIGTERM must not stall the UI for the full grace window. If the main
-        // process exits before this thread finishes, the server's own parent
-        // watchdog (desktop/server-launcher.cjs) exits it within ~1 s, so no
-        // orphan is left behind either way.
-        thread::spawn(move || {
-            let deadline = Instant::now() + Duration::from_secs(2);
-            while Instant::now() < deadline {
-                match child.try_wait() {
-                    Ok(Some(_)) => return,
-                    Ok(None) => thread::sleep(Duration::from_millis(50)),
-                    Err(_) => return,
-                }
-            }
-
-            unsafe {
-                libc::kill(-(pid as i32), libc::SIGKILL);
-            }
-            let _ = child.kill();
-            let _ = child.wait();
-        });
-    }
-
-    #[cfg(windows)]
-    {
-        // taskkill /T terminates the packaged Node server and any agent/tool
-        // subprocesses it started. CREATE_NO_WINDOW avoids flashing a console.
-        let _ = Command::new("taskkill.exe")
-            .args(["/PID", &child.id().to_string(), "/T", "/F"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-}
-
-impl Drop for DesktopServer {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
-fn open_external(url: &Url) {
-    if !matches!(url.scheme(), "http" | "https" | "mailto") {
-        return;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let _ = Command::new("/usr/bin/open").arg(url.as_str()).spawn();
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let _ = Command::new("rundll32.exe")
-            .args(["url.dll,FileProtocolHandler", url.as_str()])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn();
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let _ = Command::new("xdg-open").arg(url.as_str()).spawn();
-    }
 }
 
 fn open_path_with_default_app(path: &Path) -> Result<(), String> {
@@ -567,7 +182,10 @@ fn open_path(path: String) -> Result<(), String> {
 /// cannot be turned into a general "open anything" primitive.
 #[tauri::command]
 fn open_log_dir(app: AppHandle) -> Result<(), String> {
-    let dir = app.path().app_log_dir().map_err(|error| error.to_string())?;
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|error| error.to_string())?;
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     open_path_with_default_app(&dir)
 }
@@ -696,694 +314,6 @@ async fn open_path_with(path: String, app: String) -> Result<(), String> {
     {
         let _ = (path, app);
         Err("Open With is only supported on macOS".into())
-    }
-}
-
-/// One entry of a popup menu, as the UI describes it. The menu is built here,
-/// from this plain data, instead of through the JS menu API: that API keeps the
-/// menu and its items as resources the page holds, routes clicks back through
-/// JS channels, and its `popup` command holds the webview's resource-table lock
-/// while the main thread runs the menu. A menu that never leaves Rust has none
-/// of that to deadlock on.
-#[derive(Debug, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-enum PopupMenuEntry {
-    Item {
-        id: String,
-        text: String,
-        enabled: bool,
-        checked: Option<bool>,
-    },
-    Separator,
-    Submenu {
-        text: String,
-        enabled: bool,
-        items: Vec<PopupMenuEntry>,
-    },
-    Predefined {
-        item: String,
-        text: Option<String>,
-    },
-}
-
-/// Where a popup menu's selected item is delivered. The menu's click arrives as
-/// an app-level menu event (some platforms deliver it after the popup call has
-/// returned), so the command parks a sender here and waits for it.
-#[derive(Default)]
-struct PopupMenuSelection(Mutex<Option<std::sync::mpsc::Sender<String>>>);
-
-const POPUP_ID_PREFIX: &str = "popup:";
-/// How long to wait for the click after the popup call returns.
-const POPUP_SELECTION_GRACE: Duration = Duration::from_millis(400);
-const DESKTOP_LOG_MAX_BYTES: u64 = 256 * 1024;
-
-/// Formats epoch milliseconds as `YYYY-MM-DDTHH:MM:SS.mmmZ` (UTC) without a
-/// date-time dependency (Howard Hinnant's civil-from-days algorithm).
-fn format_utc_millis(epoch_millis: u128) -> String {
-    let millis = (epoch_millis % 1000) as u32;
-    let total_secs = (epoch_millis / 1000) as u64;
-    let days = (total_secs / 86_400) as i64;
-    let secs_of_day = total_secs % 86_400;
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = if month <= 2 { year + 1 } else { year };
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{millis:03}Z",
-        secs_of_day / 3600,
-        secs_of_day % 3600 / 60,
-        secs_of_day % 60
-    )
-}
-
-/// App log directory, recorded once the app exists so the panic hook (which
-/// has no `AppHandle`) can still reach `desktop.log`.
-static DESKTOP_LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
-
-/// Appends a timestamped line to `desktop.log` in `dir`. Best effort. When the
-/// file passes the size cap it is moved to `desktop.log.1` (replacing the
-/// previous one) so a crash entry is never lost to the rotation itself.
-fn append_desktop_log(dir: &Path, message: &str) {
-    let _ = fs::create_dir_all(dir);
-    let path = dir.join("desktop.log");
-    if fs::metadata(&path).is_ok_and(|meta| meta.len() > DESKTOP_LOG_MAX_BYTES) {
-        let _ = fs::rename(&path, dir.join("desktop.log.1"));
-    }
-    let millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis())
-        .unwrap_or(0);
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{} {message}", format_utc_millis(millis));
-    }
-}
-
-/// Appends a line to `desktop.log` in the app log directory. The log exists so
-/// a hang during a popup, a panic, or an unexpected exit leaves its last step
-/// on disk.
-fn desktop_log(app: &AppHandle, message: &str) {
-    let Ok(dir) = app.path().app_log_dir() else { return };
-    let _ = DESKTOP_LOG_DIR.set(dir.clone());
-    append_desktop_log(&dir, message);
-}
-
-/// Writes panics to `desktop.log` before the default hook runs. The release
-/// profile uses `panic = "abort"`, so without this a panic on any thread kills
-/// the app with nothing but a macOS crash report to show for it.
-fn install_panic_hook() {
-    let previous = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        if let Some(dir) = DESKTOP_LOG_DIR.get() {
-            let thread = thread::current();
-            let payload = info.payload();
-            let message = payload
-                .downcast_ref::<&str>()
-                .map(|text| (*text).to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "non-string panic payload".to_string());
-            let location = info
-                .location()
-                .map(|place| format!("{}:{}:{}", place.file(), place.line(), place.column()))
-                .unwrap_or_else(|| "unknown location".to_string());
-            let backtrace = std::backtrace::Backtrace::force_capture();
-            append_desktop_log(
-                dir,
-                &format!(
-                    "PANIC v{} on thread '{}' at {location}: {message}\n{backtrace}",
-                    env!("CARGO_PKG_VERSION"),
-                    thread.name().unwrap_or("<unnamed>")
-                ),
-            );
-        }
-        previous(info);
-    }));
-}
-
-fn build_popup_items(
-    app: &AppHandle,
-    nonce: u64,
-    entries: &[PopupMenuEntry],
-) -> tauri::Result<Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>>> {
-    use tauri::menu::{CheckMenuItem, IsMenuItem, MenuItem, PredefinedMenuItem, Submenu};
-
-    let mut out: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::with_capacity(entries.len());
-    for entry in entries {
-        match entry {
-            PopupMenuEntry::Item { id, text, enabled, checked } => {
-                let menu_id = format!("{POPUP_ID_PREFIX}{nonce}:{id}");
-                match checked {
-                    Some(checked) => out.push(Box::new(CheckMenuItem::with_id(
-                        app, menu_id, text, *enabled, *checked, None::<&str>,
-                    )?)),
-                    None => out.push(Box::new(MenuItem::with_id(
-                        app, menu_id, text, *enabled, None::<&str>,
-                    )?)),
-                }
-            }
-            PopupMenuEntry::Separator => out.push(Box::new(PredefinedMenuItem::separator(app)?)),
-            PopupMenuEntry::Submenu { text, enabled, items } => {
-                let children = build_popup_items(app, nonce, items)?;
-                let refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
-                    children.iter().map(|item| item.as_ref()).collect();
-                out.push(Box::new(Submenu::with_items(app, text, *enabled, &refs)?));
-            }
-            PopupMenuEntry::Predefined { item, text } => {
-                let text = text.as_deref();
-                let built = match item.as_str() {
-                    "Copy" => PredefinedMenuItem::copy(app, text)?,
-                    "Cut" => PredefinedMenuItem::cut(app, text)?,
-                    "Paste" => PredefinedMenuItem::paste(app, text)?,
-                    "SelectAll" => PredefinedMenuItem::select_all(app, text)?,
-                    "Undo" => PredefinedMenuItem::undo(app, text)?,
-                    "Redo" => PredefinedMenuItem::redo(app, text)?,
-                    _ => continue,
-                };
-                out.push(Box::new(built));
-            }
-        }
-    }
-    Ok(out)
-}
-
-/// Shows `items` as a native popup menu and resolves to the id of the item the
-/// user picked, or `None` when it was dismissed. Nothing runs while the menu is
-/// open except the menu itself: the page gets the answer afterwards.
-#[tauri::command]
-async fn show_popup_menu(
-    app: AppHandle,
-    window: tauri::Window,
-    items: Vec<PopupMenuEntry>,
-    at: Option<tauri::LogicalPosition<f64>>,
-) -> Result<Option<String>, String> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use tauri::menu::{ContextMenu as _, Menu};
-
-    static NEXT_NONCE: AtomicU64 = AtomicU64::new(1);
-    let nonce = NEXT_NONCE.fetch_add(1, Ordering::Relaxed);
-
-    // The item boxes are not `Send`; they must be gone before the first await.
-    let menu = {
-        let built = build_popup_items(&app, nonce, &items).map_err(|error| error.to_string())?;
-        let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-            built.iter().map(|item| item.as_ref()).collect();
-        Menu::with_items(&app, &refs).map_err(|error| error.to_string())?
-    };
-
-    let (sender, receiver) = std::sync::mpsc::channel::<String>();
-    if let Some(state) = app.try_state::<PopupMenuSelection>() {
-        if let Ok(mut slot) = state.0.lock() {
-            *slot = Some(sender);
-        }
-    }
-
-    desktop_log(&app, &format!("popup #{nonce} open ({} entries)", items.len()));
-    let started = Instant::now();
-    // Blocks until the menu is dismissed; keep it off the shared async pool.
-    let popup = tauri::async_runtime::spawn_blocking(move || match at {
-        Some(position) => menu.popup_at(window, position),
-        None => menu.popup(window),
-    })
-    .await
-    .map_err(|error| error.to_string())?;
-    desktop_log(
-        &app,
-        &format!("popup #{nonce} closed after {}ms", started.elapsed().as_millis()),
-    );
-    popup.map_err(|error| error.to_string())?;
-
-    let wanted = format!("{POPUP_ID_PREFIX}{nonce}:");
-    let chosen = receiver
-        .recv_timeout(POPUP_SELECTION_GRACE)
-        .ok()
-        .and_then(|id| id.strip_prefix(&wanted).map(str::to_string));
-    if let Some(state) = app.try_state::<PopupMenuSelection>() {
-        if let Ok(mut slot) = state.0.lock() {
-            *slot = None;
-        }
-    }
-    desktop_log(&app, &format!("popup #{nonce} selected {chosen:?}"));
-    Ok(chosen)
-}
-
-#[tauri::command]
-fn set_close_quits(app: AppHandle, quit: bool) -> Result<(), String> {
-    if let Some(state) = app.try_state::<CloseQuits>() {
-        *state
-            .0
-            .lock()
-            .map_err(|_| "close-behavior lock poisoned".to_string())? = quit;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn quit_app(app: AppHandle) -> Result<(), String> {
-    quit_application(&app);
-    Ok(())
-}
-
-#[tauri::command]
-fn show_main_window_cmd(app: AppHandle) -> Result<(), String> {
-    show_main_window(&app);
-    Ok(())
-}
-
-/// Persist the UI theme outside the webview origin so cold starts keep the
-/// user's palette choice even when the local server port changes.
-#[tauri::command]
-fn set_ui_theme(app: AppHandle, theme: String) -> Result<(), String> {
-    let theme = normalize_theme(&theme).ok_or_else(|| "unsupported theme".to_string())?;
-    write_ui_prefs_theme(&app, theme)?;
-    apply_window_theme(&app, theme);
-    Ok(())
-}
-
-/// Total size in bytes of every regular file under `path` (0 when missing).
-fn dir_size(path: &Path) -> u64 {
-    let Ok(entries) = fs::read_dir(path) else { return 0 };
-    entries
-        .flatten()
-        .map(|entry| match entry.file_type() {
-            Ok(kind) if kind.is_dir() => dir_size(&entry.path()),
-            Ok(kind) if kind.is_file() => entry.metadata().map(|m| m.len()).unwrap_or(0),
-            _ => 0,
-        })
-        .sum()
-}
-
-/// Remove `path` and report how many bytes it held. Failures (a file the
-/// webview still has open on Windows) are skipped rather than reported: the
-/// next launch clears what is left, and a partial clear is still a clear.
-fn remove_counting(path: &Path) -> u64 {
-    let size = dir_size(path);
-    if fs::remove_dir_all(path).is_ok() {
-        size
-    } else {
-        size.saturating_sub(dir_size(path))
-    }
-}
-
-/// Delete the webview's disk caches while the app runs and return the bytes
-/// freed. Deliberately narrower than `clear_webview_caches`: on macOS that one
-/// removes `~/Library/WebKit/<id>`, which also holds `localStorage` (sidebar
-/// width, drafts, open tabs), so a user-triggered clear must not touch it.
-/// Sessions, settings and credentials live in `~/.pi/agent` and are never
-/// reached from here.
-fn clear_runtime_caches(app: &AppHandle) -> u64 {
-    let mut freed = 0;
-    // macOS ~/Library/Caches/<id> (WebKit network cache), Linux ~/.cache/<id>,
-    // Windows %LOCALAPPDATA%\<id>.
-    if let Ok(cache_dir) = app.path().app_cache_dir() {
-        for entry in fs::read_dir(&cache_dir).into_iter().flatten().flatten() {
-            freed += remove_counting(&entry.path());
-        }
-    }
-    // Linux WebKitGTK keeps its HTTP cache beside the app data.
-    #[cfg(target_os = "linux")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        freed += remove_counting(&data_dir.join("WebKitCache"));
-    }
-    // Windows WebView2: cache folders inside each profile, never the profile
-    // itself (it holds localStorage and cookies).
-    #[cfg(target_os = "windows")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        for profile in fs::read_dir(data_dir.join("EBWebView")).into_iter().flatten().flatten() {
-            for name in ["Cache", "Code Cache", "GPUCache"] {
-                freed += remove_counting(&profile.path().join(name));
-            }
-        }
-    }
-    freed
-}
-
-/// Clear the webview's disk caches on demand (Settings › General).
-#[tauri::command]
-async fn clear_app_cache(app: AppHandle) -> Result<u64, String> {
-    tauri::async_runtime::spawn_blocking(move || clear_runtime_caches(&app))
-        .await
-        .map_err(|error| error.to_string())
-}
-
-fn ui_prefs_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?;
-    Ok(dir.join("ui-prefs.json"))
-}
-
-fn normalize_theme(theme: &str) -> Option<&'static str> {
-    match theme {
-        "light" => Some("light"),
-        "dark" => Some("dark"),
-        "mist" => Some("mist"),
-        "rose" => Some("rose"),
-        "pine" => Some("pine"),
-        _ => None,
-    }
-}
-
-fn read_ui_prefs(app: &AppHandle) -> serde_json::Value {
-    let Ok(path) = ui_prefs_path(app) else {
-        return serde_json::json!({});
-    };
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_else(|| serde_json::json!({}))
-}
-
-fn write_ui_prefs(app: &AppHandle, prefs: &serde_json::Value) -> Result<(), String> {
-    let path = ui_prefs_path(app)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let raw = serde_json::to_string_pretty(prefs).map_err(|error| error.to_string())?;
-    fs::write(path, raw).map_err(|error| error.to_string())
-}
-
-/// The build's version (from Cargo.toml), known at compile time.
-const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// Path to a small JSON file recording the version that last ran successfully.
-fn last_version_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?;
-    Ok(dir.join("last-version.json"))
-}
-
-fn read_last_version(app: &AppHandle) -> Option<String> {
-    let path = last_version_path(app).ok()?;
-    let raw = fs::read_to_string(&path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    value
-        .get("version")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-}
-
-fn write_last_version(app: &AppHandle) {
-    if let Ok(path) = last_version_path(app) {
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        let raw = serde_json::json!({ "version": APP_VERSION });
-        if let Ok(body) = serde_json::to_string_pretty(&raw) {
-            let _ = fs::write(path, body);
-        }
-    }
-}
-
-/// Clear webview disk caches whose entries are hashed by build (Next.js asset
-/// chunks, WebKit HTTP cache, WebView2 partition cache). Stale entries from a
-/// previous version still resolve to the old hashed filenames and 404 after an
-/// upgrade, which on WebKitGTK surfaces as a hard "This page couldn't load"
-/// error page on the next navigation.
-///
-/// Only the cache directories are touched — `localStorage`, sessions, and
-/// user settings live elsewhere and are preserved.
-fn clear_webview_caches(app: &AppHandle) {
-    // Linux WebKitGTK: ~/.local/share/<identifier>/WebKitCache
-    #[cfg(target_os = "linux")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        let webkit_cache = data_dir.join("WebKitCache");
-        if webkit_cache.is_dir() {
-            let _ = fs::remove_dir_all(&webkit_cache);
-        }
-    }
-    // Windows WebView2: cache partition under the app data dir.
-    #[cfg(target_os = "windows")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        let webview2 = data_dir.join("EBWebView");
-        if webview2.is_dir() {
-            for entry in fs::read_dir(&webview2).into_iter().flatten().flatten() {
-                let cache_dir = entry.path().join("Cache");
-                if cache_dir.is_dir() {
-                    let _ = fs::remove_dir_all(&cache_dir);
-                }
-            }
-        }
-    }
-    // macOS WKWebView: per-origin caches under ~/Library/WebKit/<identifier>.
-    #[cfg(target_os = "macos")]
-    if let Ok(config_dir) = app.path().app_config_dir() {
-        // app_config_dir on macOS is ~/Library/Application Support/<identifier>;
-        // WKWebView WebsiteKit caches live under ~/Library/WebKit/<bundle-id>.
-        if let Some(home) = dirs_home_dir() {
-            let wk = home.join("Library/WebKit/com.abcwyc.pi-agent");
-            if wk.is_dir() {
-                let _ = fs::remove_dir_all(&wk);
-            }
-        }
-        let _ = config_dir; // suppress unused on non-mac
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn dirs_home_dir() -> Option<PathBuf> {
-    env::var_os("HOME").map(PathBuf::from)
-}
-
-/// Detect a version change since the last successful launch and, when one is
-/// found, clear stale webview caches before the window loads. The current
-/// version is recorded *after* the window is built so a crash during startup
-/// keeps flagging a cache clear on the next run.
-fn reconcile_webview_cache_for_version(app: &AppHandle) {
-    let last = read_last_version(app);
-    if last.as_deref() != Some(APP_VERSION) {
-        clear_webview_caches(app);
-    }
-}
-
-fn read_stored_theme(app: &AppHandle) -> Option<&'static str> {
-    read_ui_prefs(app)
-        .get("theme")
-        .and_then(|value| value.as_str())
-        .and_then(normalize_theme)
-}
-
-fn write_ui_prefs_theme(app: &AppHandle, theme: &str) -> Result<(), String> {
-    let mut prefs = read_ui_prefs(app);
-    prefs["theme"] = serde_json::Value::String(theme.to_string());
-    write_ui_prefs(app, &prefs)
-}
-
-#[cfg(feature = "custom-protocol")]
-fn read_last_server_port(app: &AppHandle) -> Option<u16> {
-    read_ui_prefs(app)
-        .get("serverPort")
-        .and_then(|value| value.as_u64())
-        .and_then(|port| u16::try_from(port).ok())
-        .filter(|port| *port > 0)
-}
-
-#[cfg(feature = "custom-protocol")]
-fn write_last_server_port(app: &AppHandle, port: u16) {
-    let mut prefs = read_ui_prefs(app);
-    prefs["serverPort"] = serde_json::Value::from(port);
-    let _ = write_ui_prefs(app, &prefs);
-}
-
-#[cfg(not(target_os = "macos"))]
-fn theme_background_color(theme: &str) -> Color {
-    match theme {
-        "dark" => DARK_WINDOW_BG,
-        "mist" => Color(244, 248, 247, 255),
-        "rose" => Color(252, 247, 248, 255),
-        "pine" => Color(25, 32, 31, 255),
-        _ => LIGHT_WINDOW_BG,
-    }
-}
-
-fn theme_bootstrap_script(theme: &str) -> String {
-    // Runs before page scripts so localStorage/class match the persisted
-    // preference even on a fresh webview origin (new localhost port). The
-    // native pref is only seeded into localStorage when the origin has no
-    // choice recorded yet: the renderer writes "pi-theme" before it invokes
-    // `set_ui_theme`, so localStorage is always the freshest user intent and
-    // must never be clobbered by a (possibly stale) native pref — e.g. after
-    // a crash interrupted the toggle before the IPC round-trip landed.
-    format!(
-        r#"(function(){{try{{var t=localStorage.getItem("pi-theme");if(!t){{t="{theme}";localStorage.setItem("pi-theme",t);}}var r=t==="auto"?(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;var d=r==="dark"||r==="pine";document.documentElement.dataset.theme=r;document.documentElement.classList.toggle("dark",d);}}catch(e){{}}}})();"#
-    )
-}
-
-/// True when running under a Wayland compositor. `set_background_color` and a
-/// few other native chrome APIs dereference a null GdkSurface there and crash,
-/// so callers consult this to avoid them.
-#[cfg(not(target_os = "macos"))]
-fn is_wayland() -> bool {
-    env::var("WAYLAND_DISPLAY").is_ok()
-        || env::var("GDK_BACKEND")
-            .map(|value| value.contains("wayland"))
-            .unwrap_or(false)
-}
-
-fn apply_window_theme(app: &AppHandle, theme: &str) {
-    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
-        return;
-    };
-    let tauri_theme = if matches!(theme, "dark" | "pine") {
-        Theme::Dark
-    } else {
-        Theme::Light
-    };
-    let _ = window.set_theme(Some(tauri_theme));
-    // `set_background_color` dereferences a possibly-null GdkSurface under
-    // Wayland and segfaults the whole process (frameless WebKitGTK window).
-    // The page paints its own opaque background via CSS, so the native chrome
-    // color is cosmetic only and is safe to skip on Wayland.
-    // On macOS the window is transparent over an NSVisualEffectView, so an
-    // opaque native background would hide the vibrancy.
-    #[cfg(not(target_os = "macos"))]
-    if !is_wayland() {
-        let _ = window.set_background_color(Some(theme_background_color(theme)));
-    }
-}
-
-fn same_origin(candidate: &Url, app_url: &Url) -> bool {
-    candidate.scheme() == app_url.scheme()
-        && candidate.host_str() == app_url.host_str()
-        && candidate.port_or_known_default() == app_url.port_or_known_default()
-}
-
-/// Inset of the macOS traffic lights from the window's top-left corner, in
-/// logical points. Y places the buttons' vertical centre on the middle of the
-/// 48px top bar (and of the sidebar header's controls row, which shares it).
-#[cfg(target_os = "macos")]
-const MAC_TRAFFIC_LIGHT_X: f64 = 14.0;
-#[cfg(target_os = "macos")]
-const MAC_TRAFFIC_LIGHT_Y: f64 = 24.0;
-
-fn launched_at_login() -> bool {
-    env::args().any(|arg| arg == AUTOSTART_ARG)
-}
-
-fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<WebviewWindow> {
-    let navigation_origin = app_url.clone();
-    let navigation_app = app.clone();
-    let stored_theme = read_stored_theme(app);
-
-    let mut builder = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::External(app_url))
-        .title("Pi Agent")
-        .inner_size(1440.0, 900.0)
-        .min_inner_size(900.0, 600.0)
-        .resizable(true)
-        // Pi Agent already handles browser drag/drop for image attachments.
-        .disable_drag_drop_handler()
-        .initialization_script(backend::LOGO_SCRIPT)
-        .on_navigation(move |url| {
-            if backend::intercept_navigation(&navigation_app, WINDOW_LABEL, url) {
-                return false;
-            }
-            if same_origin(url, &navigation_origin) {
-                true
-            } else {
-                open_external(url);
-                false
-            }
-        })
-        .on_new_window(|url, _features| {
-            open_external(&url);
-            NewWindowResponse::Deny
-        })
-        .on_document_title_changed(|window, title| {
-            let _ = window.set_title(&title);
-        });
-
-    // Force the native window chrome/background to match an explicit UI theme
-    // before the page paints — otherwise macOS dark mode flashes a black
-    // webview while the user has chosen light mode.
-    if let Some(theme) = stored_theme {
-        let tauri_theme = if matches!(theme, "dark" | "pine") {
-            Theme::Dark
-        } else {
-            Theme::Light
-        };
-        builder = builder
-            .theme(Some(tauri_theme))
-            .initialization_script(theme_bootstrap_script(theme));
-        // Skip the native background color on Wayland: it can NULL-deref the
-        // GdkSurface during window creation and crash the process.
-        #[cfg(not(target_os = "macos"))]
-        if !is_wayland() {
-            builder = builder.background_color(theme_background_color(theme));
-        }
-    }
-
-    // Lets native-theme.css apply desktop-only conventions (arrow cursors,
-    // non-selectable chrome) without touching the browser build.
-    builder = builder.initialization_script(DESKTOP_MARKER_SCRIPT);
-
-    // Hide the native title bar. macOS keeps the traffic-light controls
-    // (overlaid on our own top bar); other platforms go fully frameless and
-    // rely on custom window controls drawn in the web content instead.
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true)
-            // The default inset centres the lights in a 28px title bar, but
-            // our top bar is 48px tall (native-theme.css `.app-topbar`), so
-            // they sat ~10px high. Keep this in step with MAC_TRAFFIC_LIGHT_*.
-            .traffic_light_position(tauri::LogicalPosition::new(
-                MAC_TRAFFIC_LIGHT_X,
-                MAC_TRAFFIC_LIGHT_Y,
-            ))
-            // Transparent webview over an NSVisualEffectView (see below). The
-            // `native-vibrancy` class tells native-theme.css to let the sidebar
-            // show through; without it the page paints opaque as before.
-            .transparent(true)
-            .initialization_script(VIBRANCY_MARKER_SCRIPT);
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        builder = builder.decorations(false);
-    }
-
-    let window = builder.build()?;
-
-    #[cfg(target_os = "macos")]
-    apply_macos_vibrancy(&window);
-
-    Ok(window)
-}
-
-const DESKTOP_MARKER_SCRIPT: &str =
-    r#"(function(){try{document.documentElement.classList.add("native-desktop");}catch(e){}})();"#;
-
-/// Marks <html> so native-theme.css can make the sidebar translucent. Removed
-/// again by `apply_macos_vibrancy` if the effect view could not be attached.
-#[cfg(target_os = "macos")]
-const VIBRANCY_MARKER_SCRIPT: &str =
-    r#"(function(){try{document.documentElement.classList.add("native-vibrancy");}catch(e){}})();"#;
-
-/// Puts the system sidebar material behind the transparent webview. The
-/// material follows the window theme set via `set_theme`.
-#[cfg(target_os = "macos")]
-fn apply_macos_vibrancy(window: &WebviewWindow) {
-    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
-
-    if apply_vibrancy(
-        window,
-        NSVisualEffectMaterial::Sidebar,
-        Some(NSVisualEffectState::Active),
-        None,
-    )
-    .is_err()
-    {
-        let _ = window.eval(
-            r#"document.documentElement.classList.remove("native-vibrancy");"#,
-        );
     }
 }
 
@@ -1570,29 +500,18 @@ fn spawn_server_monitor(app: AppHandle, address: SocketAddr, instance_id: String
                 let Some(server) = app.try_state::<DesktopServer>() else {
                     return;
                 };
-                {
-                    let Ok(mut guard) = server.child.lock() else {
+                match server.try_wait_child() {
+                    Ok(None) => {}
+                    Ok(Some(status)) => {
+                        desktop_log(
+                            &app,
+                            &format!("server process exited unexpectedly ({status}); see server.log"),
+                        );
                         return;
-                    };
-                    // `None`: stop() took the child, i.e. the app is quitting.
-                    let Some(child) = guard.as_mut() else {
+                    }
+                    Err(error) => {
+                        desktop_log(&app, &format!("server status check failed: {error}"));
                         return;
-                    };
-                    match child.try_wait() {
-                        Ok(None) => {}
-                        Ok(Some(status)) => {
-                            desktop_log(
-                                &app,
-                                &format!(
-                                    "server process exited unexpectedly ({status}); see server.log"
-                                ),
-                            );
-                            return;
-                        }
-                        Err(error) => {
-                            desktop_log(&app, &format!("server status check failed: {error}"));
-                            return;
-                        }
                     }
                 }
 
@@ -1746,19 +665,36 @@ fn start_packaged_server(
 
 #[cfg(all(test, feature = "custom-protocol"))]
 mod tests {
-    use super::{
-        child_process_compatible_path, format_utc_millis, response_has_instance_id, PopupMenuEntry,
-    };
-    #[cfg(target_os = "linux")]
-    use super::{visible_linux_tray_item, LinuxTray, LINUX_TRAY_QUIT_LABEL, LINUX_TRAY_SHOW_LABEL};
+    use super::shell::popup::PopupMenuEntry;
+    use super::{child_process_compatible_path, response_has_instance_id};
+    use super::{logging::format_utc_millis, native_prefs::is_inline_frame_document};
+
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn inline_frame_documents_stay_in_the_app() {
+        let parse = |url: &str| tauri::Url::parse(url).unwrap();
+        assert!(is_inline_frame_document(&parse("about:srcdoc")));
+        assert!(is_inline_frame_document(&parse("about:blank")));
+        assert!(!is_inline_frame_document(&parse("about:config")));
+        assert!(!is_inline_frame_document(&parse(
+            "https://example.com/srcdoc"
+        )));
+        assert!(!is_inline_frame_document(&parse("data:text/html,x")));
+    }
 
     #[test]
     fn log_timestamps_are_utc_iso() {
         assert_eq!(format_utc_millis(0), "1970-01-01T00:00:00.000Z");
         // 2024-02-29 (leap day) 23:59:59.999
-        assert_eq!(format_utc_millis(1_709_251_199_999), "2024-02-29T23:59:59.999Z");
-        assert_eq!(format_utc_millis(1_791_784_131_078), "2026-10-12T05:48:51.078Z");
+        assert_eq!(
+            format_utc_millis(1_709_251_199_999),
+            "2024-02-29T23:59:59.999Z"
+        );
+        assert_eq!(
+            format_utc_millis(1_791_784_131_078),
+            "2026-10-12T05:48:51.078Z"
+        );
     }
 
     #[test]
@@ -1778,9 +714,18 @@ mod tests {
         )
         .expect("entries parse");
         assert_eq!(entries.len(), 6);
-        assert!(matches!(&entries[1], PopupMenuEntry::Item { checked: Some(true), enabled: false, .. }));
+        assert!(matches!(
+            &entries[1],
+            PopupMenuEntry::Item {
+                checked: Some(true),
+                enabled: false,
+                ..
+            }
+        ));
         assert!(matches!(&entries[3], PopupMenuEntry::Submenu { items, .. } if items.len() == 1));
-        assert!(matches!(&entries[5], PopupMenuEntry::Predefined { text: Some(text), .. } if text == "Einfügen"));
+        assert!(
+            matches!(&entries[5], PopupMenuEntry::Predefined { text: Some(text), .. } if text == "Einfügen")
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -1810,7 +755,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn open_with_refuses_relative_missing_and_non_bundle_targets() {
-        let file = std::env::temp_dir().join(format!("pi-open-with-guard-{}.txt", std::process::id()));
+        let file =
+            std::env::temp_dir().join(format!("pi-open-with-guard-{}.txt", std::process::id()));
         std::fs::write(&file, "hello").unwrap();
         let bundle = Path::new("/System/Applications/TextEdit.app");
 
@@ -1842,21 +788,6 @@ mod tests {
     fn leaves_non_windows_path_unchanged() {
         let path = Path::new("/Applications/Pi Agent.app/Contents/Resources/server");
         assert_eq!(child_process_compatible_path(path), PathBuf::from(path));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_tray_menu_items_publish_visible_labels() {
-        for label in [LINUX_TRAY_SHOW_LABEL, LINUX_TRAY_QUIT_LABEL] {
-            let item = visible_linux_tray_item(label, |_: &mut LinuxTray| {});
-            let ksni::MenuItem::Standard(item) = item else {
-                panic!("Linux tray command must be a standard menu item");
-            };
-
-            assert_eq!(item.label, label);
-            assert!(item.enabled);
-            assert!(item.visible);
-        }
     }
 
     #[test]
@@ -2165,6 +1096,9 @@ pub fn run() {
                 )?;
             }
 
+            // Clear stale webview caches when the app version changed since the
+            // last successful launch (fixes WebKitGTK loading stale hashed
+            // Next.js assets after an upgrade).
             reconcile_webview_cache_for_version(app.handle());
             match backend::read(app.handle()) {
                 Ok(Some(url)) => {

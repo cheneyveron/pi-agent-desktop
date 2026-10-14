@@ -471,7 +471,7 @@ export async function observeTestConnection(
     durationMs,
     ...cwd,
     ...(state === "connected" && connection.hasResources
-      ? { resources: connection.resources.length, resourceTemplates: connection.resourceTemplates.length }
+      ? { resources: true as const }
       : {}),
     ...(client?.serverInfo ? { serverInfo: describeServerInfo(client.serverInfo, redact) } : {}),
   };
