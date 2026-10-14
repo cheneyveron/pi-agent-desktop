@@ -4,7 +4,7 @@
   "components": [
     {
       "id": "pi-agent-desktop",
-      "repository": "abcwyc/pi-agent-desktop",
+      "repository": "cheneyveron/pi-agent-desktop",
       "version": "0.7.0"
     },
     {

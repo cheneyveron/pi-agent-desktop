@@ -109,6 +109,9 @@ jobs:
 
             ### Added
 
+            - **Projects / Recent switch** in the sidebar header: two small buttons toggle between the project tree and one flat list of every project's sessions, newest first. The choice is remembered.
+            - **New sessions name themselves**: after the first reply a session gets a title automatically. Sessions you reopen are never renamed.
+            - **More in the session right-click menu**: Generate title, Copy session ID and Full history work on any session in the list.
             - **Artifacts in the side panel**: the assistant can put a standalone page, app, React component, SVG, Mermaid diagram or long document in its own panel tab, with versions, Preview / Source, copy and download. Asking for a change produces a new version in place. Turn the prompt hint off in Settings → General → **Artifacts in the side panel**.
             - **Inline previews**: complete ```` ```html ```` pages and ```` ```svg ```` images in replies render in place, with a full-screen view. React (`jsx` / `tsx`) components run on request with the bundled React and Tailwind, offline unless they import npm packages. A preview that throws shows its errors with **Ask to fix**.
             - **Edited files card** under a reply: every file the turn wrote, with lines added and removed; a row opens the file, right-click offers Open With / Reveal.
@@ -129,6 +132,7 @@ jobs:
             - Leaving a narrow window width restores the desktop sidebar state.
             - The macOS traffic-light buttons stay on the top bar's centre line after launch and when the window is shown again.
             - Edited-file line counts no longer count unchanged context lines quoted in an edit.
+            - A `/skill:` message shows its command inline with the arguments instead of on a separate line, and the title bar shows the typed command.
 
             ### Good to know
 
@@ -144,6 +148,9 @@ jobs:
 
             ### 新增
 
+            - 侧栏标题栏新增**项目 / 最近**切换：用两个小按钮在项目树和“所有项目会话按最近活动排序的平铺列表”之间切换，选择会被记住。
+            - **新会话自动命名**：首轮回复结束后自动生成标题，重新打开的旧会话不会被改名。
+            - **会话右键菜单更丰富**：可对列表中任意会话生成标题、复制会话 ID、打开完整历史。
             - **侧边面板中的 Artifact**：助手可以把独立的网页、应用、React 组件、SVG、Mermaid 图或长文档放进单独的面板标签，支持多版本、预览 / 源码切换、复制和下载。要求修改时会原地生成新版本。可在设置 → 常规 →**在侧边面板展示 Artifacts** 中关闭这项提示。
             - **内联预览**：回复中完整的 ```` ```html ```` 页面和 ```` ```svg ```` 图片直接渲染，并可全屏查看。React（`jsx` / `tsx`）组件可按需运行，内置 React 与 Tailwind，不引入 npm 包时离线可用。预览出错时会显示错误，并提供**让模型修复**。
             - 回复下方新增**已修改文件卡片**：列出本轮写入的每个文件及其增删行数；点击打开文件，右键可选择打开方式或在文件夹中显示（macOS 为访达）。
@@ -164,6 +171,7 @@ jobs:
             - 从窄窗口恢复宽度后，桌面侧边栏状态正确还原。
             - macOS 红绿灯按钮在启动后及窗口重新显示时保持在顶栏中线上。
             - 已修改文件的行数统计不再计入编辑中引用的未改动上下文行。
+            - `/skill:` 消息的命令与参数同行显示，标题栏显示你输入的命令。
 
             ### 需要了解
 
