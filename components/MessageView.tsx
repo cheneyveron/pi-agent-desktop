@@ -422,67 +422,69 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           }}
         >
           {skillExpansion ? (
-            // The command sits on its own line with the arguments below at full
-            // width; side by side, long arguments became a narrow second column.
-            // The skill body opens right under the command: the bubble scrolls at
-            // USER_BUBBLE_MAX_HEIGHT, so content appended after long arguments
-            // landed out of view and the toggle looked dead.
+            // The command is an inline chip at the head of the message text, so
+            // the arguments flow after it and wrap under it like any prose. A
+            // flex row put long arguments in a narrow second column; a stacked
+            // layout gave the command a line of its own. The skill body opens
+            // right under that text: the bubble scrolls at USER_BUBBLE_MAX_HEIGHT,
+            // so content appended after long arguments landed out of view and
+            // the toggle looked dead.
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               {imageBlocksNode}
-              <button
-                onClick={() => setExpanded((prev) => !prev)}
-                title={expanded ? t("i18n.collapse") : t("i18n.expand")}
-                aria-expanded={expanded}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  alignSelf: "flex-start",
-                  maxWidth: "100%",
-                  padding: 0,
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "var(--accent)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "calc(13px + var(--chat-font-size-offset, 0px))",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {commandName}
-                </span>
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ flexShrink: 0, opacity: 0.75, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
-                  aria-hidden="true"
+              <span style={{
+                color: "var(--text)",
+                fontSize: "calc(14px + var(--chat-font-size-offset, 0px))",
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                minWidth: 0,
+              }}>
+                <button
+                  onClick={() => setExpanded((prev) => !prev)}
+                  title={expanded ? t("i18n.collapse") : t("i18n.expand")}
+                  aria-expanded={expanded}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    verticalAlign: "baseline",
+                    gap: 4,
+                    maxWidth: "100%",
+                    padding: 0,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--accent)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "calc(13px + var(--chat-font-size-offset, 0px))",
+                    lineHeight: "inherit",
+                    textAlign: "left",
+                    whiteSpace: "nowrap",
+                  }}
                 >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {commandName}
+                  </span>
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ flexShrink: 0, opacity: 0.75, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+                    aria-hidden="true"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                {commandArgs && ` ${commandArgs}`}
+              </span>
               {expanded && (
                 <div style={{ borderLeft: "2px solid var(--border)", paddingLeft: 10 }}>
                   <MarkdownBody className="markdown-user-message" keepLineBreaks cwd={cwd} onOpenFile={onOpenFile}>{skillExpansion.body}</MarkdownBody>
                 </div>
-              )}
-              {commandArgs && (
-                <span style={{
-                  color: "var(--text)",
-                  fontSize: "calc(14px + var(--chat-font-size-offset, 0px))",
-                  lineHeight: 1.6,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  minWidth: 0,
-                }}>
-                  {commandArgs}
-                </span>
               )}
             </div>
           ) : (

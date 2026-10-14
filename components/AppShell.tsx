@@ -15,6 +15,7 @@ import { ScheduledView } from "./scheduled/ScheduledView";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { clearDraft } from "@/lib/draft-store";
+import { skillExpansionToCommand } from "@/lib/slash-display";
 import { TabBar, type Tab } from "./TabBar";
 
 // Heavy, rarely-used surfaces are code-split out of the main bundle. The
@@ -1093,20 +1094,46 @@ export function AppShell() {
   // server-computed projectKey, which the same-project check in
   // handleCwdChange relies on. Hydrate it from the session list so switching
   // worktrees right after creating a session doesn't close the chat.
-  const hydrateSelectedSession = useCallback((sessionId: string) => {
-    void fetch("/api/sessions", { cache: "no-store" })
+  const hydrateSelectedSession = useCallback((sessionId: string): Promise<SessionInfo | null> => {
+    return fetch("/api/sessions", { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
       .then((d) => {
         const full = d?.sessions.find((s) => s.id === sessionId);
-        if (!full) return;
+        if (!full) return null;
         setSelectedSession((prev) => (
           prev?.id === sessionId
             ? { ...prev, ...full, transient: full.transient ?? false }
             : prev
         ));
+        return full;
       })
-      .catch(() => {});
+      .catch(() => null);
   }, []);
+
+  // Asks the server to name a session from its transcript. Shared by the More
+  // menu (selected session, with status chips), the sidebar's row menu (any
+  // session) and the automatic naming after a new session's first turn.
+  const generateSessionTitleFor = useCallback(async (sessionId: string): Promise<string> => {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
+      method: "POST",
+    });
+    const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
+    if (!response.ok || !body.title) {
+      throw new Error(body.error || `HTTP ${response.status}`);
+    }
+    const title = body.title.trim();
+    setRefreshKey((key) => key + 1);
+    setSelectedSession((current) => current?.id === sessionId ? { ...current, name: title } : current);
+    setSessionStats((current) => current?.sessionId === sessionId ? { ...current, sessionName: title } : current);
+    return title;
+  }, []);
+
+  // Sessions created from this window's composer that have not been named
+  // yet: the first completed turn names them automatically. Tracked by id so
+  // a session the user resumes later (or renames mid-run) is never renamed
+  // behind their back.
+  const freshSessionIdsRef = useRef<Set<string>>(new Set());
+  const handleAutoNameRef = useRef<() => Promise<void>>(async () => {});
 
   const handleOpenSession = useCallback(async (sessionId: string) => {
     // Prefer the catalogue the sidebar already delivered: selecting from it
@@ -1149,7 +1176,8 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = null;
     setNewSessionCwd(null);
     setSelectedSession(session);
-    hydrateSelectedSession(session.id);
+    if (!session.name) freshSessionIdsRef.current.add(session.id);
+    void hydrateSelectedSession(session.id);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
   }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
 
@@ -1196,7 +1224,19 @@ export function AppShell() {
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
-    if (selectedSession) hydrateSelectedSession(selectedSession.id);
+    if (selectedSession) {
+      const sessionId = selectedSession.id;
+      void hydrateSelectedSession(sessionId).then((full) => {
+        // Name a fresh session once its first turn is on disk. The server's
+        // record decides: a turn that ended without an assistant message has
+        // no file yet (try again after the next turn), and a name given in
+        // the meantime, from any window, wins.
+        if (!full || full.transient || !freshSessionIdsRef.current.has(sessionId)) return;
+        freshSessionIdsRef.current.delete(sessionId);
+        if (full.name || activeSessionIdRef.current !== sessionId) return;
+        void handleAutoNameRef.current();
+      });
+    }
 
     if (selectedSession?.relation?.kind === "subagent") return;
     if (!shouldShowBrowserNotification()) return;
@@ -1249,19 +1289,8 @@ export function AppShell() {
     setAutoNameStatus({ kind: "naming" });
 
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
-        method: "POST",
-      });
-      const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
-      if (!response.ok || !body.title) {
-        throw new Error(body.error || `HTTP ${response.status}`);
-      }
-
-      const title = body.title.trim();
-      setRefreshKey((key) => key + 1);
+      await generateSessionTitleFor(sessionId);
       if (activeSessionIdRef.current !== sessionId) return;
-      setSelectedSession((current) => current?.id === sessionId ? { ...current, name: title } : current);
-      setSessionStats((current) => current?.sessionId === sessionId ? { ...current, sessionName: title } : current);
       setAutoNameStatus({ kind: "success" });
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 1800);
     } catch (error) {
@@ -1270,7 +1299,8 @@ export function AppShell() {
       setAutoNameStatus({ kind: "error", message });
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 5000);
     }
-  }, [autoNameStatus.kind, selectedSession?.id]);
+  }, [autoNameStatus.kind, generateSessionTitleFor, selectedSession?.id]);
+  handleAutoNameRef.current = handleAutoName;
 
   useEffect(() => {
     if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
@@ -1404,12 +1434,11 @@ export function AppShell() {
     });
   }, [fileTabs, terminalTabs]);
 
-  const handleViewFullHistory = useCallback(() => {
-    if (!selectedSession) return;
+  const openFullHistory = useCallback((sessionId: string) => {
     // Absolute URL so Tauri's open_external_url (http/https only) can hand the
     // page to the system browser for inline viewing — not a save dialog.
     const exportUrl = new URL(
-      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`,
+      `/api/sessions/${encodeURIComponent(sessionId)}/export?inline=1`,
       window.location.origin,
     ).href;
     void import("@/lib/desktop-native").then(({ openExternal }) => {
@@ -1417,7 +1446,12 @@ export function AppShell() {
         console.error("Failed to open full history:", error);
       });
     });
-  }, [selectedSession]);
+  }, []);
+
+  const handleViewFullHistory = useCallback(() => {
+    if (!selectedSession) return;
+    openFullHistory(selectedSession.id);
+  }, [openFullHistory, selectedSession]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
@@ -1639,7 +1673,12 @@ export function AppShell() {
   const topBarTitle = scheduledOpen
     ? translate("scheduled.title")
     : selectedSession
-      ? selectedSession.name || selectedSession.firstMessage || translate("appshell.untitledTask")
+      // A /skill:<name> first message is stored as its expanded <skill> block;
+      // show the command the user typed, as the sidebar row does.
+      ? selectedSession.name
+        || skillExpansionToCommand(selectedSession.firstMessage)
+        || selectedSession.firstMessage
+        || translate("appshell.untitledTask")
       : showChat
         ? translate("appshell.newTask")
         : PRODUCT_NAME;
@@ -1715,6 +1754,8 @@ export function AppShell() {
         onSessionsChange={handleSessionsChange}
         onOpenScheduled={handleOpenScheduled}
         scheduledOpen={scheduledOpen}
+        onGenerateTitle={generateSessionTitleFor}
+        onOpenFullHistory={openFullHistory}
       />
     </>
   );

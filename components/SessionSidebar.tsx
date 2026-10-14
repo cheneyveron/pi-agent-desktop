@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useState, useCallback, useRef, type ReactNo
 import type { SessionInfo } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
+import { copyText } from "@/lib/clipboard";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { useI18n } from "@/hooks/useI18n";
@@ -57,6 +58,10 @@ interface Props {
   /** Opens the Scheduled page; the row under New Session is absent without it. */
   onOpenScheduled?: () => void;
   scheduledOpen?: boolean;
+  /** Names a session from its transcript (row menu); rejects with the server's error. */
+  onGenerateTitle?: (sessionId: string) => Promise<unknown>;
+  /** Opens a session's exported full history (row menu). */
+  onOpenFullHistory?: (sessionId: string) => void;
 }
 
 interface WorktreeEntry {
@@ -173,7 +178,7 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onGenerateTitle, onOpenFullHistory }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Tracked in a ref only: the version is compared against the polled value to
@@ -1345,6 +1350,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   onSessionDeleted?.(id);
                   loadSessions();
                 }}
+                onGenerateTitle={onGenerateTitle}
+                onOpenFullHistory={onOpenFullHistory}
               />
               );
             })}
@@ -2170,6 +2177,8 @@ function SessionFamilyItem({
   onSelectSession,
   onRenamed,
   onSessionDeleted,
+  onGenerateTitle,
+  onOpenFullHistory,
   familySessions,
 }: {
   node: SessionTreeNode;
@@ -2182,6 +2191,8 @@ function SessionFamilyItem({
   onSelectSession: (s: SessionInfo) => void;
   onRenamed?: () => void;
   onSessionDeleted?: (id: string) => void;
+  onGenerateTitle?: (sessionId: string) => Promise<unknown>;
+  onOpenFullHistory?: (sessionId: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const hasChildren = node.children.length > 0;
@@ -2208,6 +2219,8 @@ function SessionFamilyItem({
           onClick={() => onSelectSession(node.session)}
           onRenamed={onRenamed}
           onDeleted={(id) => onSessionDeleted?.(id)}
+          onGenerateTitle={onGenerateTitle}
+          onOpenFullHistory={onOpenFullHistory}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -2227,6 +2240,8 @@ function SessionFamilyItem({
               onSelectSession={onSelectSession}
               onRenamed={onRenamed}
               onSessionDeleted={onSessionDeleted}
+              onGenerateTitle={onGenerateTitle}
+              onOpenFullHistory={onOpenFullHistory}
             />
           ))}
         </div>
@@ -2352,6 +2367,8 @@ function SessionItem({
   onClick,
   onRenamed,
   onDeleted,
+  onGenerateTitle,
+  onOpenFullHistory,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
@@ -2365,6 +2382,8 @@ function SessionItem({
   onClick: () => void;
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
+  onGenerateTitle?: (sessionId: string) => Promise<unknown>;
+  onOpenFullHistory?: (sessionId: string) => void;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -2459,6 +2478,36 @@ function SessionItem({
     }
   }, [session.id, session.transient, onDeleted, reportActionError, t]);
 
+  // Row-menu actions that work on any session, selected or not. Naming goes
+  // through the app's shared generator (sidebar refresh included); the row
+  // only tracks the in-flight state for its own menu item.
+  const [naming, setNaming] = useState(false);
+  const generateTitle = useCallback(async () => {
+    if (!onGenerateTitle || session.transient || naming) return;
+    setNaming(true);
+    try {
+      await onGenerateTitle(session.id);
+      onRenamed?.();
+    } catch (e) {
+      reportActionError(t("sidebar.generateTitleFailed", { error: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      setNaming(false);
+    }
+  }, [naming, onGenerateTitle, onRenamed, reportActionError, session.id, session.transient, t]);
+
+  const copySessionId = useCallback(() => {
+    copyText(session.id).catch((e) => {
+      reportActionError(t("sidebar.copyFailed", { error: e instanceof Error ? e.message : String(e) }));
+    });
+  }, [reportActionError, session.id, t]);
+
+  const openFullHistory = useCallback(() => {
+    if (session.transient) return;
+    onOpenFullHistory?.(session.id);
+  }, [onOpenFullHistory, session.id, session.transient]);
+
+  const generateTitleLabel = naming ? t("title.generating") : t("title.generate");
+
   // "…" menu: fixed-position portal so the sidebar's overflow/backdrop-filter can't clip it
   const MENU_WIDTH = 190;
   // Desktop shell: the same actions as the DOM menu below, as a native popup.
@@ -2471,6 +2520,11 @@ function SessionItem({
     const shown = await showNativeMenu([
       { label: t(isUnread ? "sidebar.markAsRead" : "sidebar.markAsUnread"), onSelect: () => onUnreadChange(!isUnread) },
       { label: t("sidebar.rename"), onSelect: startRename },
+      ...(onGenerateTitle
+        ? [{ label: generateTitleLabel, disabled: naming, onSelect: () => { void generateTitle(); } }]
+        : []),
+      { label: t("sidebar.copySessionId"), onSelect: copySessionId },
+      ...(onOpenFullHistory ? [{ label: t("history.full"), onSelect: openFullHistory }] : []),
       { label: t("sidebar.delete"), onSelect: () => setConfirmDelete(true) },
       { kind: "separator" },
       {
@@ -2484,11 +2538,14 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [isUnread, onUnreadChange, locale, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
+  }, [copySessionId, generateTitle, generateTitleLabel, isUnread, naming, onGenerateTitle, onOpenFullHistory, onUnreadChange, openFullHistory, locale, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
 
   const openSessionMenu = useCallback((point: NativeMenuPoint) => {
     const openDomMenu = () => {
       const estimatedHeight = 170
+        + (onGenerateTitle ? 31 : 0)
+        + 31 // copy session id
+        + (onOpenFullHistory ? 31 : 0)
         + ((session.compactionCount ?? 0) > 0 ? 18 : 0)
         + (session.worktreeBranch ? 18 : 0);
       setMenuPos({
@@ -2504,7 +2561,7 @@ function SessionItem({
     } else {
       openDomMenu();
     }
-  }, [session.compactionCount, session.worktreeBranch, showNativeSessionMenu]);
+  }, [onGenerateTitle, onOpenFullHistory, session.compactionCount, session.worktreeBranch, showNativeSessionMenu]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -2814,6 +2871,65 @@ function SessionItem({
                 </svg>
                 {t("sidebar.rename")}
               </button>
+              {onGenerateTitle && (
+                <button
+                  role="menuitem"
+                  disabled={naming}
+                  onClick={() => { setMenuOpen(false); void generateTitle(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: naming ? "var(--text-dim)" : "var(--text)", cursor: naming ? "default" : "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
+                    <path d="m15 4 5 5L7 22l-5-5Z" />
+                    <path d="m14 5 5 5" />
+                    <path d="M6 4V2M5 3H3M19 19v3M17.5 20.5h3" />
+                  </svg>
+                  {generateTitleLabel}
+                </button>
+              )}
+              <button
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); copySessionId(); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  width: "100%", height: 30, padding: "0 8px",
+                  background: "transparent", border: 0, borderRadius: 7,
+                  color: "var(--text)", cursor: "pointer",
+                  fontSize: 13, textAlign: "left",
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                {t("sidebar.copySessionId")}
+              </button>
+              {onOpenFullHistory && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); openFullHistory(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="8" y1="13" x2="16" y2="13" />
+                    <line x1="8" y1="17" x2="13" y2="17" />
+                  </svg>
+                  {t("history.full")}
+                </button>
+              )}
               <button
                 role="menuitem"
                 className="is-danger"

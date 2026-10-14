@@ -289,14 +289,17 @@ test("renders a complete SDK skill expansion as a compact command", () => {
   assert.doesNotMatch(html, /Review the supplied files/);
 });
 
-test("puts skill command arguments below the command instead of in a side column", () => {
+test("renders the skill command inline at the head of its arguments", () => {
   const html = renderMessage({
     role: "user",
     content: COMPLETE_SKILL_EXPANSION.replace("src/main.ts", "first line\nsecond line"),
   });
 
-  assert.match(html, /flex-direction:column[^>]*><button[^>]*aria-expanded="false"/);
-  assert.match(html, /<\/button><span[^>]*>first line\nsecond line<\/span>/);
+  // One pre-wrap text span holds the inline command chip and the arguments,
+  // so the arguments wrap under the chip like prose: neither a flex row (a
+  // narrow side column) nor a stacked block (the command on a line of its own).
+  assert.match(html, /white-space:pre-wrap[^>]*><button[^>]*aria-expanded="false"[^>]*display:inline-flex/);
+  assert.match(html, /<\/button> first line\nsecond line<\/span>/);
 });
 
 test("does not collapse incomplete skill-looking user text", () => {
