@@ -355,6 +355,8 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.renameFailed": "重新命名失敗：{error}",
     "sidebar.deleteFailed": "刪除失敗：{error}",
     "sidebar.copySessionId": "複製工作階段 ID",
+    "sidebar.recent": "最近",
+    "sidebar.viewSwitch": "側欄檢視",
     "sidebar.copyFailed": "複製失敗：{error}",
     "sidebar.generateTitleFailed": "無法產生標題：{error}",
     "sidebar.deleteWithShiftClick": "刪除（按住 Shift 點選可跳過確認）",

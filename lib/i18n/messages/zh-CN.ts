@@ -370,6 +370,8 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.renameFailed": "重命名失败：{error}",
     "sidebar.deleteFailed": "删除失败：{error}",
     "sidebar.copySessionId": "复制会话 ID",
+    "sidebar.recent": "最近",
+    "sidebar.viewSwitch": "侧栏视图",
     "sidebar.copyFailed": "复制失败：{error}",
     "sidebar.generateTitleFailed": "生成标题失败：{error}",
     "sidebar.deleteWithShiftClick": "删除（按住 Shift 点击可跳过确认）",

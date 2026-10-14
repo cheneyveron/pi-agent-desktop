@@ -16,6 +16,8 @@ export const APP_PREF_KEYS = {
   archivedProjects: "pi-web:archived-projects",
   /** Project roots whose session list is folded in the sidebar tree. */
   collapsedProjects: "pi-web:collapsed-projects",
+  /** Sidebar session list layout: "projects" (grouped) or "recent" (flat, newest first). */
+  sidebarView: "pi-web:sidebar-view",
   updateSnooze: "pi-web:update-snooze",
   closeQuits: "pi-desktop-close-quits",
   notifyOnComplete: "pi-desktop-notify-on-complete",

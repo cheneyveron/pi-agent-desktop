@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { ProjectPicker, selectProjectDirectoryNative, validateProjectDirectory } from "./ProjectPicker";
 import { AnimatedDropdown, PathLabel, displayCwd, getRecentProjects } from "./path-ui";
-import { APP_PREF_KEYS, getPrefJson, removePref, setPrefJson } from "@/lib/app-prefs";
+import { APP_PREF_KEYS, getPref, getPrefJson, removePref, setPref, setPrefJson } from "@/lib/app-prefs";
 import { groupByProject } from "@/lib/project-group";
 import { notifyDesktop } from "@/lib/desktop-notify";
 import { revealItemInDirNative } from "@/lib/desktop-native";
@@ -129,6 +129,7 @@ interface SessionTreeNode {
 const MAX_VISIBLE_PROJECT_SESSIONS = 5;
 
 const SESSION_LIST_ITEM_HEIGHT = 54;
+const MAX_RECENT_SESSIONS = 100;
 
 function treeContainsSession(node: SessionTreeNode, sessionId: string): boolean {
   return node.session.id === sessionId || node.children.some((child) => treeContainsSession(child, sessionId));
@@ -256,6 +257,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       : new Set();
   });
   const [expandedProjectSessions, setExpandedProjectSessions] = useState<Set<string>>(() => new Set());
+  // "projects": sessions grouped under their project. "recent": one flat list,
+  // newest activity first, each row tagged with its project.
+  const [sidebarView, setSidebarView] = useState<"projects" | "recent">(
+    () => (getPref(APP_PREF_KEYS.sidebarView) === "recent" ? "recent" : "projects"),
+  );
   const [archivedProjectRoots, setArchivedProjectRoots] = useState<Set<string>>(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.archivedProjects);
     return Array.isArray(stored)
@@ -429,6 +435,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   useEffect(() => {
     setPrefJson(APP_PREF_KEYS.archivedProjects, [...archivedProjectRoots]);
   }, [archivedProjectRoots]);
+
+  useEffect(() => {
+    setPref(APP_PREF_KEYS.sidebarView, sidebarView);
+  }, [sidebarView]);
 
   useEffect(() => {
     if (collapsedProjects.size === 0) removePref(APP_PREF_KEYS.collapsedProjects);
@@ -1170,6 +1180,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionFamilies = listSessionFamilies(filteredSessions);
   const allProjects = groupByProject(filteredSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
+  // Recent view: every project's root sessions in one list, newest first.
+  // Subagent children stay nested under their parent, as in the project tree.
+  const recentNodes = sidebarView === "recent"
+    ? activeProjects
+        .flatMap((group) => buildSessionTree(group.sessions).map((node) => ({ node, group })))
+        .sort((a, b) => b.node.session.modified.localeCompare(a.node.session.modified))
+        .slice(0, MAX_RECENT_SESSIONS)
+    : [];
   useEffect(() => {
     const projectRoots = activeProjects.map((group) => group.projectRoot);
     onProjectsChange?.(projectRoots);
@@ -1999,26 +2017,57 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         >
         <div ref={listScrollRef} className="sidebar-project-tree" onScroll={handleListScroll}>
           <div className="sidebar-project-tree-header">
-            <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
+            <span className="sidebar-project-tree-title">
+              {t(sidebarView === "recent" ? "sidebar.recent" : "sidebar.projects")}
+            </span>
             <div className="sidebar-project-tree-tools">
-              <button
-                className="sidebar-project-tree-menu"
-                title={t("sidebar.moreActions")}
-                aria-label={t("sidebar.moreActions")}
-                onClick={() => {
-                  if (allProjects.some((g) => !collapsedProjects.has(g.projectRoot))) {
-                    setCollapsedProjects(new Set(allProjects.map((g) => g.projectRoot)));
-                  } else {
-                    setCollapsedProjects(new Set());
-                  }
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <circle cx="5" cy="12" r="1.6" />
-                  <circle cx="12" cy="12" r="1.6" />
-                  <circle cx="19" cy="12" r="1.6" />
-                </svg>
-              </button>
+              <div className="sidebar-view-switch" role="group" aria-label={t("sidebar.viewSwitch")}>
+                <button
+                  type="button"
+                  className={`sidebar-view-switch-button${sidebarView === "projects" ? " is-active" : ""}`}
+                  aria-pressed={sidebarView === "projects"}
+                  title={t("sidebar.projects")}
+                  aria-label={t("sidebar.projects")}
+                  onClick={() => setSidebarView("projects")}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className={`sidebar-view-switch-button${sidebarView === "recent" ? " is-active" : ""}`}
+                  aria-pressed={sidebarView === "recent"}
+                  title={t("sidebar.recent")}
+                  aria-label={t("sidebar.recent")}
+                  onClick={() => setSidebarView("recent")}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <polyline points="12 7 12 12 15.5 14" />
+                  </svg>
+                </button>
+              </div>
+              {sidebarView === "projects" && (
+                <button
+                  className="sidebar-project-tree-menu"
+                  title={t("sidebar.moreActions")}
+                  aria-label={t("sidebar.moreActions")}
+                  onClick={() => {
+                    if (allProjects.some((g) => !collapsedProjects.has(g.projectRoot))) {
+                      setCollapsedProjects(new Set(allProjects.map((g) => g.projectRoot)));
+                    } else {
+                      setCollapsedProjects(new Set());
+                    }
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1.6" />
+                    <circle cx="12" cy="12" r="1.6" />
+                    <circle cx="19" cy="12" r="1.6" />
+                  </svg>
+                </button>
+              )}
               <button
                 type="button"
                 className="sidebar-project-tree-add"
@@ -2033,7 +2082,31 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </button>
             </div>
           </div>
-          {activeProjects.map((group) => renderProjectGroup(group))}
+          {sidebarView === "recent"
+            ? recentNodes.map(({ node, group }) => {
+                const nodeFamily = sessionFamilies.find((family) => family.root.id === node.session.id);
+                return (
+                  <SessionFamilyItem
+                    key={node.session.id}
+                    node={node}
+                    projectLabel={group.displayName}
+                    familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
+                    selectedSessionId={selectedSessionId}
+                    runningSessionIds={runningSessionIds}
+                    unreadSessionIds={unreadSessionIds}
+                    onUnreadChange={setSessionUnread}
+                    onSelectSession={handleSelectSessionFromList}
+                    onRenamed={loadSessions}
+                    onSessionDeleted={(id) => {
+                      onSessionDeleted?.(id);
+                      loadSessions();
+                    }}
+                    onGenerateTitle={onGenerateTitle}
+                    onOpenFullHistory={onOpenFullHistory}
+                  />
+                );
+              })
+            : activeProjects.map((group) => renderProjectGroup(group))}
         </div>
         </SessionSearch>
       )}
@@ -2180,8 +2253,11 @@ function SessionFamilyItem({
   onGenerateTitle,
   onOpenFullHistory,
   familySessions,
+  projectLabel,
 }: {
   node: SessionTreeNode;
+  /** Recent view: the project the session belongs to, shown beside its title. */
+  projectLabel?: string;
   familySessions?: SessionInfo[];
   depth?: number;
   selectedSessionId: string | null;
@@ -2221,6 +2297,7 @@ function SessionFamilyItem({
           onDeleted={(id) => onSessionDeleted?.(id)}
           onGenerateTitle={onGenerateTitle}
           onOpenFullHistory={onOpenFullHistory}
+          projectLabel={depth === 0 ? projectLabel : undefined}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -2369,6 +2446,7 @@ function SessionItem({
   onDeleted,
   onGenerateTitle,
   onOpenFullHistory,
+  projectLabel,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
@@ -2384,6 +2462,7 @@ function SessionItem({
   onDeleted?: (id: string) => void;
   onGenerateTitle?: (sessionId: string) => Promise<unknown>;
   onOpenFullHistory?: (sessionId: string) => void;
+  projectLabel?: string;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -2760,6 +2839,10 @@ function SessionItem({
           >
             {title}
           </span>
+
+          {projectLabel && (
+            <span className="session-item-project" title={session.cwd}>{projectLabel}</span>
+          )}
 
           {/* Collapse toggle — always visible when has children */}
           {hasChildren && (

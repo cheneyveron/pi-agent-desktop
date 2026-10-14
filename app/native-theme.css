@@ -6569,3 +6569,51 @@ html.native-desktop :is(
   border-color: var(--accent);
   background: var(--bg-hover);
 }
+
+
+/* Sidebar view switch (Projects / Recent): two small icon buttons, the active
+   one raised like a segmented control. */
+.sidebar-view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  margin-right: 2px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.sidebar-view-switch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.sidebar-view-switch-button:hover { color: var(--text); }
+.sidebar-view-switch-button.is-active {
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: 0 0 0 var(--hairline, 1px) var(--border);
+}
+.sidebar-view-switch-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Recent view: project name as a dim tag after the title. */
+.session-item-project {
+  flex: 0 1 auto;
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 11px;
+}
