@@ -1183,8 +1183,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Subagent children stay nested under their parent, as in the project tree.
   const recentNodes = sidebarView === "recent"
     ? activeProjects
-        .flatMap((group) => buildSessionTree(group.sessions).map((node) => ({ node, group })))
-        .sort((a, b) => b.node.session.modified.localeCompare(a.node.session.modified))
+        .flatMap((group) => buildSessionTree(group.sessions))
+        .sort((a, b) => b.session.modified.localeCompare(a.session.modified))
         .slice(0, MAX_RECENT_SESSIONS)
     : [];
   useEffect(() => {
@@ -2066,13 +2066,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </div>
           </div>
           {sidebarView === "recent"
-            ? recentNodes.map(({ node, group }) => {
+            ? recentNodes.map((node) => {
                 const nodeFamily = sessionFamilies.find((family) => family.root.id === node.session.id);
                 return (
                   <SessionFamilyItem
                     key={node.session.id}
                     node={node}
-                    projectLabel={group.displayName}
                     familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
                     selectedSessionId={selectedSessionId}
                     runningSessionIds={runningSessionIds}
@@ -2236,11 +2235,8 @@ function SessionFamilyItem({
   onGenerateTitle,
   onOpenFullHistory,
   familySessions,
-  projectLabel,
 }: {
   node: SessionTreeNode;
-  /** Recent view: the project the session belongs to, shown beside its title. */
-  projectLabel?: string;
   familySessions?: SessionInfo[];
   depth?: number;
   selectedSessionId: string | null;
@@ -2280,7 +2276,6 @@ function SessionFamilyItem({
           onDeleted={(id) => onSessionDeleted?.(id)}
           onGenerateTitle={onGenerateTitle}
           onOpenFullHistory={onOpenFullHistory}
-          projectLabel={depth === 0 ? projectLabel : undefined}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -2429,7 +2424,6 @@ function SessionItem({
   onDeleted,
   onGenerateTitle,
   onOpenFullHistory,
-  projectLabel,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
@@ -2445,7 +2439,6 @@ function SessionItem({
   onDeleted?: (id: string) => void;
   onGenerateTitle?: (sessionId: string) => Promise<unknown>;
   onOpenFullHistory?: (sessionId: string) => void;
-  projectLabel?: string;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -2822,10 +2815,6 @@ function SessionItem({
           >
             {title}
           </span>
-
-          {projectLabel && (
-            <span className="session-item-project" title={session.cwd}>{projectLabel}</span>
-          )}
 
           {/* Collapse toggle — always visible when has children */}
           {hasChildren && (

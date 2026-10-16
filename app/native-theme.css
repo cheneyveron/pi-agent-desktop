@@ -7050,17 +7050,6 @@ html.native-desktop :is(
   border-radius: 3px;
 }
 
-/* Recent view: project name as a dim tag after the title. */
-.session-item-project {
-  flex: 0 1 auto;
-  max-width: 56px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
 /* Right panel as an embedded workbench: the panel is part of the shell, with
    one shared 48px header row above the chat and panel and no floating-card
    chrome. Content gets a calmer surface than the canvas, with hairline
