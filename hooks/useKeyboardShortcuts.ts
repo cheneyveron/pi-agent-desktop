@@ -48,6 +48,21 @@ interface UseGlobalKeyboardShortcutsOptions {
   activeCwd?: string | null;
   /** Called by \\ to close the preview panel and return focus to the composer. */
   onCloseRightPanel?: () => void;
+  /** Called by ⌘, (macOS) / Ctrl+, to open Settings. */
+  onOpenSettings?: () => void;
+}
+
+/**
+ * ⌘, / Ctrl+, opens Settings, the shortcut every desktop app's preferences use.
+ * The macOS menu bar already binds ⌘, (src-tauri/src/shell/macos_menu.rs); this
+ * covers Windows, Linux and the browser. Returns whether it took the key.
+ */
+export function handleOpenSettingsShortcut(event: KeyboardEvent, onOpenSettings: (() => void) | undefined): boolean {
+  if (event.key !== "," || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return false;
+  if (event.defaultPrevented || !onOpenSettings) return false;
+  event.preventDefault();
+  onOpenSettings();
+  return true;
 }
 
 /**
@@ -57,6 +72,7 @@ interface UseGlobalKeyboardShortcutsOptions {
  *   Esc              – stop the running agent (via module-level abort handler)
  *   ⌘N / Ctrl+N      – create a new session in the active project directory
  *                      (Ctrl+Alt+N still works for backwards familiarity)
+ *   ⌘, / Ctrl+,      – open Settings at the last section
  *
  * Note: Esc inside <textarea> or <input> is deliberately NOT handled here.
  * ChatInput manages its own Esc logic (closing slash / @ file menus, stopping
@@ -67,7 +83,7 @@ interface UseGlobalKeyboardShortcutsOptions {
 export function useGlobalKeyboardShortcuts(
   options: UseGlobalKeyboardShortcutsOptions,
 ): void {
-  const { onNewSession, activeCwd, onCloseRightPanel } = options;
+  const { onNewSession, activeCwd, onCloseRightPanel, onOpenSettings } = options;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -97,6 +113,8 @@ export function useGlobalKeyboardShortcuts(
         }
       }
 
+      if (handleOpenSettingsShortcut(e, onOpenSettings)) return;
+
       // ---- ⌘N / Ctrl+N: new session ----
       // Note: regular browsers reserve ⌘N/Ctrl+N for "new window"; this works
       // in the desktop (Tauri) build where the page receives the event.
@@ -109,5 +127,5 @@ export function useGlobalKeyboardShortcuts(
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeCwd, onNewSession, onCloseRightPanel]);
+  }, [activeCwd, onNewSession, onCloseRightPanel, onOpenSettings]);
 }

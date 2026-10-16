@@ -184,7 +184,7 @@ test("only the session-mount load probes disk for external appends", () => {
   assert.match(loadSessionSource, /options\?: \{ force\?: boolean \}/);
   assert.match(loadSessionSource, /if \(options\?\.force\) params\.set\("force", "1"\)/);
   assert.match(loadSessionSource, /d\.wrapperRebuilt[\s\S]*?eventConnectionRef\.current\?\.close\(\)[\s\S]*?maintain\(sid\)/);
-  assert.match(mountSource, /loadSession\(session\.id, !cached, true, \{ force: true \}\)/);
+  assert.match(mountSource, /loadSession\(session\.id, !cached && !promoted, true, \{ force: true \}\)/);
   assert.match(source, /await loadSession\(sid\)/);
   assert.equal([...source.matchAll(/\{ force: true \}/g)].length, 1);
 });
@@ -833,17 +833,18 @@ test("keeps the compaction control reachable while a turn is auto-compacting", (
   // Auto-compaction starts mid-turn, so `isStreaming` (sessionBusy) is already true. Hiding
   // the control behind `!isStreaming` left only the generic stop button, which aborts the
   // whole prompt instead of the compaction.
-  // The fork's compact button carries the compactError popover between the
-  // guard and the onClick, so the window reaches back past it.
+  // Manual compaction moved into the composer's session (gear) menu; a running
+  // compaction keeps its own row control, guarded only by isCompacting so it
+  // shows whether or not a turn is streaming.
   const controlBlock = chatInputSource.slice(
-    chatInputSource.indexOf("onClick={isCompacting ? onAbortCompaction : onCompact}") - 900,
-    chatInputSource.indexOf('aria-label={isCompacting ? t("chat.stopCompaction")'),
+    chatInputSource.indexOf("{onCompact && isCompacting && ("),
+    chatInputSource.indexOf('aria-label={t("chat.stopCompaction")}'),
   );
 
-  assert.match(controlBlock, /\{onCompact && \(!isStreaming \|\| isCompacting\) && \(/);
-  assert.doesNotMatch(controlBlock, /\{!isStreaming && onCompact && \(/);
-  // The "streaming but not compacting" state is now unreachable, so its disabled styling
-  // must be gone rather than left as dead branches.
-  assert.doesNotMatch(controlBlock, /isStreaming && !isCompacting/);
+  assert.ok(controlBlock.length > 0);
+  assert.doesNotMatch(controlBlock, /!isStreaming/);
+  assert.match(controlBlock, /onClick=\{onAbortCompaction\}/);
   assert.match(controlBlock, /cursor: "pointer"/);
+  // Starting one is offered only when nothing is running.
+  assert.match(chatInputSource, /const canCompactNow = Boolean\(onCompact && !isStreaming && !isCompacting\)/);
 });

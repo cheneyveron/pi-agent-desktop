@@ -212,7 +212,7 @@ export function ArtifactPanel({ sessionId, identifier, title, versionRequest }: 
         </div>
       </div>
       <HtmlPreviewErrorBar
-        errors={framed ? (runtimeState.error ? [runtimeState.error, ...errors] : errors) : []}
+        errors={framed ? (runtimeState.error ? [t("preview.runtimeLoadFailed", { error: runtimeState.error }), ...errors] : errors) : []}
         onFix={fixSessionId === sessionId && !runtimeState.error ? fix : undefined}
         onDismiss={dismiss}
       />

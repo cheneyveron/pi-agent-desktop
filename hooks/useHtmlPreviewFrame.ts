@@ -8,6 +8,7 @@ import {
   HTML_PREVIEW_ERROR_MESSAGE,
   HTML_PREVIEW_OPEN_MESSAGE,
   HTML_PREVIEW_SIZE_MESSAGE,
+  type HtmlPreviewMessages,
   type HtmlPreviewOptions,
 } from "@/lib/html-preview";
 
@@ -38,9 +39,23 @@ export function useHtmlPreviewOptions(): HtmlPreviewOptions {
   const routeLinksToParent = typeof window !== "undefined" && isTauriDesktop();
   const { t } = useI18n();
   const loadingLabel = t("preview.loadingComponent");
+  // The frame fills these placeholders itself, so each is passed through as
+  // its own literal token.
+  const token = (name: string) => `{${name}}`;
+  const scriptErrorHidden = t("preview.msg.scriptErrorHidden");
+  const failedToLoad = t("preview.msg.failedToLoad", { resource: token("resource") });
+  const unhandledRejection = t("preview.msg.unhandledRejection", { reason: token("reason") });
+  const runtimeMissing = t("preview.msg.runtimeMissing");
+  const compileFailed = t("preview.msg.compileFailed", { error: token("error") });
+  const noDefaultExport = t("preview.msg.noDefaultExport");
+  const packagesNeedNetwork = t("preview.msg.packagesNeedNetwork", { packages: token("packages"), error: token("error") });
+  const messages = useMemo<HtmlPreviewMessages>(
+    () => ({ scriptErrorHidden, failedToLoad, unhandledRejection, runtimeMissing, compileFailed, noDefaultExport, packagesNeedNetwork }),
+    [scriptErrorHidden, failedToLoad, unhandledRejection, runtimeMissing, compileFailed, noDefaultExport, packagesNeedNetwork],
+  );
   return useMemo(
-    () => ({ theme, routeLinksToParent, loadingLabel }),
-    [theme, routeLinksToParent, loadingLabel],
+    () => ({ theme, routeLinksToParent, loadingLabel, messages }),
+    [theme, routeLinksToParent, loadingLabel, messages],
   );
 }
 

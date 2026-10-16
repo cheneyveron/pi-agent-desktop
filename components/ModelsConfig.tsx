@@ -17,9 +17,13 @@ import {
   setCompatBool,
   trackAddedModels,
   collectModelRenames,
+  listModelOverrides,
+  modelOverrideSpecs,
   renameProviderEntry,
+  resolveModelSpecHint,
   updateHeaderRow,
   type HeaderRow,
+  type ModelSpecField,
   type ModelCostDraft,
   type ModelCostKey,
 } from "./models-config-helpers";
@@ -362,6 +366,7 @@ function ProviderDetail({ name, editingName, provider, onChange, onEditingNameCh
   }, [discoveryState.phase, name, provider]);
 
   const existingModelIds = new Set((provider.models ?? []).map((model) => model.id));
+  const modelOverrides = listModelOverrides(provider.modelOverrides);
   const discoveredModels = discoveryState.phase === "success" ? discoveryState.models : [];
   const normalizedDiscoveryQuery = discoveryQuery.trim().toLocaleLowerCase();
   const filteredDiscoveredModels = discoveredModels.filter((model) => !normalizedDiscoveryQuery
@@ -457,6 +462,32 @@ function ProviderDetail({ name, editingName, provider, onChange, onEditingNameCh
           Added to every request from this provider (e.g. User-Agent). Useful for gateways with bot detection.
         </span>
       </Field>
+
+      {modelOverrides.length > 0 && (
+        <section className="models-override-section">
+          <SectionTitle>{t("models.overridesTitle")}</SectionTitle>
+          <span className="models-override-help">{t("models.overridesHelp")}</span>
+          <ul className="models-override-list">
+            {modelOverrides.map(({ modelId, fields }) => (
+              <li key={modelId} className="models-override-row">
+                <code className="models-override-id">{modelId}</code>
+                <span className="models-override-target">
+                  {existingModelIds.has(modelId) ? t("models.overrideTargetCustom") : t("models.overrideTargetBuiltIn")}
+                </span>
+                <span className="models-override-fields">
+                  {Object.entries(fields).map(([key, value]) => (
+                    <span key={key} className="models-override-field">
+                      {key}
+                      {(typeof value === "number" || typeof value === "boolean" || typeof value === "string")
+                        && <span className="models-override-value">{typeof value === "number" ? value.toLocaleString() : String(value)}</span>}
+                    </span>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div style={{ borderTop: "var(--hairline) solid var(--border)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
         {discoveryState.phase !== "success" && (
@@ -833,12 +864,15 @@ function ModelDetail({
   providerName,
   provider,
   model,
+  savedModel,
   onChange,
   onDelete,
 }: {
   providerName: string;
   provider: ProviderEntry;
   model: ModelEntry;
+  /** This slot as models.json has it on disk, or null for a model added since the last save. */
+  savedModel: ModelEntry | null;
   onChange: (m: ModelEntry) => void;
   onDelete: () => void;
 }) {
@@ -853,6 +887,36 @@ function ModelDetail({
   const catalogUndoRef = useRef<ModelEntry | null>(null);
   const costTemplateRef = useRef(model.cost);
   const set = <K extends keyof ModelEntry>(k: K, v: ModelEntry[K]) => onChange({ ...model, [k]: v });
+  // pi applies the provider's modelOverrides last, over this entry, so a saved
+  // override is the value a session gets even when the field below is filled.
+  const overrideSpecs = modelOverrideSpecs(provider.modelOverrides, model.id);
+  const overrideEntry = listModelOverrides(provider.modelOverrides)
+    .find((entry) => entry.modelId === model.id.trim());
+  const specField = (field: ModelSpecField, label: string) => {
+    const draftValue = model[field];
+    const overrideValue = overrideSpecs[field];
+    const hint = resolveModelSpecHint(field, draftValue, overrideValue);
+    const unsaved = draftValue !== savedModel?.[field];
+    let hintText: string;
+    if (hint.kind === "override") {
+      hintText = t(hint.replacesDraft ? "models.specOverrideReplaces" : "models.specOverride", { value: hint.value.toLocaleString() });
+    } else if (hint.kind === "fallback") {
+      hintText = t("models.specFallback", { value: hint.value.toLocaleString() });
+    } else {
+      hintText = t(unsaved ? "models.specUnsaved" : "models.specSaved");
+    }
+    return (
+      <Field label={label}>
+        <NumInput value={draftValue !== undefined ? String(draftValue) : ""}
+          onChange={(v) => set(field, v ? parseInt(v) : undefined)}
+          placeholder={overrideValue !== undefined ? overrideValue.toLocaleString() : t("models.specNotSet")} />
+        <span className="models-spec-hint" data-source={hint.kind}>
+          {hintText}
+          {unsaved && hint.kind !== "own" && <span className="models-spec-unsaved">{t("models.specUnsavedTag")}</span>}
+        </span>
+      </Field>
+    );
+  };
   const setCost = (key: ModelCostKey, value: string) => {
     const nextDraft = { ...costDraftRef.current, [key]: value };
     const completeCost = parseCompleteModelCost(nextDraft);
@@ -1172,15 +1236,15 @@ function ModelDetail({
           </button>
         </div>
 
+        {overrideEntry && (
+          <div className="models-override-notice">
+            {t("models.overrideNotice", { id: model.id.trim(), fields: Object.keys(overrideEntry.fields).join(", ") })}
+          </div>
+        )}
+
         <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
-          <Field label={t("models.contextWindow")}>
-            <NumInput value={model.contextWindow !== undefined ? String(model.contextWindow) : ""}
-              onChange={(v) => set("contextWindow", v ? parseInt(v) : undefined)} placeholder="128000" />
-          </Field>
-          <Field label={t("models.maxOutputTokens")}>
-            <NumInput value={model.maxTokens !== undefined ? String(model.maxTokens) : ""}
-              onChange={(v) => set("maxTokens", v ? parseInt(v) : undefined)} placeholder="16384" />
-          </Field>
+          {specField("contextWindow", t("models.contextWindow"))}
+          {specField("maxTokens", t("models.maxOutputTokens"))}
         </div>
 
         <div style={{ marginTop: 16 }}>
@@ -1293,6 +1357,11 @@ function ModelDetail({
                         {t("models.clearAll")}
                       </button>
                     )}
+                  </div>
+                  {/* pi's getSupportedThinkingLevels() offers xhigh/max only for an
+                      explicit map entry, so without one the selector stops at high (#76). */}
+                  <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 8 }}>
+                    {t("models.thinkingLevelMapHelp")}
                   </div>
                   <ThinkingLevelMapEditor
                     value={model.thinkingLevelMap}
@@ -1873,6 +1942,8 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
    * from an unrelated edit without guessing.
    */
   const savedModelIdsRef = useRef<Map<string, (string | null)[]>>(new Map());
+  /** models.json as last read or saved, so the model form can tell saved values from edits. */
+  const [savedConfig, setSavedConfig] = useState<ModelsJson>({ providers: {} });
   /**
    * The provider name field while it differs from the provider's id. Save
    * applies it like every other visible edit; Rename applies it right away.
@@ -1899,6 +1970,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
       .then((d) => {
         const normalized = d.providers ? d : { ...d, providers: {} };
         setConfig(normalized);
+        setSavedConfig(normalized);
         savedProvidersRef.current = new Set(Object.keys(normalized.providers ?? {}));
         savedModelIdsRef.current = savedModelIds(normalized);
         const keys = Object.keys(normalized.providers ?? {});
@@ -2060,6 +2132,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
         const modelRenames = collectModelRenames(draft, savedModelIdsRef.current, renamesRef.current);
         savedProvidersRef.current = new Set(Object.keys(draft.providers ?? {}));
         savedModelIdsRef.current = savedModelIds(draft);
+        setSavedConfig(draft);
         renamesRef.current.clear();
         enabledModels.resync(renames, modelRenames);
       }
@@ -2114,12 +2187,19 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
     const provider = config.providers?.[selection.providerName];
     const model = provider?.models?.[selection.index];
     if (!model) return null;
+    let savedProviderName = selection.providerName;
+    for (const [from, to] of renamesRef.current) if (to === selection.providerName) savedProviderName = from;
+    const savedId = savedModelIdsRef.current.get(selection.providerName)?.[selection.index];
+    const savedModel = savedId == null
+      ? null
+      : savedConfig.providers?.[savedProviderName]?.models?.find((entry) => entry.id === savedId) ?? null;
     return (
       <ModelDetail
         key={`${selection.providerName}-${selection.index}`}
         providerName={selection.providerName}
         provider={provider}
         model={model}
+        savedModel={savedModel}
         onChange={(m) => updateModel(selection.providerName, selection.index, m)}
         onDelete={() => removeModel(selection.providerName, selection.index)}
       />
@@ -2181,6 +2261,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
               ) : providers.map(([pName, pData]) => {
                 const isProviderSelected = selection?.type === "provider" && selection.name === pName;
                 const models = pData.models ?? [];
+                const overriddenIds = new Set(listModelOverrides(pData.modelOverrides).map((entry) => entry.modelId));
                 return (
                   <div key={pName} style={{ marginBottom: 2 }}>
                     {/* Provider row */}
@@ -2216,6 +2297,9 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
                           </ConfigSidebarText>
                           {m.reasoning && (
                             <span style={{ fontSize: 10, padding: "1px 4px", background: "rgba(99,102,241,0.12)", color: "rgba(99,102,241,0.8)", borderRadius: 3, flexShrink: 0 }}>T</span>
+                          )}
+                          {overriddenIds.has(m.id.trim()) && (
+                            <span className="models-sidebar-override-badge" title={t("models.overrideBadgeTitle")}>{t("models.overrideBadge")}</span>
                           )}
                         </ConfigSidebarItem>
                       );

@@ -62,6 +62,10 @@ export function ContextUsageRing({ contextUsage, sessionStats, onOpenStats }: Co
   }
   const title = tooltipParts.length > 0 ? tooltipParts.join(" · ") : t("chat.ctxUsage");
 
+  // Nothing to report yet (new or dormant session): an empty grey ring read
+  // as a loading spinner, so leave the slot empty until usage arrives.
+  if (!hasUsage) return null;
+
   return (
     <button
       type="button"
@@ -74,7 +78,7 @@ export function ContextUsageRing({ contextUsage, sessionStats, onOpenStats }: Co
       }}
       style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        width: 28, height: 28, padding: 0, flexShrink: 0,
+        width: 32, height: 32, padding: 0, flexShrink: 0,
         background: "none", border: "none", borderRadius: 9,
         cursor: hasUsage ? "pointer" : "default",
         transition: "background 0.12s, opacity 0.12s",

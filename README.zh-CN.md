@@ -41,6 +41,12 @@
 
 > 安装 Pi Agent 后，可以直接使用 App 中的 Pi Agent 功能；但它不会在系统全局安装 `pi` 命令。如果还需要在终端中使用 Pi CLI，请按照 [pi 项目](https://github.com/earendil-works/pi) 的说明单独安装。
 
+> **macOS 首次打开被拦截**：macOS 版本目前没有 Apple Developer ID 签名和公证，首次打开时 Gatekeeper 可能提示“无法验证开发者”或“已损坏，无法打开”（通过 Homebrew 安装也一样）。可以在「系统设置 › 隐私与安全性」中点「仍要打开」，或在终端执行：
+>
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/Pi Agent.app"
+> ```
+
 首次启用签名自动升级前，旧的无 updater 版本需要手动安装一次新的签名 App。此后即可在设置中完成升级。
 
 ### 使用现有 Pi 数据

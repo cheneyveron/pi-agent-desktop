@@ -13,25 +13,23 @@ use crate::native_prefs::{
 use crate::native_prefs::{is_wayland, theme_background_color};
 use crate::shell::{open_external, WINDOW_LABEL};
 
-/// Inset of the macOS traffic lights from the window's top-left corner, in
-/// logical points. The target is a vertical centre 24pt from the top: the
-/// middle of the 48px top bar, of the file panel's tab strip and of the sidebar
-/// header's controls row, which all share that line.
-///
-/// Y is not the centre itself. tao grows the title-bar container to
-/// `button height + y` and leaves each button's own offset inside it alone, so
-/// the centre lands below Y. SDK 15.5 used 14pt buttons with a 12pt internal
-/// offset (Y = 22 centred them at 24pt). macOS 27's 16pt native buttons use a
-/// 10pt offset, so Y = 26 is required for the same 24pt centre. Re-measure
-/// after a macOS major update:
-/// `osascript -e 'tell application "System Events" to tell process "Pi Agent"
-/// to get {position, size} of buttons of window 1'` against the window's own
-/// position. The horizontal clearance the web content keeps is
+/// Where the macOS traffic lights go, in logical points from the window's
+/// top-left corner: X is the close button's left edge, CENTRE_Y the buttons'
+/// vertical centre. 24pt is the middle of the 48px top bar, of the file
+/// panel's tab strip and of the sidebar header's controls row, which all share
+/// that line. The horizontal clearance the web content keeps is
 /// `--mac-traffic-light-inset` in native-theme.css.
+///
+/// The Y tao is given is not this centre. It is derived at runtime from
+/// AppKit's own button geometry (`window_appkit::traffic_light_y`), because
+/// that geometry depends on the SDK the binary links: SDK 15.5 builds get the
+/// legacy buttons, SDK 26+ builds the new ones, with a different size and
+/// offset. A hard-coded Y tuned on one SDK put the lights 4pt off on the other
+/// (0.7.1: tuned on a local SDK 27 build, shipped from a 15.5 runner).
 #[cfg(target_os = "macos")]
 pub(crate) const MAC_TRAFFIC_LIGHT_X: f64 = 14.0;
 #[cfg(target_os = "macos")]
-pub(crate) const MAC_TRAFFIC_LIGHT_Y: f64 = 26.0;
+pub(crate) const MAC_TRAFFIC_LIGHT_CENTRE_Y: f64 = 24.0;
 
 /// Argument the launch-at-login entry passes, so a login start can be told
 /// apart from the user opening the app.
@@ -113,7 +111,7 @@ pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<Webvi
             // so they sat ~10px high. See MAC_TRAFFIC_LIGHT_* for the value.
             .traffic_light_position(tauri::LogicalPosition::new(
                 MAC_TRAFFIC_LIGHT_X,
-                MAC_TRAFFIC_LIGHT_Y,
+                window_appkit::traffic_light_y(),
             ))
             // Transparent webview over an NSVisualEffectView (see below). The
             // `native-vibrancy` class tells native-theme.css to let the sidebar

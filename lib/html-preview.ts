@@ -39,6 +39,8 @@ export interface HtmlPreviewOptions {
   routeLinksToParent?: boolean;
   /** Shown in a React preview while its modules load. */
   loadingLabel?: string;
+  /** The preview's own error wording, in the app's language (see HTML_PREVIEW_MESSAGES). */
+  messages?: Partial<HtmlPreviewMessages>;
   /** Required for React previews; loaded by the page with loadPreviewRuntime(). */
   runtime?: PreviewRuntime;
 }
@@ -91,6 +93,38 @@ export function htmlPreviewHasActiveContent(code: string): boolean {
   return /<script\b|\son[a-z]+\s*=|javascript:/i.test(code);
 }
 
+/**
+ * Wording the preview adds around an error. `{name}` placeholders are filled
+ * inside the frame; the browser's own error text is passed through as is.
+ */
+export interface HtmlPreviewMessages {
+  scriptErrorHidden: string;
+  /** {resource}: tag name and URL of the script, stylesheet or image. */
+  failedToLoad: string;
+  /** {reason} */
+  unhandledRejection: string;
+  runtimeMissing: string;
+  /** {error} */
+  compileFailed: string;
+  noDefaultExport: string;
+  /** {packages}, {error} */
+  packagesNeedNetwork: string;
+}
+
+export const HTML_PREVIEW_MESSAGES: HtmlPreviewMessages = {
+  scriptErrorHidden: "Script error (the browser hid the details: it came from an inline event handler attribute or a script from another origin)",
+  failedToLoad: "Failed to load {resource}",
+  unhandledRejection: "Unhandled promise rejection: {reason}",
+  runtimeMissing: "The React preview runtime is not loaded.",
+  compileFailed: "Could not compile the component: {error}",
+  noDefaultExport: "The component has no default export.",
+  packagesNeedNetwork: "Could not load {packages} from esm.sh — these packages need the network ({error})",
+};
+
+function previewMessages(options: HtmlPreviewOptions): HtmlPreviewMessages {
+  return { ...HTML_PREVIEW_MESSAGES, ...options.messages };
+}
+
 export function clampHtmlPreviewHeight(height: number): number {
   if (!Number.isFinite(height)) return HTML_PREVIEW_DEFAULT_HEIGHT;
   return Math.min(HTML_PREVIEW_MAX_HEIGHT, Math.max(HTML_PREVIEW_MIN_HEIGHT, Math.ceil(height)));
@@ -105,18 +139,20 @@ export function clampHtmlPreviewHeight(height: number): number {
 // - Uncaught errors, rejected promises and failed script/style/image loads
 //   are reported so the panel can show them and offer a fix.
 // - With ROUTE_LINKS, link clicks and window.open go to the parent.
-function bootstrapScript(routeLinks: boolean): string {
+function bootstrapScript(routeLinks: boolean, messages: HtmlPreviewMessages): string {
   return `<script>(function(){
 var P=function(m){try{parent.postMessage(m,"*")}catch(_){}};
+var M=${scriptJson(messages)};window.__piPreviewMessages=M;
+var F=window.__piPreviewFormat=function(s,v){return String(s).replace(/\\{(\\w+)\\}/g,function(w,k){return k in v?String(v[k]):w})};
 function mem(){var s=Object.create(null);return{getItem:function(k){k=String(k);return k in s?s[k]:null},setItem:function(k,v){s[String(k)]=String(v)},removeItem:function(k){delete s[String(k)]},clear:function(){s=Object.create(null)},key:function(i){var ks=Object.keys(s);return i<ks.length?ks[i]:null},get length(){return Object.keys(s).length}}}
 ["localStorage","sessionStorage"].forEach(function(n){try{window[n].getItem("")}catch(e){try{Object.defineProperty(window,n,{value:mem(),configurable:true})}catch(_){}}});
 var last=-1;function size(){var d=document.documentElement;if(!d)return;var h=Math.ceil(d.getBoundingClientRect().height);if(h!==last){last=h;P({type:${JSON.stringify(HTML_PREVIEW_SIZE_MESSAGE)},height:h})}}
 document.addEventListener("DOMContentLoaded",function(){size();if(window.ResizeObserver){new ResizeObserver(size).observe(document.documentElement);if(document.body)new ResizeObserver(size).observe(document.body)}});
 addEventListener("load",size);
-var sent=0,seen={};function err(m){m=String(m||"Error");if(/^Script error\\.?$/.test(m))m="Script error (the browser hid the details: it came from an inline event handler attribute or a script from another origin)";m=m.slice(0,500);if(sent>=${HTML_PREVIEW_MAX_ERRORS}||seen[m])return;seen[m]=1;sent++;P({type:${JSON.stringify(HTML_PREVIEW_ERROR_MESSAGE)},message:m})}
+var sent=0,seen={};function err(m){m=String(m||"Error");if(/^Script error\\.?$/.test(m))m=M.scriptErrorHidden;m=m.slice(0,500);if(sent>=${HTML_PREVIEW_MAX_ERRORS}||seen[m])return;seen[m]=1;sent++;P({type:${JSON.stringify(HTML_PREVIEW_ERROR_MESSAGE)},message:m})}
 window.__piPreviewError=err;
-addEventListener("error",function(e){var t=e.target;if(t&&t!==window&&t.tagName){var u=t.src||t.href||"";err("Failed to load "+t.tagName.toLowerCase()+(u?" "+u:""));return}var m=e.message||(e.error&&e.error.message)||"Script error";err(m+(e.lineno?" (line "+e.lineno+(e.colno?":"+e.colno:"")+")":""))},true);
-addEventListener("unhandledrejection",function(e){var r=e.reason;err("Unhandled promise rejection: "+(r&&r.message?r.message:String(r)))});
+addEventListener("error",function(e){var t=e.target;if(t&&t!==window&&t.tagName){var u=t.src||t.href||"";err(F(M.failedToLoad,{resource:t.tagName.toLowerCase()+(u?" "+u:"")}));return}var m=e.message||(e.error&&e.error.message)||"Script error";err(m+(e.lineno?" (line "+e.lineno+(e.colno?":"+e.colno:"")+")":""))},true);
+addEventListener("unhandledrejection",function(e){var r=e.reason;err(F(M.unhandledRejection,{reason:r&&r.message?r.message:String(r)}))});
 ${routeLinks ? `function ext(u){try{var x=new URL(u,location.href);return /^https?:$/.test(x.protocol)?x.href:null}catch(_){return null}}
 document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href")||"";if(h.charAt(0)==="#")return;var u=ext(h);if(!u)return;e.preventDefault();P({type:${JSON.stringify(HTML_PREVIEW_OPEN_MESSAGE)},url:u})});
 window.open=function(u){var x=ext(u==null?"":String(u));if(x)P({type:${JSON.stringify(HTML_PREVIEW_OPEN_MESSAGE)},url:x});return null};` : `document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href")||"";if(h.charAt(0)==="#"||/^javascript:/i.test(h))return;if(!a.target||a.target==="_self"){a.target="_blank";a.rel="noopener"}},true);`}
@@ -169,7 +205,7 @@ function injectIntoHtml(source: string, snippet: string): string {
 }
 
 export function buildHtmlPreviewDocument(kind: HtmlPreviewKind, code: string, options: HtmlPreviewOptions = {}): string {
-  const bootstrap = bootstrapScript(Boolean(options.routeLinksToParent));
+  const bootstrap = bootstrapScript(Boolean(options.routeLinksToParent), previewMessages(options));
   if (kind === "react") return buildReactDocument(code, bootstrap, options);
   if (kind === "svg") {
     return `<!DOCTYPE html><html><head><meta charset="utf-8">${SVG_DOCUMENT_STYLE}${bootstrap}</head><body>${code}</body></html>`;
@@ -266,22 +302,23 @@ function buildReactDocument(code: string, bootstrap: string, options: HtmlPrevie
   const { runtime } = options;
   if (!runtime) {
     // Callers wait for the runtime; this only shows if one does not.
-    return `<!DOCTYPE html><html><head><meta charset="utf-8">${bootstrap}</head><body><script>window.__piPreviewError("The React preview runtime is not loaded.")</script></body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">${bootstrap}</head><body><script>window.__piPreviewError(window.__piPreviewMessages.runtimeMissing)</script></body></html>`;
   }
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${bootstrap}${inlineScript(runtime.tailwind)}${inlineScript(runtime.react)}${inlineScript(runtime.sucrase)}<script type="importmap">${scriptJson({ imports: reactImportMap(code, runtime) })}</script></head><body><div id="root"><div style="display:flex;align-items:center;justify-content:center;min-height:96px;font:13px system-ui,sans-serif;color:#8a8a8e">${escapeHtml(loadingLabel)}</div></div><script type="module">
 const report=(m)=>window.__piPreviewError?window.__piPreviewError(m):console.error(m);
+const M=window.__piPreviewMessages,F=window.__piPreviewFormat;
 const source=${scriptJson(code)};
 const packages=${scriptJson(reactImportSpecifiers(code))};
 try{
 let compiled;
-try{compiled=globalThis.__piSucrase.transform(source,{transforms:["jsx","typescript"],jsxRuntime:"automatic",production:true}).code}catch(e){throw new Error("Could not compile the component: "+(e&&e.message||e))}
+try{compiled=globalThis.__piSucrase.transform(source,{transforms:["jsx","typescript"],jsxRuntime:"automatic",production:true}).code}catch(e){throw new Error(F(M.compileFailed,{error:e&&e.message||e}))}
 let mod;
 try{mod=await import(URL.createObjectURL(new Blob([compiled],{type:"text/javascript"})))}catch(e){if(!/blob|module|fetch|import/i.test(String(e&&e.message)))throw e;mod=await import("data:text/javascript;charset=utf-8,"+encodeURIComponent(compiled))}
 const Component=mod.default??mod.App??Object.values(mod).find((v)=>typeof v==="function");
-if(typeof Component!=="function")throw new Error("The component has no default export.");
+if(typeof Component!=="function")throw new Error(M.noDefaultExport);
 const React=await import("react");
 const {createRoot}=await import("react-dom/client");
 createRoot(document.getElementById("root")).render(React.createElement(Component));
-}catch(e){const m=e&&e.message?e.message:String(e);report(packages.length&&/module script failed|dynamically imported module|error loading|Failed to fetch|NetworkError/i.test(m)?"Could not load "+packages.join(", ")+" from esm.sh — these packages need the network ("+m+")":m)}
+}catch(e){const m=e&&e.message?e.message:String(e);report(packages.length&&/module script failed|dynamically imported module|error loading|Failed to fetch|NetworkError/i.test(m)?F(M.packagesNeedNetwork,{packages:packages.join(", "),error:m}):m)}
 </script></body></html>`;
 }

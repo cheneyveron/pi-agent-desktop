@@ -321,7 +321,8 @@ try {
       const maximum = Number(await navigator.getAttribute("aria-valuemax"));
       const direction = before > 1 ? "ArrowUp" : "ArrowDown";
       await page.keyboard.press(direction);
-      const preview = page.getByRole("status");
+      // The preview card is a button since #130 (click jumps to the turn).
+      const preview = page.locator(".conversation-navigator-preview");
       await preview.waitFor();
       const after = Number(await navigator.getAttribute("aria-valuenow"));
       assert.equal(after, before + (direction === "ArrowUp" ? -1 : 1));

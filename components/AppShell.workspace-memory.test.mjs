@@ -97,6 +97,8 @@ test("New restores the draft after session navigation and workspace auto-restore
         cancelEventStreamGrace() {},
         closeEvents() {},
         closeSettingsMenu() {},
+        settingsSection: null,
+        getLastSettingsSection: () => "general",
         isMobile: false,
         desktopMode: false,
         activeCwd: cwd,

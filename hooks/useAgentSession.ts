@@ -500,6 +500,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const slashCommandsLoadRef = useRef<Promise<SlashCommandInfo[] | null> | null>(null);
   const slashCommandsGenerationRef = useRef(0);
   const newSessionPromotedRef = useRef(false);
+  // Set by promoteNewSession: the identity change it causes (draft key -> real
+  // id) is the same live conversation, not a session switch.
+  const promotedIdentityRef = useRef<{ from: string; to: string } | null>(null);
+  const promotedLoadRef = useRef(false);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
   const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(null);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
@@ -576,7 +580,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const sessionIdentity = isNew
     ? (newSessionDraftKey ?? "new")
     : (existingSessionId ?? "");
-  if (sessionIdentity !== appliedIdentity) {
+  const promotedIdentity = promotedIdentityRef.current;
+  if (
+    sessionIdentity !== appliedIdentity
+    && promotedIdentity?.from === appliedIdentity
+    && promotedIdentity.to === sessionIdentity
+  ) {
+    // A new session got its id after the first send. Resetting here emptied
+    // the transcript and showed "loading" until the reload landed, so the
+    // message just sent vanished and came back. Keep the view; the load
+    // effect below still re-reads the session, without the loading state.
+    promotedLoadRef.current = true;
+    setAppliedIdentity(sessionIdentity);
+  } else if (sessionIdentity !== appliedIdentity) {
     const previousIdentity = appliedIdentity;
     setAppliedIdentity(sessionIdentity);
     sessionGenerationRef.current += 1;
@@ -999,6 +1015,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     newSessionPromotedRef.current = true;
     const provisionalDraftKey = newSessionDraftKey;
     if (!provisionalDraftKey) return;
+    promotedIdentityRef.current = { from: provisionalDraftKey, to: sid };
     if (provisionalDraftKey !== sid) {
       draftKeyAliasesRef.current.set(provisionalDraftKey, sid);
       const input = opts.chatInputRef?.current;
@@ -2819,7 +2836,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // run the normal forced read in the background as the freshness check.
       // Only the settled history fields are restored — no streaming, queue, or
       // run state — and the background read remains authoritative.
-      const cached = getSessionViewSnapshot(session.id);
+      const promoted = promotedLoadRef.current;
+      promotedLoadRef.current = false;
+      promotedIdentityRef.current = null;
+      const cached = promoted ? null : getSessionViewSnapshot(session.id);
       if (cached) {
         setData({
           sessionId: session.id,
@@ -2845,7 +2865,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setError(null);
         setLoading(false);
       }
-      loadSession(session.id, !cached, true, { force: true }).then((loadedAgentState) => {
+      loadSession(session.id, !cached && !promoted, true, { force: true }).then((loadedAgentState) => {
         const agentState = loadedAgentState as { running: boolean; state?: AgentStateResponse } | null;
         if (agentState?.running) {
           loadTools(session.id);

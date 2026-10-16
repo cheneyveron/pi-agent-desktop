@@ -2,7 +2,7 @@
 use tauri::WebviewWindow;
 
 #[cfg(target_os = "macos")]
-use super::window::{MAC_TRAFFIC_LIGHT_X, MAC_TRAFFIC_LIGHT_Y};
+use super::window::{MAC_TRAFFIC_LIGHT_CENTRE_Y, MAC_TRAFFIC_LIGHT_X};
 
 /// Marks <html> so native-theme.css can make the sidebar translucent. Removed
 /// again by `apply_macos_vibrancy` if the effect view could not be attached.
@@ -28,7 +28,86 @@ pub(crate) fn apply_macos_vibrancy(window: &WebviewWindow) {
     }
 }
 
-// Keeping the traffic lights at MAC_TRAFFIC_LIGHT_*.
+/// The Y tao's `traffic_light_position` needs for the buttons' centre to land
+/// on MAC_TRAFFIC_LIGHT_CENTRE_Y.
+///
+/// tao (and `inset_traffic_lights` below) sets the title-bar container to
+/// `button height + y` and leaves each button's own frame alone, so the button
+/// keeps the bottom offset AppKit gave it. Its centre then sits at
+/// `y + height / 2 - offset` from the top, and solving for y needs AppKit's
+/// height and offset — which differ by linked SDK (button frames measured on
+/// macOS 27: SDK 15.5 → 16pt tall, 6pt up, Y 22; SDK 27 → 14pt tall, 9pt up,
+/// Y 26).
+/// They are read from a window with tao's Overlay style that is never shown,
+/// before the real one is built, because tao keeps re-applying the Y it was
+/// built with on every resize. Measured once, on the main thread.
+#[cfg(target_os = "macos")]
+pub(crate) fn traffic_light_y() -> f64 {
+    use std::sync::OnceLock;
+    static Y: OnceLock<f64> = OnceLock::new();
+    if let Some(y) = Y.get() {
+        return *y;
+    }
+    match unsafe { measure_traffic_light_y() } {
+        Some(y) => *Y.get_or_init(|| y),
+        // Off the main thread or AppKit had no buttons: the centre itself is
+        // within 2pt of either SDK's answer. Not cached, so a later call on
+        // the main thread still measures.
+        None => MAC_TRAFFIC_LIGHT_CENTRE_Y,
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn measure_traffic_light_y() -> Option<f64> {
+    use objc2::{
+        class, msg_send,
+        rc::{Allocated, Retained},
+        runtime::{AnyObject, Bool},
+        MainThreadMarker,
+    };
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+    MainThreadMarker::new()?;
+    // tao's TitleBarStyle::Overlay window: Titled | Closable |
+    // Miniaturizable | Resizable | FullSizeContentView, transparent title bar,
+    // hidden title.
+    let style_mask: usize = 1 | 2 | 4 | 8 | (1 << 15);
+    let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(800.0, 600.0));
+    let window: Allocated<AnyObject> = msg_send![class!(NSWindow), alloc];
+    let window: Option<Retained<AnyObject>> = msg_send![
+        window,
+        initWithContentRect: rect,
+        styleMask: style_mask,
+        backing: 2usize,
+        defer: Bool::YES
+    ];
+    let window = window?;
+    let _: () = msg_send![&*window, setReleasedWhenClosed: Bool::NO];
+    let _: () = msg_send![&*window, setTitlebarAppearsTransparent: Bool::YES];
+    // NSWindowTitleHidden
+    let _: () = msg_send![&*window, setTitleVisibility: 1isize];
+    let _: () = msg_send![&*window, layoutIfNeeded];
+
+    let close: *mut AnyObject = msg_send![&*window, standardWindowButton: 0usize];
+    if close.is_null() {
+        return None;
+    }
+    let superview: *mut AnyObject = msg_send![close, superview];
+    if superview.is_null() {
+        return None;
+    }
+    let frame: NSRect = msg_send![close, frame];
+    let flipped: Bool = msg_send![superview, isFlipped];
+    let offset = if flipped.as_bool() {
+        let bounds: NSRect = msg_send![superview, bounds];
+        bounds.size.height - (frame.origin.y + frame.size.height)
+    } else {
+        frame.origin.y
+    };
+    Some(MAC_TRAFFIC_LIGHT_CENTRE_Y - frame.size.height / 2.0 + offset)
+}
+
+// Keeping the traffic lights at MAC_TRAFFIC_LIGHT_X / traffic_light_y().
 //
 // tao applies the inset from its content view's `drawRect:` and re-applies it
 // straight after `setTitle:`, but neither holds here. That view sits under the
@@ -115,7 +194,7 @@ unsafe fn inset_traffic_lights(ns_window: usize) {
     let window_frame: NSRect = msg_send![ns_window, frame];
 
     let mut bar: NSRect = msg_send![container, frame];
-    bar.size.height = close_frame.size.height + MAC_TRAFFIC_LIGHT_Y;
+    bar.size.height = close_frame.size.height + traffic_light_y();
     bar.origin.y = window_frame.size.height - bar.size.height;
     let _: () = msg_send![container, setFrame: bar];
 

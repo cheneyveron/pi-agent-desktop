@@ -74,8 +74,23 @@ test("the stable ChatWindow reloads whenever its session identity changes", asyn
   assert.match(effect, /sessionIdRef\.current = session\.id/);
   // Merged form: showLoading is `!cached` so a restored snapshot skips the
   // spinner; the forced read is still the freshness check (includeState=true).
-  assert.match(effect, /loadSession\(session\.id, !cached, true, \{ force: true \}\)/);
+  assert.match(effect, /loadSession\(session\.id, !cached && !promoted, true, \{ force: true \}\)/);
   assert.match(effect, /\}, \[sessionIdentity\]\)/);
+});
+
+test("promoting a new session to its real id keeps the transcript on screen", async () => {
+  const source = await readFile(sourceUrl, "utf8");
+  // promoteNewSession records the draft-key -> id move it is about to cause
+  const promote = functionSlice(source, "const promoteNewSession = useCallback", "const ensureNewSession = useCallback");
+  assert.match(promote, /promotedIdentityRef\.current = \{ from: provisionalDraftKey, to: sid \}/);
+  // the render-phase switch skips the reset for exactly that move...
+  const switchBlock = functionSlice(source, "const promotedIdentity = promotedIdentityRef.current", "} else if (sessionIdentity !== appliedIdentity) {");
+  assert.match(switchBlock, /promotedIdentity\?\.from === appliedIdentity/);
+  assert.match(switchBlock, /promotedIdentity\.to === sessionIdentity/);
+  assert.doesNotMatch(switchBlock, /setMessages\(\[\]\)/);
+  // ...and the mount load re-reads without the loading state or a stale snapshot
+  const effect = functionSlice(source, "// Load session on mount and whenever", "useEffect(() => {\n    onSystemPromptChange");
+  assert.match(effect, /const cached = promoted \? null : getSessionViewSnapshot\(session\.id\)/);
 });
 
 test("session loads reject A-B-A responses from an older generation", async () => {

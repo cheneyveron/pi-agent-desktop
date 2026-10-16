@@ -66,7 +66,7 @@ test("macOS keeps its native traffic lights and draws no buttons", () => {
 
 test("macOS traffic lights share the sidebar controls' centre line", () => {
   const css = readFileSync(new URL("../../app/native-theme.css", import.meta.url), "utf8");
-  // MAC_TRAFFIC_LIGHT_Y compensates for AppKit's button offset and lands its
+  // traffic_light_y() (src-tauri/src/shell/window_appkit.rs) puts the lights'
   // centre at 24pt. A 48px controls row is centred at the same 24px without
   // pushing the sidebar header down (the bug reported in #108).
   assert.match(css, /\.session-sidebar-header--mac-inset \{[\s\S]*?padding-top: 0 !important;/);

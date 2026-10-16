@@ -39,6 +39,10 @@ export async function checkLocalFiles(browser, base, sessionId, filePath, refere
       await page.locator(".markdown-code-block pre").waitFor();
       const panel = page.locator("#file-panel");
       await page.locator('.app-topbar button[aria-label="Show file panel"]').click();
+      // The panel opens as a preview area with its file list hidden, and closes it again after a pick.
+      const showFileList = panel.locator('.file-tree-toggle[aria-label="Show file list"]');
+      const revealFileList = async () => { if (await showFileList.isVisible()) await showFileList.click(); };
+      await revealFileList();
       const fileRow = panel.locator(`[role="button"][title="${filePath}"]`);
       await fileRow.click();
       await panel.locator("iframe").waitFor();
@@ -78,6 +82,7 @@ export async function checkLocalFiles(browser, base, sessionId, filePath, refere
         }
       }
       await download(panel.locator(".file-viewer-controls").getByRole("button", { name: "Download file", exact: true }), expected);
+      await revealFileList();
       await fileRow.hover();
       await download(fileRow.getByRole("button", { name: "Download file", exact: true }), expected);
       if (local) {

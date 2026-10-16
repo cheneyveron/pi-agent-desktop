@@ -168,3 +168,73 @@ export function renameProviderEntry<T extends ModelsConfigDraft>(
   entries[index] = [newName, entries[index][1]];
   return { ...config, providers: Object.fromEntries(entries) };
 }
+
+/** The spec fields a `modelOverrides` entry can set that the model form edits as numbers. */
+export const MODEL_SPEC_FIELDS = ["contextWindow", "maxTokens"] as const;
+
+export type ModelSpecField = (typeof MODEL_SPEC_FIELDS)[number];
+
+/**
+ * What pi falls back to when a models.json model leaves a spec field out
+ * (`modelFromJson` in pi-coding-agent's provider composer). It is the value
+ * the session runs with unless a `modelOverrides` entry replaces it.
+ */
+export const MODEL_SPEC_FALLBACKS: Record<ModelSpecField, number> = {
+  contextWindow: 128000,
+  maxTokens: 16384,
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** One provider's `modelOverrides` entries, in file order, skipping malformed ones. */
+export function listModelOverrides(
+  modelOverrides: unknown,
+): { modelId: string; fields: Record<string, unknown> }[] {
+  if (!isPlainRecord(modelOverrides)) return [];
+  return Object.entries(modelOverrides).flatMap(([modelId, fields]) =>
+    modelId && isPlainRecord(fields) ? [{ modelId, fields }] : []);
+}
+
+/**
+ * The spec values a provider's `modelOverrides` sets for one model id. pi
+ * applies these last, over the built-in model and over a models.json model
+ * of the same id, so they are what a session actually gets.
+ */
+export function modelOverrideSpecs(
+  modelOverrides: unknown,
+  modelId: string,
+): Partial<Record<ModelSpecField, number>> {
+  const id = modelId.trim();
+  if (!id || !isPlainRecord(modelOverrides)) return {};
+  const entry = modelOverrides[id];
+  if (!isPlainRecord(entry)) return {};
+  const specs: Partial<Record<ModelSpecField, number>> = {};
+  for (const field of MODEL_SPEC_FIELDS) {
+    const value = entry[field];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) specs[field] = value;
+  }
+  return specs;
+}
+
+export type ModelSpecHint =
+  /** A `modelOverrides` entry sets the field; it wins over the form value. */
+  | { kind: "override"; value: number; replacesDraft: boolean }
+  /** The field is empty and nothing overrides it: pi uses its fallback. */
+  | { kind: "fallback"; value: number }
+  /** The form sets the field and nothing overrides it. */
+  | { kind: "own" };
+
+/** Which value pi resolves for a spec field, and where it comes from. */
+export function resolveModelSpecHint(
+  field: ModelSpecField,
+  draftValue: number | undefined,
+  overrideValue: number | undefined,
+): ModelSpecHint {
+  if (overrideValue !== undefined) {
+    return { kind: "override", value: overrideValue, replacesDraft: draftValue !== undefined };
+  }
+  if (draftValue === undefined) return { kind: "fallback", value: MODEL_SPEC_FALLBACKS[field] };
+  return { kind: "own" };
+}

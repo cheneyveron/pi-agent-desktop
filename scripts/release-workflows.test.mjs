@@ -168,7 +168,9 @@ test("release workflow publishes Apple Silicon, Linux x64, and Windows x64 insta
 
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /max-parallel: 1/);
-  assert.match(workflow, /runner: macos-15/);
+  assert.match(workflow, /runner: macos-26/);
+  // Linking an older SDK ships the legacy traffic lights (0.7.1).
+  assert.match(workflow, /--show-sdk-version\)"\n\s+echo "macOS SDK \$sdk"\n\s+test "\$\{sdk%%\.\*\}" -ge 26/);
   assert.match(workflow, /target: aarch64-apple-darwin/);
   assert.match(workflow, /runner: ubuntu-24\.04/);
   assert.match(workflow, /target: x86_64-unknown-linux-gnu/);
@@ -179,7 +181,7 @@ test("release workflow publishes Apple Silicon, Linux x64, and Windows x64 insta
   assert.match(workflow, /target: x86_64-pc-windows-msvc/);
   assert.match(workflow, /--bundles nsis/);
   assert.doesNotMatch(workflow, /x86_64-apple-darwin/);
-  assert.doesNotMatch(workflow, /macos-15-intel/);
+  assert.doesNotMatch(workflow, /macos-15/);
   assert.match(workflow, /uploadUpdaterJson: true/);
   assert.match(workflow, /gh release edit "v\$version" --draft=false --latest/);
 });

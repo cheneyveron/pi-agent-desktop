@@ -1240,7 +1240,18 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               ))}
             </div>
           ) : error ? (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>{error}</div>
+            <div className="file-tree-message is-error" role="alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  setTreeRefreshKey((value) => value + 1);
+                }}
+              >
+                {t("common.retry")}
+              </button>
+            </div>
           ) : (
             roots.map((node) => (
               <TreeNode

@@ -31,7 +31,6 @@ interface HtmlPreviewBlockProps {
   defaultPreview?: boolean;
 }
 
-const KIND_LABEL: Record<HtmlPreviewKind, string> = { html: "HTML", svg: "SVG", react: "JSX" };
 
 // Blocks seen streaming in this page, keyed by their opening text. The
 // streaming bubble and the finished message are different components, so the
@@ -132,11 +131,11 @@ export function HtmlPreviewBlock({ code, lang, kind, isStreaming, defaultPreview
           <button
             type="button"
             className="markdown-code-action"
-            title={t("i18n.downloadFile")}
-            aria-label={t("i18n.downloadFile")}
+            title={`${t("i18n.downloadFile")} · ${htmlPreviewFileName(kind)}`}
+            aria-label={`${t("i18n.downloadFile")} · ${htmlPreviewFileName(kind)}`}
             onClick={download}
           >
-            {KIND_LABEL[kind]}
+            {t("preview.download")}
           </button>
           <button
             type="button"
@@ -172,7 +171,7 @@ export function HtmlPreviewBlock({ code, lang, kind, isStreaming, defaultPreview
         />
       )}
       <HtmlPreviewErrorBar
-        errors={runtimeState.error ? [runtimeState.error, ...errors] : errors}
+        errors={runtimeState.error ? [t("preview.runtimeLoadFailed", { error: runtimeState.error }), ...errors] : errors}
         onFix={canFix && !runtimeState.error ? fix : undefined}
         onDismiss={dismiss}
       />

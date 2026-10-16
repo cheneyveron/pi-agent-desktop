@@ -42,6 +42,12 @@ Official releases support Apple Silicon Macs running macOS 11 or later, Windows 
 
 > Installing Pi Agent gives you the agent inside the app, but it does not install a global `pi` command. If you also want the Pi CLI in your terminal, install it separately by following the [pi project](https://github.com/earendil-works/pi) instructions.
 
+> **macOS blocks the first launch**: the macOS build is not yet signed with an Apple Developer ID or notarized, so Gatekeeper may say the developer cannot be verified or that the app "is damaged and can't be opened" (Homebrew installs included). Click "Open Anyway" in System Settings › Privacy & Security, or run:
+>
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/Pi Agent.app"
+> ```
+
 Before signed auto-updates can be used for the first time, an older build without the updater has to be replaced by manually installing a signed one. Upgrades then happen from Settings.
 
 ### Use Existing Pi Data

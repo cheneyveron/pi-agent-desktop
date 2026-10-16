@@ -100,6 +100,22 @@ export function useSessionArtifact(sessionId: string | null | undefined, identif
   );
 }
 
+/**
+ * Re-renders only when the newest title of one of these artifacts changes, not
+ * on every streamed chunk, so the shell can label its tabs without following
+ * the whole store.
+ */
+export function useArtifactTitles(refs: readonly ArtifactRef[]): string {
+  return useSyncExternalStore(subscribeArtifacts, () => artifactTitlesKey(refs), () => "");
+}
+
+type ArtifactRef = { sessionId: string; identifier: string };
+
+/** The newest title of each artifact, as one comparable string. */
+export function artifactTitlesKey(refs: readonly ArtifactRef[]): string {
+  return refs.map((ref) => getSessionArtifact(ref.sessionId, ref.identifier)?.versions.at(-1)?.title ?? "").join("\u0000");
+}
+
 export function useActiveArtifactSession(): string | null {
   return useSyncExternalStore(subscribeArtifacts, getActiveArtifactSession, () => null);
 }

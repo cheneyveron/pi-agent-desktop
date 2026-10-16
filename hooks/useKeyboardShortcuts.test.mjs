@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleGlobalEscape, registerAbortHandler } from "./useKeyboardShortcuts.ts";
+import { handleGlobalEscape, handleOpenSettingsShortcut, registerAbortHandler } from "./useKeyboardShortcuts.ts";
 
 function keydown(key, { tagName = "BUTTON", defaultPrevented = false } = {}) {
   return {
@@ -45,4 +45,22 @@ test("with no run to stop, Escape is left alone", () => {
   const event = keydown("Escape");
   assert.equal(handleGlobalEscape(event), false);
   assert.equal(event.defaultPrevented, false);
+});
+
+test("Cmd/Ctrl+, opens Settings unless it is already open or the key was taken", () => {
+  let opened = 0;
+  const open = () => { opened += 1; };
+  const comma = (mods = {}) => ({ key: ",", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...mods });
+
+  const ctrl = comma({ ctrlKey: true });
+  assert.equal(handleOpenSettingsShortcut(ctrl, open), true);
+  assert.equal(ctrl.defaultPrevented, true);
+  assert.equal(handleOpenSettingsShortcut(comma({ metaKey: true }), open), true);
+  assert.equal(opened, 2);
+
+  assert.equal(handleOpenSettingsShortcut(comma(), open), false);
+  assert.equal(handleOpenSettingsShortcut(comma({ ctrlKey: true, shiftKey: true }), open), false);
+  assert.equal(handleOpenSettingsShortcut(comma({ ctrlKey: true, defaultPrevented: true }), open), false);
+  assert.equal(handleOpenSettingsShortcut(comma({ ctrlKey: true }), undefined), false);
+  assert.equal(opened, 2);
 });

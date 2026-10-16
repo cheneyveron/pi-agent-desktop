@@ -87,12 +87,24 @@ export function ConversationNavigator({ turns, scrollContainerRef, onSelect }: P
       }}
     >
       {preview && (
-        <div className="conversation-navigator-preview" role="status">
-          <div className="conversation-navigator-question">{preview.question}</div>
-          <div className="conversation-navigator-answer">
+        // Clicking the card jumps to its turn, like clicking the tick beside it.
+        // It is not a tab stop: the track's arrow keys already move between turns.
+        <button
+          type="button"
+          className="conversation-navigator-preview"
+          tabIndex={-1}
+          title={t("chat.conversationNavigatorJump")}
+          onClick={() => {
+            if (previewIndex == null) return;
+            setActiveIndex(previewIndex);
+            onSelect(previewIndex);
+          }}
+        >
+          <span className="conversation-navigator-question">{preview.question}</span>
+          <span className="conversation-navigator-answer">
             {preview.answer || "…"}
-          </div>
-        </div>
+          </span>
+        </button>
       )}
       <div
         className="conversation-navigator-track"

@@ -105,7 +105,14 @@ existing border: hover tints it and dragging darkens it, and neither adds a seco
 
 **Settings.** Settings is an in-window preferences sheet, not a page. It is 1040×700 at most
 and clamped with `min()` on small windows. The scrim is light but still makes the app read as
-inactive. General splits into two columns at ≥880px.
+inactive. General splits into two columns at ≥880px. The dialog follows the host platform through
+`<html data-platform>` (`lib/ui-platform.ts`, set when it mounts, in the browser too): macOS
+gets a centered preferences toolbar (icon over label, gray tile for the selection, no title),
+Windows and Linux get a left navigation pane with the content as a card under a title bar
+(≥900px; narrower windows keep the top tabs), with a Fluent switch and red corner close on
+Windows and a GNOME round close on Linux. Switches and sliders use the system `AccentColor`
+when on; buttons keep the near-black accent. Phones and the ≤640px picker are untouched.
+⌘, / Ctrl+, opens it at the last section.
 
 **Chat.** The composer aligns with the message column. Session controls sit below the input card, and the new-session screen has no update chip above it. Markdown tables wrap within the panel
 instead of scrolling (this reverts upstream #650). While a run is busy, fork/navigate actions

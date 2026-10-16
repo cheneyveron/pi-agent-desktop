@@ -14,6 +14,8 @@
 export type ModelScopeWarningCode =
   | "no-match"
   | "invalid-thinking-level"
+  /** pi ≥ 1.3: one pattern matched the same model id under several providers. */
+  | "ambiguous"
   | "unauthenticated-provider";
 
 export interface ModelScopeWarning {

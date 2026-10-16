@@ -57,7 +57,7 @@ import { AgentSessionPanel } from "./AgentSessionPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { artifactPanelTab, artifactTabId, artifactTabsForSession, upsertArtifactTab, type ArtifactTab } from "./artifact-tabs";
 import { ArtifactPanel } from "./ArtifactPanel";
-import { setArtifactOpener } from "@/lib/artifact-store";
+import { setArtifactOpener, useArtifactTitles } from "@/lib/artifact-store";
 import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
 import { sendAgentCommand } from "@/lib/agent-client";
@@ -100,7 +100,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { getSessionFamily } from "@/lib/session-family";
-import { type SettingsSection } from "@/lib/settings-navigation";
+import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
 type AutoNameStatus =
@@ -697,6 +697,8 @@ export function AppShell() {
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [terminalsRestored, setTerminalsRestored] = useState(false);
   const [artifactTabs, setArtifactTabs] = useState<ArtifactTab[]>([]);
+  // artifactPanelTab reads each tab's newest title; this re-renders when one changes.
+  useArtifactTitles(artifactTabs);
   const panelTabs: Tab[] = [...fileTabs, ...terminalTabs.map((tab) => ({
     id: tab.id,
     label: getFileName(tab.cwd) || tab.cwd,
@@ -1130,6 +1132,14 @@ export function AppShell() {
     }
   }, [activeCwd, closeSettingsMenu, handleNewSession]);
 
+  const openSettingsAtLastSection = useCallback(() => {
+    closeSettingsMenu();
+    setActiveTopPanel(null);
+    setTopMoreOpen(false);
+    // A project-only section without a project falls back to General (SettingsPanel re-checks).
+    setSettingsSection(getLastSettingsSection(selectedSession?.cwd ?? newSessionCwd ?? activeCwd));
+  }, [activeCwd, closeSettingsMenu, newSessionCwd, selectedSession]);
+
   // The native macOS menu is the only reliable route when the webview has no
   // focused element. Route its custom items back through the same app state.
   useNativeAppMenu(handleNativeMenuAction);
@@ -1140,6 +1150,8 @@ export function AppShell() {
     activeCwd,
     // Only while open: a closed panel must leave \ and focus alone.
     onCloseRightPanel: rightPanelOpen ? handleRightPanelClose : undefined,
+    // Already open: leave it where it is.
+    onOpenSettings: settingsSection ? undefined : openSettingsAtLastSection,
   });
 
   // Client-built transient SessionInfo (new session / fork) lacks the
@@ -2757,7 +2769,6 @@ export function AppShell() {
               initialPrompt={pendingQuotePrompt?.sessionId === selectedSession?.id ? pendingQuotePrompt?.text : undefined}
               onInitialPromptConsumed={() => setPendingQuotePrompt(null)}
               soundEnabled={soundEnabled}
-              onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}
               unlockAudio={unlockAudio}
             />
@@ -3139,6 +3150,8 @@ export function AppShell() {
         initialSection={settingsSection}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
+        soundEnabled={soundEnabled}
+        onSoundToggle={onSoundToggle}
         onClose={() => {
           setSettingsSection(null);
           setModelsRefreshKey((key) => key + 1);

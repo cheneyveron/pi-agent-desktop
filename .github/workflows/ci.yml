@@ -64,6 +64,35 @@ jobs:
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
+  # Windows-only code (cfg(windows) blocks, the tray, taskkill/explorer paths)
+  # is invisible to the Linux job and to macOS; without this job the release
+  # run is the first to compile it, ~25 minutes in. 0.7.0's first attempt died
+  # there on one missing import.
+  desktop-shell-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # Same placeholders as the Linux job, from the Windows resource list
+      # (tauri.windows.conf.json replaces the base config's macOS list).
+      - name: Create placeholder bundle resources
+        shell: bash
+        run: |
+          node -e "
+          const fs = require('fs');
+          for (const r of require('./src-tauri/tauri.windows.conf.json').bundle.resources) {
+            const p = 'src-tauri/' + r;
+            if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+          }"
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
