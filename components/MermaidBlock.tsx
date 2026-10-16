@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { createElement as renderSyntaxNode, type SyntaxHighlighterProps } from "react-syntax-highlighter";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
@@ -321,6 +322,30 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
   );
 }
 
+/**
+ * Line numbers are drawn by a CSS ::before from `data-line`, so they are not
+ * text in the DOM and never end up in a manual selection copy (user-select:
+ * none on a real number span is ignored by some WebViews).
+ */
+const renderNumberedLines: NonNullable<SyntaxHighlighterProps["renderer"]> = ({ rows, stylesheet, useInlineStyles }) => {
+  const gutter = `${String(rows.length).length}ch`;
+  return rows.map((row, lineIndex) => (
+    <span
+      className="code-line"
+      data-line={lineIndex + 1}
+      key={`code-line-${lineIndex}`}
+      style={{ "--code-gutter": gutter } as CSSProperties}
+    >
+      {(row.children ?? []).map((node, tokenIndex) => renderSyntaxNode({
+        node,
+        stylesheet,
+        useInlineStyles,
+        key: `code-token-${lineIndex}-${tokenIndex}`,
+      }))}
+    </span>
+  ));
+};
+
 interface CodeBlockProps {
   code: string;
   lang: string;
@@ -390,8 +415,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
         <SyntaxHighlighter
           language={lang || "text"}
           style={isDark ? codeBlockDarkTheme : vs}
-          showLineNumbers
-          lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
+          renderer={renderNumberedLines}
           customStyle={{
             margin: 0,
             padding: "11px 13px",

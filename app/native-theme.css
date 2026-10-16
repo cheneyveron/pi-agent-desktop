@@ -4159,6 +4159,20 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   background: var(--bg);
   box-shadow: none;
 }
+/* Gutter numbers come from data-line via ::before: generated content is never
+   part of a copied selection. */
+.markdown-code-block .code-line::before {
+  content: attr(data-line);
+  display: inline-block;
+  box-sizing: content-box;
+  width: var(--code-gutter, 2ch);
+  padding-right: 1em;
+  text-align: right;
+  color: var(--text-dim);
+  font-style: normal;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .markdown-code-header {
   padding: 5px 10px;
   background: var(--bg-panel);
