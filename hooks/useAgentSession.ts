@@ -482,6 +482,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const initialScrollDoneRef = useRef(Boolean(opts.deferInitialScroll));
   const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollToUserRef = useRef(false);
+  // A sent prompt scrolls the list to its tail once the optimistic message renders.
+  const pendingScrollToBottomRef = useRef(false);
   const isNearBottomRef = useRef(true);
   const previousScrollTopRef = useRef(0);
   const liveFollowFrameRef = useRef<number | null>(null);
@@ -1957,8 +1959,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setAgentRunning(true);
     setAgentPhase(isSlashCommandPrompt ? { kind: "running_command" } : { kind: "waiting_model" });
     dispatch({ type: "start" });
-    pendingScrollToUserRef.current = true;
-    setPromptAnchorActive(true);
+    // Fork: keep the tail in view and follow the reply. Upstream anchors the sent
+    // message at the top (the pendingScrollToUserRef / promptAnchorActive pair), which
+    // pads the list with a spacer: in a chat with history that is a screenful of blank
+    // under the short start of the reply. Do not re-enable it on an upstream merge.
+    pendingScrollToBottomRef.current = true;
 
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     let sentSessionId: string | null = null;
@@ -2959,6 +2964,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         pendingScrollToUserRef.current = false;
         initialScrollDoneRef.current = true;
         scrollUserMsgToTop();
+      } else if (pendingScrollToBottomRef.current) {
+        pendingScrollToBottomRef.current = false;
+        initialScrollDoneRef.current = true;
+        isNearBottomRef.current = true;
+        scrollToBottom("auto");
       } else if (!initialScrollDoneRef.current) {
         initialScrollDoneRef.current = true;
         // A remembered position wins; a viewport that was at the bottom is

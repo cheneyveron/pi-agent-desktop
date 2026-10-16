@@ -723,7 +723,7 @@ test("restores an in-page session viewport without the default tail jump", () =>
   assert.match(chatWindowSource, /visibility: pendingScrollRestore && !loading \? "hidden" : undefined/);
 });
 
-test("keeps a newly sent user message at the top while its response starts", () => {
+test("a newly sent prompt follows the tail instead of anchoring at the top", () => {
   const streamUpdateSource = source.slice(
     source.indexOf('case "message_start"'),
     source.indexOf('case "message_end"'),
@@ -739,7 +739,11 @@ test("keeps a newly sent user message at the top while its response starts", () 
 
   assert.match(streamUpdateSource, /!pendingScrollToUserRef\.current && isNearBottomRef\.current/);
   assert.match(source, /const \[promptAnchorActive, setPromptAnchorActive\] = useState\(false\)/);
-  assert.match(source, /pendingScrollToUserRef\.current = true;\s*setPromptAnchorActive\(true\)/);
+  // Fork: the anchor's spacer left a screenful of blank under the reply in a chat with history.
+  assert.match(source, /pendingScrollToBottomRef\.current = true;\s*\n\s*const piImages/);
+  assert.doesNotMatch(source, /pendingScrollToUserRef\.current = true/);
+  assert.doesNotMatch(source, /setPromptAnchorActive\(true\)/);
+  assert.match(scrollEffectSource, /pendingScrollToBottomRef\.current = false;[\s\S]*?isNearBottomRef\.current = true;\s*scrollToBottom\("auto"\)/);
   assert.match(userScrollSource, /const targetTop = Math\.min\(Math\.max\(0, elAbsTop - 16\), maxScrollTop\)/);
   assert.match(userScrollSource, /cancelAnimationFrame\(liveFollowFrameRef\.current\)/);
   assert.match(userScrollSource, /isNearBottomRef\.current = true/);
