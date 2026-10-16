@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useFileContextMenu } from "@/hooks/useFileContextMenu";
 import { useI18n } from "@/hooks/useI18n";
 import { getFileName } from "@/lib/file-paths";
+import { setTurnFilePatch } from "@/lib/turn-file-patches";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { getFileIcon } from "./FileIcons";
 
@@ -37,7 +38,14 @@ export function TurnWrittenFiles({ files, onOpenFile }: {
   onOpenFile?: (filePath: string) => void;
 }) {
   const { t } = useI18n();
-  const showFileMenu = useFileContextMenu(onOpenFile);
+  // Hand the turn's own edit diff to the viewer before opening, so its Diff
+  // mode shows what the tool changed (and clears an older turn's diff).
+  const patchByPath = new Map(files.map((file) => [file.filePath, file.patch]));
+  const openFile = (filePath: string) => {
+    setTurnFilePatch(filePath, patchByPath.get(filePath));
+    onOpenFile?.(filePath);
+  };
+  const showFileMenu = useFileContextMenu(onOpenFile ? openFile : undefined);
   const [expanded, setExpanded] = useState(true);
   if (files.length === 0) return null;
 
@@ -72,7 +80,7 @@ export function TurnWrittenFiles({ files, onOpenFile }: {
             className="turn-files-row"
             title={filePath}
             aria-label={t("chat.openWrittenFile", { name })}
-            onClick={() => onOpenFile?.(filePath)}
+            onClick={() => openFile(filePath)}
             onContextMenu={(event) => showFileMenu(event, { filePath })}
           >
             <span className="turn-files-icon">{getFileIcon(name, 14)}</span>

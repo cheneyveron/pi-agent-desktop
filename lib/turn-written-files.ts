@@ -17,11 +17,23 @@ export interface WrittenFile {
   added?: number;
   /** Lines removed across the turn's calls on this file, when any call reported them. */
   removed?: number;
+  /**
+   * Unified patch(es) the turn's `edit` calls reported for this file, in call
+   * order. Absent for `write` and `apply_patch` (no per-file patch to reuse).
+   */
+  patch?: string;
 }
 
 interface LineStats {
   added: number;
   removed: number;
+}
+
+function readEditPatch(result: ToolResultMessage | undefined): string | null {
+  const details = (result as (ToolResultMessage & { details?: unknown }) | undefined)?.details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) return null;
+  const patch = (details as Record<string, unknown>).patch;
+  return typeof patch === "string" && patch.length > 0 ? patch : null;
 }
 
 function countTextLines(text: string): number {
@@ -233,6 +245,8 @@ export function extractTurnWrittenFiles(
         entry = { filePath };
         byPath.set(filePath, entry);
       }
+      const editPatch = isEditToolName(block.toolName) ? readEditPatch(result) : null;
+      if (editPatch) entry.patch = entry.patch ? `${entry.patch}\n${editPatch}` : editPatch;
       const stats = patchStats ? patchStats.get(rawPath) : readWriteEditStats(block.toolName, block.input, result);
       if (stats) {
         entry.added = (entry.added ?? 0) + stats.added;

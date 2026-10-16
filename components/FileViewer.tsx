@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import {
   createElement as renderSyntaxNode,
   type SyntaxHighlighterProps,
@@ -24,6 +24,7 @@ import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
+import { getTurnFilePatch, subscribeTurnFilePatches } from "@/lib/turn-file-patches";
 import { getFileIcon } from "./FileIcons";
 import { revealLabelKey } from "@/lib/file-context-menu";
 import { useDesktopChrome } from "./desktop/useDesktopChrome";
@@ -1328,8 +1329,18 @@ function TextFileViewer({
     void fetchGitDiff(filePath);
   }, [fetchGitDiff, filePath, gitRefreshKey]);
 
-  const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
-  const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
+  // The file tool's own diff (from the chat's "Files changed" list) wins over
+  // git's: it is exactly what the tool changed, and exists without a repo.
+  const turnPatch = useSyncExternalStore(
+    subscribeTurnFilePatches,
+    () => getTurnFilePatch(filePath),
+    () => undefined,
+  );
+  const hasGitPatch = gitDiff?.supported === true && typeof gitDiff.patch === "string";
+  const diffPatch = turnPatch ?? (hasGitPatch ? gitDiff!.patch! : null);
+  // Name kept for the extraction tests: true for either diff source.
+  const hasGitDiff = diffPatch !== null;
+  const isDeletedDiff = hasGitPatch && gitDiff!.status === "deleted";
 
   useEffect(() => {
     if (gitDiffResolved && !hasGitDiff && displayMode === "diff") updateDisplayMode("source");
@@ -1719,7 +1730,7 @@ function TextFileViewer({
         style={{ flex: 1, overflow: "auto", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >
         {effectiveDisplayMode === "diff" && hasGitDiff ? (
-          <DiffView patch={gitDiff.patch!} />
+          <DiffView patch={diffPatch!} />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           htmlScriptsEnabled && htmlHasScripts ? (
             <iframe
