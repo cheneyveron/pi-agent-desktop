@@ -67,6 +67,25 @@ Design record: [ADR 0007](../adr/0007-scheduled-tasks.md). Full spec and impleme
   when the list has not caught up yet), or every run would notify twice. A scheduled session the user
   has open still gets the generic notification when its run ends, in addition to this one.
 
+## Managing tasks from a conversation (`scheduled_tasks` tool, `/schedule`)
+- `lib/scheduled-tasks-extension.ts` is an inline, hidden extension for normal sessions (wired in
+  `rpc-manager.ts` beside the artifact guide). It registers the `model-only` tool `scheduled_tasks`
+  (`list`, `get`, `create`, `update`, `pause`, `resume`, `run`, `delete`, `runs`) and the command
+  `/schedule`. Both call `executeScheduleAction()` in `lib/scheduled-tasks/manage.ts`, which uses the
+  same `buildTask` / `applyTaskPatch` validation and `task_changed` events as the HTTP routes, so the
+  Scheduled page follows a change made from chat. `toTaskView` moved to `task-view.ts` (re-exported by
+  `api.ts`) so this path does not pull in `next/server`.
+- `/schedule` alone lists; `show|runs|run|pause|resume|delete <task>` act directly and answer with a
+  notice. Anything else, and `new <words>`, is sent to the model as a request to use the tool, because
+  turning "every Monday at 9" into cron is the model's job. A task is found by id, exact name, or a part
+  of the name only one task contains.
+- Safety, all in code (not in the prompt): a new task defaults to the `default` preset (the editor and the HTTP API keep `read-only`); `default` and
+  `full` need a `ctx.ui.confirm` from the user (no UI means no), which is what sets
+  `acknowledgeUnattendedWrites`; delete asks too; a session pinned to a read-only selection can only
+  `list`/`get`/`runs`; a session that is itself a scheduled run (it carries the `pi-web:scheduled-run`
+  entry) cannot change tasks, or tasks would spawn tasks.
+- Chat-only sessions and subagents do not load it (they take no inline extensions from this list).
+
 ## Pitfalls
 - Never compare errors from the scheduler with `instanceof` in a route; see the ADR.
 - Tests that start runs must finish every session they hold open (`session.finish()`): a run
