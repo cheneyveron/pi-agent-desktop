@@ -2016,37 +2016,21 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         >
         <div ref={listScrollRef} className="sidebar-project-tree" onScroll={handleListScroll}>
           <div className="sidebar-project-tree-header">
-            <span className="sidebar-project-tree-title">
-              {t(sidebarView === "recent" ? "sidebar.recent" : "sidebar.projects")}
-            </span>
+            <div className="sidebar-project-tree-title" role="tablist" aria-label={t("sidebar.viewSwitch")}>
+              {(["projects", "recent"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  role="tab"
+                  aria-selected={sidebarView === view}
+                  className={`sidebar-project-tree-view${sidebarView === view ? " is-active" : ""}`}
+                  onClick={() => setSidebarView(view)}
+                >
+                  {t(view === "projects" ? "sidebar.projects" : "sidebar.recent")}
+                </button>
+              ))}
+            </div>
             <div className="sidebar-project-tree-tools">
-              <div className="sidebar-view-switch" role="group" aria-label={t("sidebar.viewSwitch")}>
-                <button
-                  type="button"
-                  className={`sidebar-view-switch-button${sidebarView === "projects" ? " is-active" : ""}`}
-                  aria-pressed={sidebarView === "projects"}
-                  title={t("sidebar.projects")}
-                  aria-label={t("sidebar.projects")}
-                  onClick={() => setSidebarView("projects")}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className={`sidebar-view-switch-button${sidebarView === "recent" ? " is-active" : ""}`}
-                  aria-pressed={sidebarView === "recent"}
-                  title={t("sidebar.recent")}
-                  aria-label={t("sidebar.recent")}
-                  onClick={() => setSidebarView("recent")}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="9" />
-                    <polyline points="12 7 12 12 15.5 14" />
-                  </svg>
-                </button>
-              </div>
               {sidebarView === "projects" && (
                 <button
                   className="sidebar-project-tree-menu"

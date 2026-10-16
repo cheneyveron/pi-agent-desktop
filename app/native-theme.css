@@ -7022,40 +7022,32 @@ html.native-desktop :is(
 }
 
 
-/* Sidebar view switch (Projects / Recent): two small icon buttons, the active
-   one raised like a segmented control. */
-.sidebar-view-switch {
-  display: inline-flex;
+/* The section title doubles as the Projects / Recents switch. */
+.sidebar-project-tree-title {
+  display: flex;
   align-items: center;
-  gap: 1px;
-  padding: 1px;
-  margin-right: 2px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--text) 6%, transparent);
+  gap: 10px;
 }
-.sidebar-view-switch-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 20px;
+.sidebar-project-tree-view {
   padding: 0;
   border: 0;
-  border-radius: 5px;
-  background: transparent;
+  background: none;
+  font: inherit;
   color: var(--text-dim);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  opacity: 0.7;
 }
-.sidebar-view-switch-button:hover { color: var(--text); }
-.sidebar-view-switch-button.is-active {
+.sidebar-project-tree-view:hover {
+  opacity: 1;
+}
+.sidebar-project-tree-view.is-active {
   color: var(--text);
-  background: var(--bg);
-  box-shadow: 0 0 0 var(--hairline, 1px) var(--border);
+  opacity: 1;
 }
-.sidebar-view-switch-button:focus-visible {
+.sidebar-project-tree-view:focus-visible {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* Recent view: project name as a dim tag after the title. */

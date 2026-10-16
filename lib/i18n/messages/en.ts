@@ -370,7 +370,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.renameFailed": "Rename failed: {error}",
     "sidebar.deleteFailed": "Delete failed: {error}",
     "sidebar.copySessionId": "Copy session ID",
-    "sidebar.recent": "Recent",
+    "sidebar.recent": "Recents",
     "sidebar.viewSwitch": "Sidebar view",
     "sidebar.copyFailed": "Copy failed: {error}",
     "sidebar.generateTitleFailed": "Could not generate a title: {error}",
