@@ -16,6 +16,10 @@ import { ConfigButton, ConfigSwitch } from "@/components/SettingsUi";
 
 import { useDesktopChrome } from "./useDesktopChrome";
 
+// The Tauri shell intercepts navigation to this URL and pops the native backend
+// picker (src-tauri/src/backend.rs, desktop/backend-logo.js).
+const BACKEND_SWITCHER_URL = "https://pi-desktop.invalid/backend-switcher";
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -30,10 +34,15 @@ function formatBytes(bytes: number): string {
  * the remainder of the old "Desktop" settings tab after the app info moved to
  * the top of General and its language / appearance blocks were dropped as
  * duplicates of what General already offers.
+ *
+ * The backend switcher row is the one exception to "nothing outside Tauri": a
+ * remote backend window has no native capabilities (so `isDesktop` is false),
+ * yet it still needs the switcher to get back to the local server.
  */
 export function DesktopAppSection() {
   const { t } = useI18n();
   const { isDesktop } = useDesktopChrome();
+  const [isRemoteBackend, setIsRemoteBackend] = useState(false);
   const [closeQuits, setCloseQuits] = useState(() => getPrefBool(APP_PREF_KEYS.closeQuits, false));
   const [notifyOnComplete, setNotifyOnComplete] = useState(
     () => getPrefBool(APP_PREF_KEYS.notifyOnComplete, true),
@@ -49,6 +58,10 @@ export function DesktopAppSection() {
   >({ status: "idle" });
 
   useEffect(() => {
+    setIsRemoteBackend(Boolean((window as { __PI_REMOTE_BACKEND__?: boolean }).__PI_REMOTE_BACKEND__));
+  }, []);
+
+  useEffect(() => {
     if (!isDesktop) return;
     let cancelled = false;
     isAutostartEnabledNative()
@@ -57,7 +70,30 @@ export function DesktopAppSection() {
     return () => { cancelled = true; };
   }, [isDesktop]);
 
-  if (!isDesktop) return null;
+  if (!isDesktop && !isRemoteBackend) return null;
+
+  const backendRow = (
+    <div className="settings-option">
+      <span className="settings-option-text">
+        <span className="settings-option-title">{t("appSettings.backend")}</span>
+        <span className="settings-option-hint">{t("appSettings.backendHint")}</span>
+      </span>
+      {/* data-backend-switcher: desktop/backend-logo.js claims the click and
+          opens the native picker; the plain navigation is the fallback. */}
+      <ConfigButton data-backend-switcher onClick={() => window.location.assign(BACKEND_SWITCHER_URL)}>
+        {t("appSettings.backendSwitch")}
+      </ConfigButton>
+    </div>
+  );
+
+  if (!isDesktop) {
+    return (
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("appSettings.desktopSection")}</h3>
+        <div className="settings-option-list">{backendRow}</div>
+      </section>
+    );
+  }
 
   const toggleAutostart = async (next: boolean) => {
     setAutostartError(false);
@@ -84,6 +120,7 @@ export function DesktopAppSection() {
       <h3 className="settings-general-heading">{t("appSettings.desktopSection")}</h3>
       <p className="settings-general-description">{t("appSettings.desktopHint")}</p>
       <div className="settings-option-list">
+        {backendRow}
         <div className="settings-option">
           <span className="settings-option-text">
             <span className="settings-option-title">{t("appSettings.closeQuits")}</span>

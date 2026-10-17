@@ -74,6 +74,15 @@ try {
   await logo.getByRole("button", { name: "Switch backend" }).click();
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(requests, 3);
+  await logo.route("https://settings.test/**", route => route.fulfill({ contentType: "text/html", body: '<head><meta charset="utf-8"><meta name="pi-backend-switcher" content="settings"></head><body><button data-backend-switcher>切换后端…</button></body>' }));
+  await logo.goto("https://settings.test/");
+  await logo.getByRole("button", { name: "切换后端…" }).click();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(requests, 4);
+  await logo.goto("https://settings.test/");
+  await logo.getByRole("button", { name: "切换后端…" }).evaluate(element => element.remove());
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(await logo.getByRole("button", { name: "Switch backend" }).count(), 0, "settings-hosting pages get no floating fallback");
   console.log("Backend manager and logo bridge browser checks passed.");
 } finally {
   await browser.close();

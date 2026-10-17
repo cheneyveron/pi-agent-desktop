@@ -67,6 +67,9 @@ export default function RootLayout({
     <html lang="en" translate="no" className={`${notoSansMono.variable} notranslate`} suppressHydrationWarning>
       <head>
         <meta name="google" content="notranslate" />
+        {/* The desktop backend switcher lives in Settings › General; this tells
+            desktop/backend-logo.js not to add its floating π fallback. */}
+        <meta name="pi-backend-switcher" content="settings" />
         {/* Optional user stylesheet: <agentDir>/desktop/custom.css served by
             /api/custom-css. Empty when the file is absent; no-store so edits
             apply on reload. Loaded last so user rules win the cascade. */}

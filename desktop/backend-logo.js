@@ -4,6 +4,9 @@
   const selector = '[data-backend-switcher], .brand';
   const label = navigator.language.startsWith("zh") ? "切换后端" : "Switch backend";
   let fallback;
+  // Pages that offer the switcher in their own Settings declare it, so they get
+  // neither the floating π fallback nor relabelled controls.
+  const hostsSwitcher = () => document.querySelector('meta[name="pi-backend-switcher"]') !== null;
   const visible = (element) => {
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.right > 0 && rect.bottom > 0 && rect.left < window.innerWidth;
@@ -11,6 +14,7 @@
   const refresh = () => {
     const logos = [...document.querySelectorAll(selector)].filter(visible);
     for (const logo of logos) {
+      if (logo.hasAttribute("data-backend-switcher")) continue;
       if (logo.getAttribute("aria-label") !== label) {
         logo.setAttribute("aria-label", label);
         logo.setAttribute("title", label);
@@ -21,6 +25,10 @@
           logo.tabIndex = 0;
         }
       }
+    }
+    if (hostsSwitcher()) {
+      if (fallback) fallback.hidden = true;
+      return;
     }
     if (!fallback && document.body) {
       fallback = document.createElement("button");
