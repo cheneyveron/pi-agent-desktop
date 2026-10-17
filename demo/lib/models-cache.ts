@@ -1,16 +1,20 @@
+import type { ModelScopeWarning } from "./model-scope-warnings";
+
 export interface ModelsData {
   models: Record<string, string>;
   modelList: { id: string; name: string; provider: string; input?: string[] }[];
   defaultModel: { provider: string; modelId: string } | null;
   /** Resolved thinking level a new session starts with when the user has not picked one. */
   defaultThinkingLevel: string | null;
+  /** `defaultThinkingLevel` as saved in settings, which the reasoning selector's star marks. */
+  savedDefaultThinkingLevel: string | null;
   thinkingLevels: Record<string, string[]>;
   thinkingLevelMaps: Record<string, Record<string, string | null>>;
   /** `provider/modelId` → thinking level pinned by an `enabledModels` `:level` suffix. */
   thinkingLevelPins: Record<string, string>;
   modelError?: string;
   /** Warnings from resolving the `enabledModels` scope (e.g. a pattern matched nothing). */
-  modelScopeWarnings?: string[];
+  modelScopeWarnings?: ModelScopeWarning[];
 }
 
 interface ModelsCacheState {

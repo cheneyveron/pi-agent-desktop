@@ -363,52 +363,6 @@ function FileViewerToolbar({
   );
 }
 
-function FileViewerStatus({
-  kind,
-  message,
-  onRetry,
-}: {
-  kind: "loading" | "error" | "empty";
-  message?: string;
-  onRetry?: () => void;
-}) {
-  const title = kind === "loading"
-    ? "Opening file"
-    : kind === "error"
-      ? "Couldn’t open this file"
-      : "Nothing to preview";
-
-  return (
-    <div className={`file-viewer-status is-${kind}`} role={kind === "error" ? "alert" : "status"}>
-      <span className="file-viewer-status-icon" aria-hidden="true">
-        {kind === "loading" ? (
-          <svg className="file-viewer-spinner" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-            <path d="M21 12a9 9 0 1 1-5.7-8.4" />
-          </svg>
-        ) : kind === "error" ? (
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 7.5v5" />
-            <path d="M12 16.5h.01" />
-          </svg>
-        ) : (
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h7L20 9.5v9A2.5 2.5 0 0 1 17.5 21h-11A2.5 2.5 0 0 1 4 18.5Z" />
-            <path d="M13.5 3v6.5H20" />
-          </svg>
-        )}
-      </span>
-      <strong>{title}</strong>
-      {message && <span>{message}</span>}
-      {onRetry && (
-        <button type="button" className="file-viewer-retry-button" onClick={onRetry}>
-          Try again
-        </button>
-      )}
-    </div>
-  );
-}
-
 type DiffLine = {
   type: "unchanged" | "removed" | "added";
   text: string;

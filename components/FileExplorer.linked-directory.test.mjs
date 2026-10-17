@@ -10,11 +10,11 @@ const jiti = createJiti(import.meta.url, {
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { TreeNode } = await jiti.import("./FileExplorer.tsx");
-const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
+const { englishMessages } = await jiti.import("@/lib/i18n/locale-plugins.ts");
 const { translateMessage } = await jiti.import("@/lib/i18n/format.ts");
 
 const source = await readFile(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
-const t = (key, params) => translateMessage("en", key, { en: enLocale.messages }, params);
+const t = (key, params) => translateMessage("en", key, { en: englishMessages }, params);
 
 function renderNode(node, { open = true } = {}) {
   return renderToStaticMarkup(React.createElement(TreeNode, {

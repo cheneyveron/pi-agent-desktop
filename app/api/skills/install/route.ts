@@ -19,8 +19,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { package: pkg, scope, cwd } = await req.json() as { package?: string; scope?: string; cwd?: string };
-    if (!pkg?.trim()) return NextResponse.json({ error: "package required" }, { status: 400 });
+    const { package: rawPkg, scope, cwd } = await req.json() as { package?: unknown; scope?: string; cwd?: string };
+    const pkg = typeof rawPkg === "string" ? rawPkg.trim() : "";
+    if (!pkg) return NextResponse.json({ error: "package required" }, { status: 400 });
+    // Passed as argv (never through a shell), but a leading "-" would still be
+    // read as an option of `skills add` (e.g. "--global" on a project install).
+    if (pkg.startsWith("-")) return NextResponse.json({ error: "Invalid package" }, { status: 400 });
 
     const isGlobal = scope !== "project";
     if (!isGlobal) {
@@ -36,7 +40,7 @@ export async function POST(req: Request) {
         );
       }
     }
-    const args = ["skills", "add", pkg.trim(), "-y", "--agent", "pi"];
+    const args = ["skills", "add", pkg, "-y", "--agent", "pi"];
     if (isGlobal) args.push("-g");
 
     console.log(`[skills/install] running: npx ${args.join(" ")}`);

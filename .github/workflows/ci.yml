@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm
@@ -27,13 +27,35 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
 
+  # demo/ keeps copies of components/, hooks/ and lib/ and is only built by the
+  # manual Demo workflow, so report when those copies fall behind. Never fails:
+  # the fix is a sync (demo/README.md), not a blocker for the change itself.
+  demo-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The sync merges demo patches against the commit in demo/sync-base.json.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+      - name: Report demo drift
+        run: |
+          if ! node demo/scripts/sync-from-app.mjs --check > demo-drift.txt; then
+            echo "::warning title=Demo copies drifted::demo/ is behind the main tree. Run node demo/scripts/sync-from-app.mjs (see demo/README.md)."
+          fi
+          cat demo-drift.txt
+          { echo '### demo/ drift'; echo '```'; cat demo-drift.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
   # The desktop shell (src-tauri) is otherwise only compiled by the release
   # workflow, so a Rust error would surface at publish time.
   desktop-shell:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -72,7 +94,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -97,8 +119,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
       # Advisory only: a high-severity finding may sit in a transitive
@@ -111,8 +133,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm
@@ -123,7 +145,7 @@ jobs:
       - run: npm run test:e2e
         env:
           E2E_SERVER_MODE: start
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-failure

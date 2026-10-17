@@ -1,0 +1,650 @@
+{
+  "classifier": [
+    {
+      "provider": "cloudflare-workers-ai",
+      "id": "@cf/cloudflare/clef",
+      "name": "Clef",
+      "cost": {
+        "input": 0.24,
+        "output": 0
+      }
+    },
+    {
+      "provider": "cloudflare-workers-ai",
+      "id": "@cf/cloudflare/clef-flash",
+      "name": "Clef Flash",
+      "cost": {
+        "input": 0.09,
+        "output": 0
+      }
+    },
+    {
+      "provider": "cloudflare-workers-ai",
+      "id": "typesafe/jev",
+      "name": "Jev"
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-luna",
+      "name": "GPT-6 Luna",
+      "cost": {
+        "input": 0.1,
+        "output": 0
+      }
+    },
+    {
+      "provider": "opencode",
+      "id": "jev-1.13",
+      "name": "Jev 1.13",
+      "cost": {
+        "input": 0.042,
+        "output": 0
+      }
+    },
+    {
+      "provider": "opencode",
+      "id": "jev-1.13-free",
+      "name": "Jev 1.13 Free"
+    },
+    {
+      "provider": "openrouter",
+      "id": "cloudflare/clef",
+      "name": "Cloudflare: Clef",
+      "cost": {
+        "input": 0.24,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "cloudflare/clef-flash",
+      "name": "Cloudflare: Clef Flash",
+      "cost": {
+        "input": 0.09,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "inception/mercury-decide:free",
+      "name": "Inception: Mercury Decide (free)"
+    },
+    {
+      "provider": "openrouter",
+      "id": "jaredpalmer/kev-4b",
+      "name": "Jared Palmer: Kev 4B",
+      "cost": {
+        "input": 0.042,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "liquid/d1",
+      "name": "LiquidAI: d1",
+      "cost": {
+        "input": 0.04,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-6-luna-decisions",
+      "name": "OpenAI: GPT-6 Luna Decisions",
+      "cost": {
+        "input": 0.1,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "perplexity/pplx-decider-v1.1-27b",
+      "name": "Perplexity: Decider V1.1 27B",
+      "cost": {
+        "input": 0.02,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "respan/span-01",
+      "name": "Respan: Span-01",
+      "cost": {
+        "input": 0.02,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "respan/span-01-lite",
+      "name": "Respan: Span-01 Lite"
+    },
+    {
+      "provider": "openrouter",
+      "id": "respan/span-01-lite:free",
+      "name": "Respan: Span-01 Lite (free)"
+    },
+    {
+      "provider": "openrouter",
+      "id": "togethercomputer/tev1-4b-experimental",
+      "name": "Together: Tev1 4B Experimental",
+      "cost": {
+        "input": 0.042,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "typesafe/jev-1.13",
+      "name": "TypeSafe: Jev 1.13",
+      "cost": {
+        "input": 0.042,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "~typesafe/jev-latest",
+      "name": "TypeSafe: Jev Latest",
+      "cost": {
+        "input": 0.042,
+        "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "id": "upstage/solar-decide",
+      "name": "Upstage: Solar Decide",
+      "cost": {
+        "input": 0.05,
+        "output": 0
+      }
+    },
+    {
+      "provider": "typesafe",
+      "id": "jev-latest",
+      "name": "Jev"
+    },
+    {
+      "provider": "vercel-ai-gateway",
+      "id": "openai/gpt-6-luna-decisions",
+      "name": "GPT-6 Luna Decisions",
+      "cost": {
+        "input": 0.1,
+        "output": 0
+      }
+    },
+    {
+      "provider": "vercel-ai-gateway",
+      "id": "typesafe-ai/jev",
+      "name": "Jev",
+      "cost": {
+        "input": 0.042,
+        "output": 0
+      }
+    },
+    {
+      "provider": "vercel-ai-gateway",
+      "id": "convaiinnovations/laya",
+      "name": "Laya"
+    },
+    {
+      "provider": "vercel-ai-gateway",
+      "id": "convaiinnovations/laya-free",
+      "name": "Laya (Free)"
+    },
+    {
+      "provider": "vercel-ai-gateway",
+      "id": "liquid/d1",
+      "name": "Liquid d1",
+      "cost": {
+        "input": 0.04,
+        "output": 0
+      }
+    }
+  ],
+  "image": [
+    {
+      "provider": "openrouter",
+      "id": "openrouter/auto",
+      "name": "Auto Router",
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "openrouter/auto-beta",
+      "name": "Auto Router (Beta)",
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "black-forest-labs/flux.2-flex",
+      "name": "Black Forest Labs: FLUX.2 Flex",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "black-forest-labs/flux.2-klein-4b",
+      "name": "Black Forest Labs: FLUX.2 Klein 4B",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "black-forest-labs/flux.2-max",
+      "name": "Black Forest Labs: FLUX.2 Max",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "black-forest-labs/flux.2-pro",
+      "name": "Black Forest Labs: FLUX.2 Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "black-forest-labs/flux-3-image",
+      "name": "Black Forest Labs: FLUX.3 Image",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "bytedance-seed/seedream-4.5",
+      "name": "ByteDance Seed: Seedream 4.5",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "bytedance-seed/seedream-5-0-flash",
+      "name": "ByteDance Seed: Seedream 5.0 Flash",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "bytedance-seed/seedream-5-0-lite",
+      "name": "ByteDance Seed: Seedream 5.0 Lite",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "bytedance-seed/seedream-5-0-pro",
+      "name": "ByteDance Seed: Seedream 5.0 Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "google/gemini-2.5-flash-image",
+      "name": "Google: Nano Banana (Gemini 2.5 Flash Image)",
+      "cost": {
+        "input": 0.3,
+        "output": 2.5
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "google/gemini-3.1-flash-image-preview",
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
+      "cost": {
+        "input": 0.5,
+        "output": 3
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "google/gemini-3.1-flash-image",
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
+      "cost": {
+        "input": 0.5,
+        "output": 3
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "google/gemini-3.1-flash-lite-image",
+      "name": "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+      "cost": {
+        "input": 0.25,
+        "output": 1.5
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "google/gemini-nano-banana-2.1",
+      "name": "Google: Nano Banana 2.1",
+      "cost": {
+        "input": 1.5,
+        "output": 7.5
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "google/gemini-3-pro-image-preview",
+      "name": "Google: Nano Banana Pro (Gemini 3 Pro Image Preview)",
+      "cost": {
+        "input": 2,
+        "output": 12
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "google/gemini-3-pro-image",
+      "name": "Google: Nano Banana Pro (Gemini 3 Pro Image)",
+      "cost": {
+        "input": 2,
+        "output": 12
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "inclusionai/ming-image-0.1-design",
+      "name": "inclusionAI: Ming Image 0.1 Design",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "inclusionai/ming-image-0.1-design-layer",
+      "name": "inclusionAI: Ming Image 0.1 Design Layer",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "krea/krea-2-large",
+      "name": "Krea: Krea 2 Large",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "krea/krea-2-medium",
+      "name": "Krea: Krea 2 Medium",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "krea/krea-2-medium-turbo",
+      "name": "Krea: Krea 2 Medium Turbo",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "meta/muse-image",
+      "name": "Meta: Muse Image",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "microsoft/mai-image-2.5",
+      "name": "Microsoft AI: MAI-Image-2.5",
+      "cost": {
+        "input": 5,
+        "output": 0
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "microsoft/mai-image-2.5-pro",
+      "name": "Microsoft AI: MAI-Image-2.5 Pro",
+      "cost": {
+        "input": 5,
+        "output": 0
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "microsoft/mai-image-2.6",
+      "name": "Microsoft AI: MAI-Image-2.6",
+      "cost": {
+        "input": 5,
+        "output": 0
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "microsoft/mai-image-2.6-flash",
+      "name": "Microsoft AI: MAI-Image-2.6 Flash",
+      "cost": {
+        "input": 1.75,
+        "output": 0
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-image-1",
+      "name": "OpenAI: GPT Image 1",
+      "cost": {
+        "input": 10,
+        "output": 10
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-image-1-mini",
+      "name": "OpenAI: GPT Image 1 Mini",
+      "cost": {
+        "input": 2.5,
+        "output": 2.5
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-image-2",
+      "name": "OpenAI: GPT Image 2",
+      "cost": {
+        "input": 8,
+        "output": 8
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-image-2.5-flare",
+      "name": "OpenAI: GPT Image 2.5 Flare",
+      "cost": {
+        "input": 8,
+        "output": 8
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-image-2.5-sunburst",
+      "name": "OpenAI: GPT Image 2.5 Sunburst",
+      "cost": {
+        "input": 8,
+        "output": 8
+      },
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-5-image",
+      "name": "OpenAI: GPT-5 Image",
+      "cost": {
+        "input": 10,
+        "output": 10
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-5-image-mini",
+      "name": "OpenAI: GPT-5 Image Mini",
+      "cost": {
+        "input": 2.5,
+        "output": 2
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "openai/gpt-5.4-image-2",
+      "name": "OpenAI: GPT-5.4 Image 2",
+      "cost": {
+        "input": 8,
+        "output": 15
+      },
+      "textOutput": true
+    },
+    {
+      "provider": "openrouter",
+      "id": "qwen/qwen-image-3",
+      "name": "Qwen: Qwen Image 3",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "qwen/qwen-image-3-pro",
+      "name": "Qwen: Qwen Image 3 Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v3",
+      "name": "Recraft: Recraft V3",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4",
+      "name": "Recraft: Recraft V4",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4-pro",
+      "name": "Recraft: Recraft V4 Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4-pro-vector",
+      "name": "Recraft: Recraft V4 Pro Vector",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4-styles",
+      "name": "Recraft: Recraft V4 Styles",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4-styles-pro",
+      "name": "Recraft: Recraft V4 Styles Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4-styles-pro-vector",
+      "name": "Recraft: Recraft V4 Styles Pro Vector",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4-styles-vector",
+      "name": "Recraft: Recraft V4 Styles Vector",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4-vector",
+      "name": "Recraft: Recraft V4 Vector",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4.1",
+      "name": "Recraft: Recraft V4.1",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4.1-flash",
+      "name": "Recraft: Recraft V4.1 Flash",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4.1-pro",
+      "name": "Recraft: Recraft V4.1 Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4.1-pro-vector",
+      "name": "Recraft: Recraft V4.1 Pro Vector",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4.1-utility",
+      "name": "Recraft: Recraft V4.1 Utility",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4.1-utility-pro",
+      "name": "Recraft: Recraft V4.1 Utility Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "recraft/recraft-v4.1-vector",
+      "name": "Recraft: Recraft V4.1 Vector",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "sourceful/riverflow-v2-fast",
+      "name": "Sourceful: Riverflow V2 Fast",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "sourceful/riverflow-v2-pro",
+      "name": "Sourceful: Riverflow V2 Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "sourceful/riverflow-v2.5-fast",
+      "name": "Sourceful: Riverflow V2.5 Fast",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "sourceful/riverflow-v2.5-pro",
+      "name": "Sourceful: Riverflow V2.5 Pro",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "x-ai/grok-imagine-image-quality",
+      "name": "SpaceXAI: Grok Imagine Image Quality",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "tencent/hy-image-v3.5-preview",
+      "name": "Tencent: Hy Image 3.5 Preview",
+      "textOutput": false
+    },
+    {
+      "provider": "openrouter",
+      "id": "x-ai/grok-imagine-image-2.0",
+      "name": "xAI: Grok Imagine Image 2.0",
+      "textOutput": false
+    }
+  ]
+}

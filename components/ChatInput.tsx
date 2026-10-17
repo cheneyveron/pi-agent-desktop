@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
-import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
@@ -27,7 +26,7 @@ import {
   type AtQueryMatch, type FileIndexEntry, type HashQueryMatch, type SessionMentionEntry,
 } from "@/lib/file-fuzzy";
 import { resolveSessionReferences } from "@/lib/session-reference";
-import type { RoutedModelInfo, SessionInfo } from "@/lib/types";
+import type { RoutedModelInfo } from "@/lib/types";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
@@ -42,6 +41,10 @@ import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
 import { SelectorRow } from "./SelectorRow";
 import { ModelSelector } from "./ModelSelector";
+import { SessionMentionMenu } from "./SessionMentionMenu";
+import { SessionAutomationMenu } from "./SessionAutomationMenu";
+import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
+import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 
 
 export interface AttachedImage {
@@ -314,12 +317,6 @@ const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> =
   auto: "chat.thinkingUseDefault", off: "chat.thinkingOff", minimal: "chat.thinkingMinimal", low: "chat.thinkingLow",
   medium: "chat.thinkingMedium", high: "chat.thinkingHigh", xhigh: "chat.thinkingXhigh", max: "chat.thinkingMax",
 };
-
-function getProjectLabel(projectPath: string | null | undefined): string | null {
-  const normalized = projectPath?.replace(/[\\/]+$/, "");
-  if (!normalized) return null;
-  return normalized.split(/[\\/]/).pop() ?? normalized;
-}
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
@@ -857,9 +854,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [atMenuOpen, setAtMenuOpen] = useState(false);
   const [atMenuMaxHeight, setAtMenuMaxHeight] = useState<number | null>(null);
   const [atActiveIndex, setAtActiveIndex] = useState(0);
-  const [hashQuery, setHashQuery] = useState<HashQueryMatch | null>(null);
-  const [hashMenuOpen, setHashMenuOpen] = useState(false);
-  const [hashActiveIndex, setHashActiveIndex] = useState(0);
   const [imageWarningDismissed, setImageWarningDismissed] = useState(false);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyActiveIndex, setHistoryActiveIndex] = useState(0);
@@ -868,7 +862,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
-  const [sessionIndex, setSessionIndex] = useState<{ entries: SessionMentionEntry[]; fetchedAt: number } | null>(null);
   const [skillDormancyState, setSkillDormancyState] = useState<{
     cwd: string;
     values: Record<string, boolean>;
@@ -890,16 +883,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const slashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const atMenuRef = useRef<HTMLDivElement>(null);
   const atItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const hashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const historyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const fileIndexMetaRef = useRef<{ cwd: string; fetchedAt: number } | null>(null);
   const fileIndexFetchingRef = useRef<string | null>(null);
-  const sessionIndexFetchingRef = useRef(false);
-  const sessionMentionTargetsRef = useRef(new Map<string, string>());
   const draftKeyRef = useRef(draftKey);
   const valueRef = useRef(value);
   const attachedImagesRef = useRef(attachedImages);
   const pendingImageCountRef = useRef(0);
+  const {
+    hashQuery, setHashQuery, hashMenuOpen, setHashMenuOpen, hashActiveIndex, setHashActiveIndex,
+    hashMatches, hashItemRefs, sessionIndex, sessionMentionTargetsRef, updateHashQuery, applyHashCompletion,
+  } = useSessionMentionPalette({ cwd, value, setValue, setAtQuery, textareaRef });
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
 
@@ -1167,7 +1161,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [clearImages, draftKey]);
+  }, [clearImages, draftKey, setHashQuery]);
 
   useEffect(() => {
     if (!draftKey || draftKeyRef.current !== draftKey) return;
@@ -1202,7 +1196,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       prev.forEach(revokeImagePreview);
       return nextImages;
     });
-  }, [draftKey]);
+  }, [draftKey, setHashQuery]);
 
   const resizeTextarea = useCallback(() => {
     const ta = textareaRef.current;
@@ -1280,7 +1274,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const resolvedMessage = await resolveSessionReferences(msg, sessionMentionTargetsRef.current);
     onSend(resolvedMessage, attachedImages.length ? attachedImages : undefined);
     clearInput();
-  }, [value, attachedImages, workspaceUnavailable, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+  }, [value, attachedImages, workspaceUnavailable, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock, sessionMentionTargetsRef]);
 
   const slashToken = compact ? null : extractSlashQuery(value.slice(0, cursorPosition ?? value.length));
   const slashQuery = slashToken?.query ?? null;
@@ -1340,28 +1334,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtQuery(extractAtQuery(text.slice(0, pos)));
   }, [cwd]);
 
-  const updateHashQuery = useCallback((text: string, cursor: number | null) => {
-    if (!cwd) {
-      setHashQuery(null);
-      return;
-    }
-    const pos = cursor ?? text.length;
-    setHashQuery(extractHashQuery(text.slice(0, pos)));
-  }, [cwd]);
-
   const atQueryText = atQuery?.query ?? null;
   const atLocalFileMatches: FileIndexEntry[] = React.useMemo(() => (
     atQueryText !== null && fileIndex && fileIndex.cwd === cwd
       ? filterFileEntries(fileIndex.entries, atQueryText, 12)
       : []
   ), [atQueryText, fileIndex, cwd]);
-
-  const hashQueryText = hashQuery?.query ?? null;
-  const hashMatches: SessionMentionEntry[] = React.useMemo(() => (
-    hashQueryText !== null && sessionIndex
-      ? filterSessionEntries(sessionIndex.entries, hashQueryText)
-      : []
-  ), [hashQueryText, sessionIndex]);
 
   // When the client index is truncated (repo larger than the index cap),
   // local filtering cannot see deep files, so queries are also ranked
@@ -1406,17 +1384,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtActiveIndex(0);
   }, [atTokenKey]);
 
-  const hashTokenKey = hashQuery === null ? null : `${hashQuery.start}:${hashQuery.quoted ? 1 : 0}:${hashQuery.query}`;
-  useEffect(() => {
-    if (hashTokenKey === null) {
-      setHashMenuOpen(false);
-      setHashActiveIndex(0);
-      return;
-    }
-    setHashMenuOpen(true);
-    setHashActiveIndex(0);
-  }, [hashTokenKey]);
-
   // Fetch the file index when the menu opens. The server caches per cwd for
   // ~10s, so re-opening refreshes cheaply; while typing nothing refetches.
   const atTokenActive = atQuery !== null;
@@ -1447,36 +1414,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       });
   }, [atTokenActive, cwd]);
 
-  // Sessions use the # palette. Keep this list lightweight by
-  // using the existing session summary endpoint; full content is fetched only
-  // when a selected session mention is sent.
-  useEffect(() => {
-    if (!hashQuery || !cwd) return;
-    if (sessionIndex && Date.now() - sessionIndex.fetchedAt < 10_000) return;
-    if (sessionIndexFetchingRef.current) return;
-    sessionIndexFetchingRef.current = true;
-    fetch("/api/sessions")
-      .then((res) => {
-        if (!res.ok) throw new Error(`session index failed: ${res.status}`);
-        return res.json() as Promise<{ sessions?: SessionInfo[] }>;
-      })
-      .then((data) => {
-        const entries = (data.sessions ?? []).map((session): SessionMentionEntry => ({
-          kind: "session",
-          id: session.id,
-          name: session.name,
-          firstMessage: session.firstMessage,
-          modified: session.modified,
-          messageCount: session.messageCount,
-        }));
-        setSessionIndex({ entries, fetchedAt: Date.now() });
-      })
-      .catch(() => {})
-      .finally(() => {
-        sessionIndexFetchingRef.current = false;
-      });
-  }, [hashQuery, cwd, sessionIndex]);
-
   const applyAtCompletion = useCallback((entry: FileIndexEntry) => {
     if (!atQuery) return;
     const ta = textareaRef.current;
@@ -1506,33 +1443,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       el.style.height = "auto";
       el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
     });
-  }, [atQuery, value]);
-
-  const applyHashCompletion = useCallback((entry: SessionMentionEntry) => {
-    if (!hashQuery) return;
-    const ta = textareaRef.current;
-    const cursor = ta?.selectionStart ?? value.length;
-    const before = value.slice(0, hashQuery.start);
-    let after = value.slice(cursor);
-    if (hashQuery.quoted && after.startsWith('"')) after = after.slice(1);
-    const sessionDisplayName = entry.name?.trim() || entry.firstMessage.trim() || "Untitled session";
-    const visibleSessionName = sessionDisplayName.replace(/"/g, "'").replace(/\n/g, " ");
-    sessionMentionTargetsRef.current.set(visibleSessionName, entry.id);
-    const text = buildSessionMentionText(visibleSessionName);
-    const newValue = before + text + after;
-    const newPos = before.length + text.length;
-    setValue(newValue);
-    setHashQuery(extractHashQuery(newValue.slice(0, newPos)));
-    setAtQuery(extractAtQuery(newValue.slice(0, newPos)));
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(newPos, newPos);
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-    });
-  }, [hashQuery, value]);
+  }, [atQuery, value, setHashQuery]);
 
   useEffect(() => {
     if (atActiveIndex >= atMatches.length) {
@@ -1548,21 +1459,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!atMenuOpen) return;
     atItemRefs.current[atActiveIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [atActiveIndex, atMenuOpen]);
-
-  useEffect(() => {
-    hashItemRefs.current.length = hashMatches.length;
-  }, [hashMatches.length]);
-
-  useEffect(() => {
-    if (!hashMenuOpen) return;
-    hashItemRefs.current[hashActiveIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [hashActiveIndex, hashMenuOpen]);
-
-  useEffect(() => {
-    if (hashActiveIndex >= hashMatches.length) {
-      setHashActiveIndex(Math.max(0, hashMatches.length - 1));
-    }
-  }, [hashMatches.length, hashActiveIndex]);
 
   useEffect(() => {
     if (historyActiveIndex >= inputHistory.length) {
@@ -1593,7 +1489,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.style.height = "auto";
       ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
     });
-  }, []);
+  }, [setHashQuery]);
 
   const applySlashCommand = useCallback((command: SlashCommandPaletteItem) => {
     if (!slashToken) return;
@@ -1648,7 +1544,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       return;
     }
     void queue();
-  }, [value, attachedImages, onBuiltinCommand, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock, runBuiltinCommand]);
+  }, [value, attachedImages, onBuiltinCommand, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock, runBuiltinCommand, sessionMentionTargetsRef]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = displayedSlashCommands.length - 1;
@@ -1856,7 +1752,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isMobile, enterSendMode, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
+    [isMobile, enterSendMode, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, setHashActiveIndex, setHashMenuOpen]
   );
 
   const handleInput = useCallback(() => {
@@ -2552,86 +2448,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             </div>
           )}
-          {hashMenuOpen && hashQuery !== null && (() => {
-            const matchCountLabel = hashMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: hashMatches.length });
-            return (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: "calc(100% + 8px)",
-                  zIndex: 121,
-                  background: "var(--bg)",
-                  border: "var(--hairline) solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                  overflow: "hidden",
-                  maxHeight: "min(48vh, 400px)",
-                }}
-              >
-                <div style={{
-                  padding: "8px 10px",
-                  borderBottom: "var(--hairline) solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 11,
-                  color: "var(--text-dim)",
-                }}>
-                  <span>{sessionIndex ? t("chat.sessions", { label: matchCountLabel }) : t("chat.loadingSessions")}</span>
-                  <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
-                </div>
-                <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
-                  {!sessionIndex ? (
-                    <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>{t("chat.loadingSessions")}</div>
-                  ) : hashMatches.length === 0 ? (
-                    <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>{t("chat.noMatchingSessions")}</div>
-                  ) : hashMatches.map((entry, index) => {
-                    const active = index === hashActiveIndex;
-                    const name = entry.name?.trim() || entry.firstMessage.trim() || t("chat.untitledSession");
-                    return (
-                      <button
-                        key={`session:${entry.id}`}
-                        ref={(node) => {
-                          hashItemRefs.current[index] = node;
-                        }}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          applyHashCompletion(entry);
-                        }}
-                        onMouseEnter={() => setHashActiveIndex(index)}
-                        style={{
-                          width: "100%",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "7px 8px",
-                          border: "none",
-                          borderRadius: 6,
-                          background: active ? "var(--bg-selected)" : "none",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          textAlign: "left",
-                          fontSize: 13,
-                        }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
-                        </svg>
-                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-                          <span style={{ display: "block", color: "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.firstMessage}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
+          {hashMenuOpen && hashQuery !== null && (
+            <SessionMentionMenu
+              loaded={sessionIndex !== null}
+              matches={hashMatches}
+              activeIndex={hashActiveIndex}
+              itemRefs={hashItemRefs}
+              onPick={applyHashCompletion}
+              onHover={setHashActiveIndex}
+            />
+          )}
           {atMenuOpen && atQuery !== null && (() => {
             const indexLoading = fileIndexLoading && (!fileIndex || fileIndex.cwd !== cwd);
              const matchCountLabel = atMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: atMatches.length });
@@ -2915,101 +2741,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           <div style={{ flex: isNarrow ? "1 1 auto" : "0 0 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
             {projectLabel && (
-              <div ref={projectDropdownRef} style={{ position: "relative", flexShrink: 0 }}>
-                <button
-                  type="button"
-                  className="chat-project-context"
-                  style={{ maxWidth: isNarrow ? 72 : isCompact ? 120 : 170 }}
-                  title={`${t("chat.switchProject")} · ${t("chat.currentProject", { path: projectPath ?? projectLabel })}`}
-                  aria-label={t("chat.currentProject", { path: projectPath ?? projectLabel })}
-                  aria-haspopup={projectOptions.length > 0 && onProjectChange ? "menu" : undefined}
-                  aria-expanded={projectOptions.length > 0 && onProjectChange ? projectDropdownOpen : undefined}
-                  onClick={(event) => {
-                    if (projectOptions.length > 0 && onProjectChange) {
-                      // Desktop shell: the project list as a native popup.
-                      if (canUseNativeMenu()) {
-                        void showNativeMenu(
-                          projectOptions.map((projectRoot) => ({
-                            label: getProjectLabel(projectRoot) ?? projectRoot,
-                            checked: projectRoot === projectPath,
-                            onSelect: () => {
-                              if (projectRoot !== projectPath) onProjectChange(projectRoot);
-                            },
-                          })),
-                          menuPointBelow(event.currentTarget),
-                        ).then((shown) => { if (!shown) setProjectDropdownOpen(true); });
-                        return;
-                      }
-                      setProjectDropdownOpen((open) => !open);
-                    } else onSelectProject?.();
-                  }}
-                  disabled={!onSelectProject && !(projectOptions.length > 0 && onProjectChange)}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                  </svg>
-                  <span>{projectLabel}</span>
-                </button>
-                {projectDropdownOpen && projectOptions.length > 0 && onProjectChange && (
-                  <div
-                    className="native-popover"
-                    role="menu"
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      bottom: "calc(100% + 6px)",
-                      zIndex: 500,
-                      minWidth: 220,
-                      maxWidth: 320,
-                      padding: 5,
-                    }}
-                  >
-                    {projectOptions.map((projectRoot) => {
-                      const label = getProjectLabel(projectRoot) ?? projectRoot;
-                      const isCurrent = projectRoot === projectPath;
-                      return (
-                        <button
-                          key={projectRoot}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setProjectDropdownOpen(false);
-                            if (!isCurrent) onProjectChange(projectRoot);
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            width: "100%",
-                            minWidth: 0,
-                            padding: "7px 9px",
-                            border: 0,
-                            borderRadius: 6,
-                            background: isCurrent ? "var(--bg-selected)" : "transparent",
-                            color: isCurrent ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer",
-                            textAlign: "left",
-                            fontSize: 12,
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isCurrent) e.currentTarget.style.background = "var(--bg-hover)";
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isCurrent) e.currentTarget.style.background = "transparent";
-                          }}
-                          title={projectRoot}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                          </svg>
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                          {isCurrent && <span style={{ marginLeft: "auto", color: "var(--accent)" }}>✓</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <ComposerProjectChip
+                menuRef={projectDropdownRef}
+                open={projectDropdownOpen}
+                onOpenChange={setProjectDropdownOpen}
+                label={projectLabel}
+                projectPath={projectPath}
+                maxWidth={isNarrow ? 72 : isCompact ? 120 : 170}
+                projectOptions={projectOptions}
+                onProjectChange={onProjectChange}
+                onSelectProject={onSelectProject}
+              />
             )}
             {/* Model selector — visible always, disabled during streaming */}
             {(modelOptions.length > 0 || model || modelError) && onModelChange && (
@@ -3288,131 +3030,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             )}
 
             {(automationKnown || canCompactNow) && (
-              <div ref={automationDropdownRef} style={{ position: "relative" }}>
-                <button
-                  className="native-toolbar-button"
-                  onClick={() => setAutomationDropdownOpen((v) => !v)}
-                  title={t("chat.sessionAutomation")}
-                  aria-label={t("chat.sessionAutomation")}
-                  aria-expanded={automationDropdownOpen}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    width: 32,
-                    height: 32,
-                    padding: 0,
-                    background: automationDropdownOpen ? "var(--bg-hover)" : "none",
-                    border: "none", borderRadius: 9,
-                    color: "var(--text-muted)", cursor: "pointer", fontSize: 12,
-                    transition: "background 0.12s, color 0.12s",
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </button>
-                {automationDropdownOpen && (
-                  <div className="native-popover" style={{
-                    position: "absolute",
-                    bottom: "calc(100% + 6px)",
-                    ...(isMobile ? { left: 0 } : { right: 0 }),
-                    zIndex: 100, background: "var(--bg)", border: "var(--hairline) solid var(--border)",
-                    borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                    padding: "6px 0", minWidth: 230,
-                  }}>
-                    {canCompactNow && (
-                      <div style={{ padding: "0 5px" }}>
-                        <button
-                          type="button"
-                          className="composer-menu-row"
-                          title={t("chat.compactContext")}
-                          onClick={() => {
-                            setAutomationDropdownOpen(false);
-                            onCompact?.();
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
-                            <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
-                          </svg>
-                          <span style={{ flex: 1 }}>{t("chat.compactContext")}</span>
-                        </button>
-                      </div>
-                    )}
-                    {canCompactNow && automationKnown && (
-                      <div style={{ height: 0, margin: "5px 0", borderTop: "var(--hairline) solid var(--separator)" }} />
-                    )}
-                    {onSetAutomation && automation && automationKnown && (<>
-                    {automation.autoCompactionEnabled !== null && (
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={automation.autoCompactionEnabled}
-                          onChange={(e) => onSetAutomation({ autoCompaction: e.target.checked })}
-                        />
-                        {t("chat.autoCompaction")}
-                      </label>
-                    )}
-                    {automation.autoRetryEnabled !== null && (
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={automation.autoRetryEnabled}
-                          onChange={(e) => onSetAutomation({ autoRetry: e.target.checked })}
-                        />
-                        {t("chat.autoRetry")}
-                      </label>
-                    )}
-                    {automation.steeringMode !== null && (
-                      <div style={{ padding: "6px 12px", borderTop: "var(--hairline) solid var(--border)", marginTop: 4, paddingTop: 10 }}>
-                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.steeringMode")}</div>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {(["all", "one-at-a-time"] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => onSetAutomation({ steeringMode: mode })}
-                              style={{
-                                flex: 1, height: 26, fontSize: 11,
-                                border: "var(--hairline) solid var(--border)", borderRadius: 6,
-                                background: automation.steeringMode === mode ? "var(--accent)" : "var(--bg)",
-                                color: automation.steeringMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
-                                cursor: "pointer",
-                              }}
-                            >
-                              {t(`chat.queueMode.${mode}`)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {automation.followUpMode !== null && (
-                      <div style={{ padding: "6px 12px 4px", marginBottom: 2 }}>
-                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.followUpMode")}</div>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {(["all", "one-at-a-time"] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => onSetAutomation({ followUpMode: mode })}
-                              style={{
-                                flex: 1, height: 26, fontSize: 11,
-                                border: "var(--hairline) solid var(--border)", borderRadius: 6,
-                                background: automation.followUpMode === mode ? "var(--accent)" : "var(--bg)",
-                                color: automation.followUpMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
-                                cursor: "pointer",
-                              }}
-                            >
-                              {t(`chat.queueMode.${mode}`)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    </>)}
-                  </div>
-                )}
-              </div>
+              <SessionAutomationMenu
+                menuRef={automationDropdownRef}
+                open={automationDropdownOpen}
+                onOpenChange={setAutomationDropdownOpen}
+                alignLeft={isMobile}
+                automation={automationKnown ? automation : undefined}
+                onSetAutomation={onSetAutomation}
+                onCompact={canCompactNow ? onCompact : undefined}
+              />
             )}
 
             {isStreaming && (

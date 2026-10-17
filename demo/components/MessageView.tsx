@@ -7,6 +7,7 @@ import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
+import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
@@ -18,6 +19,10 @@ import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
+import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
+import { CodemodeCallList } from "./CodemodeToolView";
+import { imageSource, resultImageFileName } from "@/lib/result-image";
+import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
 import type {
   AgentMessage,
   UserMessage,
@@ -117,7 +122,7 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
           width: "100%",
           margin: "4px 0",
           padding: "7px 10px",
-          border: "1px solid var(--border)",
+          border: "var(--hairline) solid var(--border)",
           borderRadius: 6,
           background: "var(--bg-panel)",
           color: "var(--text-muted)",
@@ -193,8 +198,9 @@ interface Props {
   searchBlock?: AssistantContentBlock;
   onFork?: (entryId: string) => void;
   forking?: boolean;
-  onNavigate?: (entryId: string) => Promise<boolean>;
-  onEditContent?: (message: UserMessage) => void;
+  onEditContent?: (message: UserMessage, entryId: string) => void;
+  onCancelEdit?: () => void;
+  isEditing?: boolean;
   showTimestamp?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
@@ -275,9 +281,9 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError }: Props) {
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} onEditContent={onEditContent} />;
+    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
     return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} />;
@@ -289,6 +295,9 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
   if (message.role === "custom") {
     if ((message as CustomMessage).customType === "compaction") {
       return <CompactionMessageView message={message as CustomMessage} />;
+    }
+    if ((message as CustomMessage).customType === "branch_summary") {
+      return <CompactionMessageView message={message as CustomMessage} kind="branch_summary" />;
     }
     return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
   }
@@ -308,8 +317,9 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.searchBlock === next.searchBlock
     && prev.onFork === next.onFork
     && prev.forking === next.forking
-    && prev.onNavigate === next.onNavigate
     && prev.onEditContent === next.onEditContent
+    && prev.onCancelEdit === next.onCancelEdit
+    && prev.isEditing === next.isEditing
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
     && prev.writtenFiles === next.writtenFiles
@@ -319,28 +329,33 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.compactError === next.compactError;
 });
 
-function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, onEditContent }: {
+function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onEditContent, onCancelEdit, isEditing }: {
   message: UserMessage;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
   entryId?: string;
   onFork?: (entryId: string) => void;
   forking?: boolean;
-  onNavigate?: (entryId: string) => Promise<boolean>;
-  onEditContent?: (message: UserMessage) => void;
+  onEditContent?: (message: UserMessage, entryId: string) => void;
+  onCancelEdit?: () => void;
+  isEditing?: boolean;
 }) {
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const content =
+  // Session files can hold `\r\n` or lone `\r` line endings (#680). Chrome renders
+  // a lone `\r` as a space even in the pre-wrap command-args and raw-text views.
+  // Copy uses this text too; the session file keeps the original endings.
+  const content = (
     typeof message.content === "string"
       ? message.content
       : message.content
           .filter((b): b is TextContent => b.type === "text")
           .map((b) => b.text)
-          .join("\n");
+          .join("\n")
+  ).replace(/\r\n?/g, "\n");
 
   const imageBlocks: ImageContent[] =
     typeof message.content === "string"
@@ -364,30 +379,22 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const imageBlocksNode = imageBlocks.length > 0 && (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
       {imageBlocks.map((img, i) => {
-        // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
-        // pi-ai on-disk format uses flat {data, mimeType} — handle both
-        const flat = img as unknown as { data?: string; mimeType?: string };
-        const src = img.source
-          ? img.source.type === "base64"
-            ? `data:${img.source.media_type};base64,${img.source.data}`
-            : img.source.url ?? ""
-          : flat.data
-            ? `data:${flat.mimeType};base64,${flat.data}`
-            : "";
+        const src = imageSource(img);
         return (
           <ImagePreview key={i} src={src}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
               alt=""
-              style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid rgba(59,130,246,0.15)" }}
+              style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "var(--hairline) solid rgba(59,130,246,0.15)" }}
             />
           </ImagePreview>
         );
       })}
     </div>
   );
-  const canNavigate = !!entryId && !!onNavigate;
+  const canEdit = !!entryId && !!onEditContent;
+  const canCancelEdit = !!isEditing && !!onCancelEdit;
 
   const copyContent = () => {
     copyText(copyTarget).then(() => {
@@ -398,23 +405,17 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
 
   return (
     <div
+      className="message-user"
       style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "85%" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "min(78%, 660px)" }}>
         <div
+          className={`message-user-bubble${isEditing ? " is-editing" : ""}`}
           style={{
             flex: 1,
             minWidth: 0,
-            background: "var(--user-bg)",
-            border: "1px solid rgba(59,130,246,0.2)",
-            borderRadius: 12,
-            padding: "8px 12px",
-            fontSize: "calc(14px + var(--chat-font-size-offset, 0px))",
-            lineHeight: 1.6,
-            color: "var(--text)",
-            wordBreak: "break-word",
             maxHeight: USER_BUBBLE_MAX_HEIGHT,
             overflowY: "auto",
           }}
@@ -475,21 +476,21 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                 )}
               </div>
               {expanded && (
-                <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</MarkdownBody>
+                <MarkdownBody className="markdown-user-message" keepLineBreaks cwd={cwd} onOpenFile={onOpenFile}>{content}</MarkdownBody>
               )}
             </div>
           ) : (
-          <>
-          {imageBlocksNode}
-          {content && <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</SafeMarkdownBody>}
-          </>
+            <>
+              {imageBlocksNode}
+              {content && <CollapsibleUserText text={content} cwd={cwd} onOpenFile={onOpenFile} />}
+            </>
           )}
         </div>
 
       </div>
 
       {/* Bottom row: action buttons + timestamp */}
-      {(time || canFork || canNavigate || true) && (
+      {(time || canFork || canEdit || true) && (
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "flex-end",
           gap: 6, marginTop: 3,
@@ -530,18 +531,16 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                {copied ? t("i18n.copied") : t("i18n.copy")}
             </button>
           </div>
-          {(canFork || canNavigate) && (
-            <div style={{
+          {(canFork || canEdit || canCancelEdit) && (
+            <div className="user-msg-actions" style={{
               display: "flex", gap: 3,
-              opacity: (hovered || forking) ? 1 : 0,
-              pointerEvents: (hovered || forking) ? "auto" : "none",
+              opacity: (hovered || forking || canCancelEdit) ? 1 : 0,
+              pointerEvents: (hovered || forking || canCancelEdit) ? "auto" : "none",
               transition: "opacity 0.12s",
             }}>
-              {canNavigate && (
+              {canEdit && !canCancelEdit && (
                 <button
-                  onClick={() => void onNavigate!(entryId!).then((navigated) => {
-                    if (navigated) onEditContent?.(editTarget);
-                  })}
+                  onClick={() => onEditContent!(editTarget, entryId!)}
                    title={t("i18n.editFromHereTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 4,
@@ -562,6 +561,29 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                     <path d="M4 4v7a4 4 0 0 0 4 4h12" />
                   </svg>
                    {t("i18n.editFromHere")}
+                </button>
+              )}
+              {canCancelEdit && (
+                <button
+                  type="button"
+                  onClick={onCancelEdit}
+                  title={t("i18n.cancel")}
+                  aria-label={t("i18n.cancel")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "3px 8px", height: 22,
+                    background: "none", border: "none",
+                    borderRadius: 5,
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    fontSize: 11, fontWeight: 500,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                  {t("i18n.cancel")}
                 </button>
               )}
               {canFork && (
@@ -594,7 +616,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
               )}
             </div>
           )}
-          {time && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{time}</span>}
+          {time && <span className="message-meta" style={{ fontSize: 10, color: "var(--text-dim)" }}>{time}</span>}
         </div>
       )}
     </div>
@@ -766,6 +788,7 @@ function AssistantMessageView({
 
   return (
     <div
+      className="message-assistant"
       data-message-role="assistant"
       data-entry-id={entryId}
       style={{ marginBottom: 16 }}
@@ -774,6 +797,7 @@ function AssistantMessageView({
     >
       {/* Model label */}
       <div
+        className="message-assistant-model"
         style={{
           fontSize: 11,
           color: "var(--text-dim)",
@@ -814,7 +838,7 @@ function AssistantMessageView({
         })()}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="message-assistant-content" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blockItems.map(({ block, originalIndex }) => (
           <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
         ))}
@@ -826,7 +850,7 @@ function AssistantMessageView({
           style={{
             marginTop: blocks.length > 0 ? 8 : 0,
             padding: "7px 10px",
-            border: "1px solid rgba(239,68,68,0.3)",
+            border: "var(--hairline) solid rgba(239,68,68,0.3)",
             borderRadius: 6,
             background: "rgba(239,68,68,0.07)",
             color: "#ef4444",
@@ -847,7 +871,7 @@ function AssistantMessageView({
           style={{
             marginTop: blocks.length > 0 || providerError ? 8 : 0,
             padding: "7px 10px",
-            border: "1px solid rgba(234,179,8,0.3)",
+            border: "var(--hairline) solid rgba(234,179,8,0.3)",
             borderRadius: 6,
             background: "rgba(234,179,8,0.07)",
             color: "#ca8a04",
@@ -868,7 +892,7 @@ function AssistantMessageView({
                 display: "block",
                 marginTop: 8,
                 padding: "3px 8px",
-                border: "1px solid currentColor",
+                border: "var(--hairline) solid currentColor",
                 borderRadius: 5,
                 background: "transparent",
                 color: "inherit",
@@ -889,11 +913,11 @@ function AssistantMessageView({
         <TurnWrittenFiles files={writtenFiles} onOpenFile={onOpenFile} />
       )}
 
-      <div style={{
+      <div className="message-assistant-footer" style={{
         display: "flex", alignItems: "center", gap: 8, marginTop: 4,
       }}>
         {message.usage && !isStreaming && (
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          <div className="message-meta" style={{ fontSize: 11, color: "var(--text-dim)" }}>
             {formatUsage(message.usage)}
           </div>
         )}
@@ -931,7 +955,7 @@ function AssistantMessageView({
           </button>
         )}
         {time && !isStreaming && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
+          <span className="message-meta" style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
         )}
       </div>
     </div>
@@ -949,13 +973,16 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
-    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenSession={onOpenSession} />;
+    // A loaded (non-streaming) message whose toolCall has no paired result
+    // means the run was interrupted before the tool finished — render that
+    // honestly instead of the success styling.
+    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenSession={onOpenSession} aborted={!isStreaming && !result} />;
   }
   return null;
 }
 
 function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent; isStreaming?: boolean; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void }) {
-  return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</SafeMarkdownBody>;
+  return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} artifacts>{block.text}</SafeMarkdownBody>;
 }
 
 export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
@@ -1015,7 +1042,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   return (
     <div style={{
       display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
-      border: "1px solid var(--border)",
+      border: "var(--hairline) solid var(--border)",
       borderRadius: 7,
       padding: "6px 10px",
       background: "var(--bg)",
@@ -1056,9 +1083,10 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
       {expanded && (
         <div
           style={{
-            flex: 1,
-            minWidth: 0,
-            color: error ? "#f87171" : "var(--text-muted)",
+            padding: "8px 10px",
+            color: error ? "var(--danger)" : "var(--text-muted)",
+            fontSize: 12,
+            lineHeight: 1.6,
             whiteSpace: "pre-wrap",
             overflowWrap: "anywhere",
           }}
@@ -1079,9 +1107,9 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
   return details.kind === "pi-web-subagent" && typeof details.sessionId === "string";
 }
 
-function ToolCallBlock({ block, result, duration, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSession?: (sessionId: string) => void }) {
+function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; aborted?: boolean; defaultExpanded?: boolean; onOpenSession?: (sessionId: string) => void }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
+  const [expanded, setExpanded] = useState(() => defaultExpanded ?? isToolCallExpanded(block.toolCallId));
   const toggleExpanded = () => {
     const next = !expanded;
     setToolCallExpanded(block.toolCallId, next);
@@ -1095,16 +1123,28 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
   const patchLabel = isApplyPatchToolName(block.toolName)
     ? summarizeApplyPatchInput(block)
     : null;
+  // A script and the calls it made, instead of the input JSON. Streamed input is
+  // still incomplete JSON and keeps the generic view.
+  const codemodeCode = block.toolName === CODEMODE_TOOL_NAME && !isStreamingInput ? codemodeScript(block.input) : null;
+  const codemode = codemodeCode === null ? null : { code: codemodeCode, ...codemodeCalls(result?.details) };
+  // A running script's progress snapshot has calls but no content yet.
+  const codemodeRunning = codemode !== null && result !== undefined && result.content.length === 0;
+
+  // `server/tool` instead of the registered `mcp__server__tool`, as pi's TUI shows it.
+  const mcpLabel = mcpToolLabel(block.toolName, result?.details);
 
   // Result display
-  const resultText = result
-    ? result.content.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
+  const resultContent = result ? (codemode ? stripCodemodeHeader(result.content) : result.content) : [];
+  const joinedResultText = result
+    ? resultContent.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
     : null;
-  const resultImages = getMessageImages(result?.content ?? []);
+  const resultText = mcpLabel && joinedResultText !== null ? prettyMcpResultText(joinedResultText) : joinedResultText;
+  const resultImages = getMessageImages(resultContent);
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const isError = (result?.isError ?? false)
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
+  const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
 
   return (
     <div
@@ -1112,8 +1152,16 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
         borderRadius: 7,
         overflow: "hidden",
         fontSize: 12,
-        border: isError ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(34,197,94,0.25)",
-        background: isError ? "rgba(248,113,113,0.05)" : "rgba(34,197,94,0.04)",
+        border: isError
+          ? "1px solid rgba(248,113,113,0.45)"
+          : aborted
+            ? "1px solid rgba(148,163,184,0.4)"
+            : "1px solid rgba(34,197,94,0.25)",
+        background: isError
+          ? "rgba(248,113,113,0.05)"
+          : aborted
+            ? "rgba(148,163,184,0.06)"
+            : "rgba(34,197,94,0.04)",
       }}
     >
       {/* ── Tool call header ── */}
@@ -1135,12 +1183,32 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
             textAlign: "left",
           }}
         >
-          <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
-            {block.toolName}
+          <span
+            title={mcpLabel ? block.toolName : undefined}
+            style={{ color: isError ? "var(--danger)" : aborted ? "var(--text-dim)" : "var(--success)", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}
+          >
+            {mcpLabel ? (
+              <>
+                <span style={{ fontWeight: 500, opacity: 0.75 }}>{mcpLabel.server}/</span>
+                {mcpLabel.tool}
+              </>
+            ) : block.toolName}
           </span>
+          {aborted && (
+            <span title={t("chat.toolCancelled")} style={{ flexShrink: 0, fontSize: 10, color: "var(--text-dim)", border: "var(--hairline) solid var(--border)", borderRadius: 4, padding: "1px 5px" }}>
+              {t("chat.toolCancelled")}
+            </span>
+          )}
           <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-            {isStreamingInput ? t("chat.generatingToolInput") : (patchLabel ?? getToolPreview(block))}
+            {isStreamingInput
+              ? t("chat.generatingToolInput")
+              : (patchLabel ?? (codemode ? codemodeScriptPreview(codemode.code) : getToolPreview(block)))}
           </span>
+          {codemodeCallCount > 0 && (
+            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+              {codemodeCallCount === 1 ? t("codemode.callCountOne") : t("codemode.callCount", { count: codemodeCallCount })}
+            </span>
+          )}
           {duration !== undefined && (
             <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
           )}
@@ -1154,14 +1222,14 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
             onClick={() => onOpenSession(subagent.sessionId)}
             title={t("subagent.open")}
             aria-label={t("subagent.open")}
-            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "var(--hairline) solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
           </button>
         )}
       </div>
 
-      {/* ── Expanded: input args (only when no richer view exists) ── */}
+      {/* ── Expanded: input args (only when no richer view exists); a codemode script in place of its JSON ── */}
       {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (
         <pre
           style={{
@@ -1177,8 +1245,13 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
             wordBreak: "break-all",
           }}
         >
-          {inputStr}
+          {codemode ? codemode.code.replace(/\r/g, "").trimEnd() : inputStr}
         </pre>
+      )}
+
+      {/* ── Expanded: the calls a codemode script made ── */}
+      {expanded && codemode && (
+        <CodemodeCallList calls={codemode.calls} omitted={codemode.omitted} isError={isError} />
       )}
 
       {/* ── Result images — always visible, independent of the collapsed details ── */}
@@ -1186,8 +1259,8 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
 
       {/* ── Expanded: applied-patch split diff ── */}
       {expanded && patchFiles && (
-        <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
-          <SplitFilesView files={patchFiles} />
+        <div style={{ borderTop: "var(--hairline) solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
+          <ApplyPatchDiffView files={patchFiles} />
         </div>
       )}
 
@@ -1199,7 +1272,7 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
           isError={isError}
         />
       )}
-      {expanded && result && !patchFiles && (
+      {expanded && result && !patchFiles && !codemodeRunning && (
         resultDiff ? (
           <PairedDiffResult
             diff={resultDiff}
@@ -1226,7 +1299,7 @@ function PairedDiffResult({ diff }: {
   return (
     <div
       style={{
-        borderTop: "1px solid rgba(34,197,94,0.15)",
+        borderTop: "var(--hairline) solid rgba(34,197,94,0.15)",
         background: "var(--bg)",
       }}
     >
@@ -1235,15 +1308,22 @@ function PairedDiffResult({ diff }: {
   );
 }
 
-function SplitPatchView({ text }: { text: string }) {
-  const files = useMemo(() => parseUnifiedPatch(text), [text]);
-  if (!files) return <PatchTextView text={text} />;
-  return <SplitFilesView files={files} />;
+function ApplyPatchDiffView({ files }: { files: SplitDiffFile[] }) {
+  const { mode } = useDiffViewMode();
+  return <SplitFilesView files={files} mode={mode} />;
 }
 
-function SplitFilesView({ files }: { files: SplitDiffFile[] }) {
+function SplitPatchView({ text }: { text: string }) {
+  const { mode } = useDiffViewMode();
+  const files = useMemo(() => parseUnifiedPatch(text), [text]);
+  if (!files) return <PatchTextView text={text} />;
+  return <SplitFilesView files={files} mode={mode} />;
+}
+
+function SplitFilesView({ files, mode = "split" }: { files: SplitDiffFile[]; mode?: "split" | "unified" }) {
   const { t } = useI18n();
   const showFileHeaders = files.length > 1;
+  const unified = mode === "unified";
 
   return (
     <div style={{ maxHeight: 560, overflowY: "auto", overflowX: "hidden", background: "var(--bg)" }}>
@@ -1259,38 +1339,128 @@ function SplitFilesView({ files }: { files: SplitDiffFile[] }) {
           }}
         >
           {showFileHeaders && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                position: "sticky",
-                top: 0,
-                zIndex: 1,
-                background: "var(--bg-panel)",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-               <SplitDiffHeader title={file.oldPath || t("i18n.before")} side="left" />
-               <SplitDiffHeader title={file.newPath || t("i18n.after")} side="right" />
-            </div>
+            unified ? (
+              <div
+                style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 1,
+                  background: "var(--bg-panel)",
+                  borderBottom: "var(--hairline) solid var(--border)",
+                }}
+              >
+                <SplitDiffHeader title={file.newPath || file.oldPath || t("i18n.after")} side="right" />
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 1,
+                  background: "var(--bg-panel)",
+                  borderBottom: "var(--hairline) solid var(--border)",
+                }}
+              >
+                 <SplitDiffHeader title={file.oldPath || t("i18n.before")} side="left" />
+                 <SplitDiffHeader title={file.newPath || t("i18n.after")} side="right" />
+              </div>
+            )
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
-            {file.rows.map((row, rowIndex) => {
-              if (row.type === "hunk") {
-                return null;
-              }
+          {unified ? (
+            <div>
+              {file.rows.flatMap((row, rowIndex) => {
+                if (row.type === "hunk") return [];
+                const cells = [];
+                const { left, right } = row;
+                if (left.type === "removed") {
+                  cells.push(<UnifiedDiffLine key={`${rowIndex}-l`} cell={left} />);
+                }
+                if (right.type === "added") {
+                  cells.push(<UnifiedDiffLine key={`${rowIndex}-r`} cell={right} />);
+                }
+                if (left.type === "context" && right.type === "context") {
+                  cells.push(<UnifiedDiffLine key={`${rowIndex}-c`} cell={right} />);
+                }
+                return cells;
+              })}
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
+              {file.rows.map((row, rowIndex) => {
+                if (row.type === "hunk") {
+                  return null;
+                }
 
-              return (
-                <div key={rowIndex} style={{ display: "contents" }}>
-                  <SplitDiffCellView cell={row.left} side="left" />
-                  <SplitDiffCellView cell={row.right} side="right" />
-                </div>
-              );
-            })}
-          </div>
+                return (
+                  <div key={rowIndex} style={{ display: "contents" }}>
+                    <SplitDiffCellView cell={row.left} side="left" />
+                    <SplitDiffCellView cell={row.right} side="right" />
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function UnifiedDiffLine({ cell }: { cell: SplitDiffCell }) {
+  const bg =
+    cell.type === "added"
+      ? "rgba(34,197,94,0.12)"
+      : cell.type === "removed"
+      ? "rgba(248,113,113,0.13)"
+      : "transparent";
+  const marker =
+    cell.type === "added" ? "+" : cell.type === "removed" ? "-" : " ";
+  const markerColor =
+    cell.type === "added" ? "var(--success)" : cell.type === "removed" ? "var(--danger)" : "var(--text-dim)";
+
+  return (
+    <div style={{ display: "flex", minWidth: 0, background: bg }}>
+      <span
+        style={{
+          width: 42,
+          padding: "0 6px",
+          textAlign: "right",
+          color: "var(--text-dim)",
+          userSelect: "none",
+          background: "var(--bg-panel)",
+          borderRight: "var(--hairline) solid var(--border)",
+          flexShrink: 0,
+        }}
+      >
+        {cell.lineNo ?? ""}
+      </span>
+      <span
+        style={{
+          width: 18,
+          padding: "0 5px",
+          color: markerColor,
+          userSelect: "none",
+          fontWeight: cell.type === "context" ? 400 : 700,
+          flexShrink: 0,
+        }}
+      >
+        {marker}
+      </span>
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          padding: "0 10px 0 0",
+          color: "var(--text)",
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {cell.text || " "}
+      </span>
     </div>
   );
 }
@@ -1325,7 +1495,7 @@ function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" |
   const marker =
     cell.type === "added" ? "+" : cell.type === "removed" ? "-" : " ";
   const markerColor =
-    cell.type === "added" ? "#22c55e" : cell.type === "removed" ? "#f87171" : "var(--text-dim)";
+    cell.type === "added" ? "var(--success)" : cell.type === "removed" ? "var(--danger)" : "var(--text-dim)";
 
   return (
     <div
@@ -1344,7 +1514,7 @@ function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" |
           color: "var(--text-dim)",
           userSelect: "none",
           background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
+          borderRight: "var(--hairline) solid var(--border)",
           flexShrink: 0,
         }}
       >
@@ -1395,8 +1565,8 @@ function PatchTextView({ text }: { text: string }) {
           kind === "hunk" ? "rgba(96,165,250,0.12)" :
           "transparent";
         const color =
-          kind === "added" ? "#22c55e" :
-          kind === "removed" ? "#f87171" :
+          kind === "added" ? "var(--success)" :
+          kind === "removed" ? "var(--danger)" :
           kind === "hunk" ? "var(--accent)" :
           "var(--text)";
 
@@ -1407,9 +1577,9 @@ function PatchTextView({ text }: { text: string }) {
               display: "flex",
               background: bg,
               borderLeft: kind === "added"
-                ? "3px solid #22c55e"
+                ? "3px solid var(--success)"
                 : kind === "removed"
-                ? "3px solid #f87171"
+                ? "3px solid var(--danger)"
                 : kind === "hunk"
                 ? "3px solid var(--accent)"
                 : "3px solid transparent",
@@ -1421,7 +1591,7 @@ function PatchTextView({ text }: { text: string }) {
                 padding: "0 8px",
                 color: "var(--text-dim)",
                 background: "var(--bg-panel)",
-                borderRight: "1px solid var(--border)",
+                borderRight: "var(--hairline) solid var(--border)",
                 textAlign: "right",
                 userSelect: "none",
                 flexShrink: 0,
@@ -1487,7 +1657,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Images a tool returned — including ones a codemode script generated with an image model,
+// which pi never writes to disk — so each one can be saved.
 function ResultImages({ images, isError }: { images: ImageContent[]; isError: boolean }) {
+  const { t } = useI18n();
   return (
     <div
       style={{
@@ -1503,26 +1676,35 @@ function ResultImages({ images, isError }: { images: ImageContent[]; isError: bo
         const src = imageSource(image);
         if (!src) return null;
         return (
-          <ImagePreview
-            key={`${src}-${index}`}
-            src={src}
-            style={{ maxWidth: "100%" }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={src}
-              alt=""
-              loading="lazy"
-              style={{
-                display: "block",
-                maxWidth: "min(100%, 720px)",
-                maxHeight: 520,
-                borderRadius: 6,
-                objectFit: "contain",
-                border: "1px solid var(--border)",
+          <div key={index} className="result-image" style={{ maxWidth: "100%" }}>
+            <ImagePreview src={src} style={{ maxWidth: "100%" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt=""
+                loading="lazy"
+                style={{
+                  display: "block",
+                  maxWidth: "min(100%, 720px)",
+                  maxHeight: 520,
+                  borderRadius: 6,
+                  objectFit: "contain",
+                  border: "var(--hairline) solid var(--border)",
+                }}
+              />
+            </ImagePreview>
+            <button
+              type="button"
+              className="result-image-save"
+              onClick={() => {
+                void import("@/lib/desktop-native")
+                  .then(({ downloadUrlAsFile }) => downloadUrlAsFile(src, resultImageFileName(imageMediaType(image), index)))
+                  .catch((error: unknown) => console.error("Failed to save image:", error));
               }}
-            />
-          </ImagePreview>
+            >
+              {t("chat.saveImage")}
+            </button>
+          </div>
         );
       })}
     </div>
@@ -1546,16 +1728,11 @@ function PairedResult({ text, isEmpty, isError }: {
         style={{
           margin: 0,
           padding: "8px 10px",
-          color: isError ? "#f87171" : (isEmpty ? "var(--text-dim)" : "var(--text-muted)"),
+          color: isError ? "var(--danger)" : (isEmpty ? "var(--text-dim)" : "var(--text-muted)"),
           fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
           lineHeight: 1.5,
           overflow: "auto",
           maxHeight: 400,
-          background: "var(--bg)",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          fontStyle: isEmpty ? "italic" : "normal",
-          opacity: isEmpty ? 0.6 : 1,
         }}
       >
         {isEmpty ? t("i18n.noOutput") : text}
@@ -1564,7 +1741,67 @@ function PairedResult({ text, isEmpty, isError }: {
   );
 }
 
-function CompactionMessageView({ message }: { message: CustomMessage }) {
+const USER_TEXT_COLLAPSE_HEIGHT = 220;
+function CollapsibleUserText({ text, cwd, onOpenFile }: {
+  text: string;
+  cwd?: string;
+  onOpenFile?: (filePath: string) => void;
+}) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    // Small slack so content barely over the limit is not worth collapsing
+    setOverflowing(el.scrollHeight > USER_TEXT_COLLAPSE_HEIGHT + 60);
+  }, [text]);
+
+  const collapsed = overflowing && !expanded;
+  const fade = "linear-gradient(to bottom, black calc(100% - 48px), transparent 100%)";
+
+  return (
+    <div>
+      <div
+        ref={bodyRef}
+        style={collapsed ? {
+          maxHeight: USER_TEXT_COLLAPSE_HEIGHT,
+          overflow: "hidden",
+          maskImage: fade,
+          WebkitMaskImage: fade,
+        } : undefined}
+      >
+        <MarkdownBody className="markdown-user-message" keepLineBreaks cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody>
+      </div>
+      {overflowing && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            marginTop: 2,
+            padding: "2px 0",
+            background: "none",
+            border: "none",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: 11,
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+            <polyline points="2 3.5 5 6.5 8 3.5" />
+          </svg>
+          {expanded ? t("i18n.collapse") : t("i18n.expand")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CompactionMessageView({ message, kind = "compaction" }: { message: CustomMessage; kind?: "compaction" | "branch_summary" }) {
   const { t } = useI18n();
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
@@ -1574,7 +1811,7 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
     <div style={{ marginBottom: 16 }}>
       <div
         style={{
-          border: "1px solid var(--border)",
+          border: "var(--hairline) solid var(--border)",
           borderRadius: 8,
           overflow: "hidden",
           background: "var(--bg)",
@@ -1586,23 +1823,23 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
             alignItems: "center",
             gap: 8,
             padding: "7px 10px",
-            borderBottom: "1px solid var(--border)",
+            borderBottom: "var(--hairline) solid var(--border)",
             background: "var(--bg-panel)",
             color: "var(--text-muted)",
           }}
         >
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
-            compaction
+            {kind === "branch_summary" ? "branch summary" : "compaction"}
           </span>
-          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
+          {time && <span className="message-meta" style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
         </div>
 
         <div style={{ padding: "11px 13px 12px" }}>
           <div style={{ color: "var(--text)", fontSize: "calc(15px + var(--chat-font-size-offset, 0px))", fontWeight: 700, lineHeight: 1.35 }}>
-             {t("i18n.conversationCompacted")}
+             {t(kind === "branch_summary" ? "i18n.branchSummaryTitle" : "i18n.conversationCompacted")}
           </div>
           <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)", fontSize: "calc(14px + var(--chat-font-size-offset, 0px))", lineHeight: 1.5 }}>
-             {t("i18n.compactionDescription")}
+             {t(kind === "branch_summary" ? "i18n.branchSummaryDescription" : "i18n.compactionDescription")}
           </div>
           {parsedSummary.body ? (
             <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
@@ -1671,7 +1908,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
     <div style={{ marginBottom: 16 }}>
       <div
         style={{
-          border: "1px solid var(--border)",
+          border: "var(--hairline) solid var(--border)",
           borderRadius: 8,
           overflow: "hidden",
           background: isHiddenDisplay ? "var(--bg-subtle)" : "var(--bg)",
@@ -1684,7 +1921,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             alignItems: "center",
             gap: 8,
             padding: "7px 10px",
-            borderBottom: "1px solid var(--border)",
+            borderBottom: "var(--hairline) solid var(--border)",
             background: "var(--bg-panel)",
             color: "var(--text-muted)",
             fontSize: 12,
@@ -1693,8 +1930,8 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
             {title}
           </span>
-           {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{t("i18n.hiddenExtensionMessage")}</span>}
-          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
+          {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{t("i18n.hiddenExtensionMessage")}</span>}
+          {time && <span className="message-meta" style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
         </div>
 
         {contentExpanded ? (
@@ -1710,7 +1947,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                       <img
                         src={src}
                         alt=""
-                        style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid var(--border)" }}
+                        style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "var(--hairline) solid var(--border)" }}
                       />
                     </ImagePreview>
                   );
@@ -1744,7 +1981,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             alignItems: "center",
             gap: 8,
             padding: "4px 9px",
-            borderTop: "1px solid var(--border)",
+            borderTop: "var(--hairline) solid var(--border)",
             background: "var(--bg-subtle)",
           }}
         >
@@ -1791,7 +2028,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             style={{
               margin: 0,
               padding: "9px 10px",
-              borderTop: "1px solid var(--border)",
+              borderTop: "var(--hairline) solid var(--border)",
               background: "var(--bg)",
               color: "var(--text-muted)",
               fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
@@ -1824,14 +2061,8 @@ function getMessageImages(content: CustomMessage["content"] | UserMessage["conte
   return content.filter((b): b is ImageContent => b.type === "image");
 }
 
-function imageSource(img: ImageContent): string {
-  const flat = img as unknown as { data?: string; mimeType?: string };
-  if (img.source) {
-    return img.source.type === "base64"
-      ? `data:${img.source.media_type};base64,${img.source.data}`
-      : img.source.url ?? "";
-  }
-  return flat.data ? `data:${flat.mimeType};base64,${flat.data}` : "";
+function imageMediaType(img: ImageContent): string | undefined {
+  return img.source?.media_type ?? (img as unknown as { mimeType?: string }).mimeType;
 }
 
 function safeJson(value: unknown): string {
@@ -1895,7 +2126,11 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
   const [loadingFull, setLoadingFull] = useState(false);
   const [fullError, setFullError] = useState<string | null>(null);
 
-  const isPending = !message.output && message.exitCode === undefined && !message.cancelled;
+  const isRunning = message.exitCode === undefined && !message.cancelled;
+  // No output yet while running → keep the pending spinner; once chunks have
+  // streamed in (bash_execution_update), show them as a partial result so a
+  // long `!command` explains itself instead of looking stuck.
+  const isPending = isRunning && !message.output;
   const isError = message.cancelled || (message.exitCode !== undefined && message.exitCode !== 0);
   const fullOutputUrl = sessionId && message.fullOutputPath
     ? `/api/agent/${encodeURIComponent(sessionId)}/bash-output?path=${encodeURIComponent(message.fullOutputPath)}`
@@ -1938,14 +2173,13 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
         role: "toolResult",
         toolCallId: block.toolCallId,
         toolName,
-        content: displayOutput ? [{ type: "text", text: displayOutput }] : [],
+        content: displayOutput ? [{ type: "text", text: isRunning ? `${displayOutput}\n…` : displayOutput }] : [],
         isError,
         timestamp: message.timestamp,
       };
-
   return (
     <div style={{ margin: "6px 0" }}>
-      <ToolCallBlock block={block} result={result} />
+      <ToolCallBlock block={block} result={result} defaultExpanded={isRunning} />
       {message.truncated && fullOutputUrl && (
         <div style={{ padding: "4px 10px", fontSize: 11, marginTop: -1 }}>
           {showFullButton && (
@@ -1957,12 +2191,26 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
               {loadingFull ? "loading…" : "view full output"}
             </button>
           )}
-          <a
-            href={`${fullOutputUrl}&download=1`}
-            style={{ marginLeft: showFullButton ? 10 : 0, color: "var(--accent)", fontSize: 11, textDecoration: "underline" }}
+          <button
+            type="button"
+            onClick={() => {
+              void import("@/lib/desktop-native").then(({ downloadUrlAsFile }) =>
+                downloadUrlAsFile(`${fullOutputUrl}&download=1`, "bash-output.log"),
+              );
+            }}
+            style={{
+              marginLeft: showFullButton ? 10 : 0,
+              background: "none",
+              border: "none",
+              padding: 0,
+              color: "var(--accent)",
+              fontSize: 11,
+              textDecoration: "underline",
+              cursor: "pointer",
+            }}
           >
             download full output
-          </a>
+          </button>
           {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: 11 }}>({fullError})</span>}
         </div>
       )}

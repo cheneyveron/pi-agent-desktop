@@ -2,21 +2,23 @@
 
 import { useState, useCallback, useRef } from "react";
 
+function hasDraggedFiles(event: React.DragEvent): boolean {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
+
 export function useDragDrop(onDrop: (files: File[]) => void) {
   const [isDragOver, setIsDragOver] = useState(false);
   const counterRef = useRef(0);
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    const hasImages = Array.from(e.dataTransfer.items).some((item) => item.type.startsWith("image/"));
-    if (!hasImages) return;
+    if (!hasDraggedFiles(e)) return;
     e.preventDefault();
     counterRef.current += 1;
     setIsDragOver(true);
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    const hasImages = Array.from(e.dataTransfer.items).some((item) => item.type.startsWith("image/"));
-    if (!hasImages) return;
+    if (!hasDraggedFiles(e)) return;
     e.preventDefault();
   }, []);
 
@@ -33,7 +35,7 @@ export function useDragDrop(onDrop: (files: File[]) => void) {
     counterRef.current = 0;
     setIsDragOver(false);
     const files = Array.from(e.dataTransfer.files);
-    onDrop(files);
+    if (files.length > 0) onDrop(files);
   }, [onDrop]);
 
   return { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop };

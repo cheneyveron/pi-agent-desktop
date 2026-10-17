@@ -22,7 +22,7 @@ const { getNextNodeArgs } = require("./pi-web-node-args");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { wireChildProcessLifecycle } = require("./process-lifecycle");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { getNetworkExposureWarning } = require("./network-exposure-warning");
+const { checkNetworkExposure } = require("./network-exposure-warning");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { attachReadyHandoff, shouldOpenBrowser } = require("../lib/browser-open");
 
@@ -44,6 +44,10 @@ if (launchOptions.help) {
 
 const { port, hostname, openBrowser } = launchOptions;
 const wantOpen = openBrowser && shouldOpenBrowser(process.env);
+
+const exposure = checkNetworkExposure(hostname);
+if (exposure) console.warn(exposure.message);
+if (exposure?.fatal) process.exit(1);
 
 const pkgDir = path.join(__dirname, "..");
 const nextDir = path.join(pkgDir, ".next");
@@ -67,9 +71,6 @@ if (!fs.existsSync(nextDir)) {
   console.error("Build artifacts not found. Please report this issue.");
   process.exit(1);
 }
-
-const exposureWarning = getNetworkExposureWarning(hostname);
-if (exposureWarning) console.warn(exposureWarning);
 
 const nextArgs = ["start", "-p", port];
 nextArgs.push("-H", hostname);

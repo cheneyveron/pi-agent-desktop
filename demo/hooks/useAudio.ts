@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { APP_PREF_KEYS, getPref, setPref } from "@/lib/app-prefs";
+import { isTauriDesktop } from "@/lib/desktop-updater";
 
 function playTone(ctx: AudioContext) {
   const now = ctx.currentTime;
@@ -24,16 +26,15 @@ function playTone(ctx: AudioContext) {
 export function useAudio() {
   const [enabled, setEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
-    const stored = localStorage.getItem("pi-sound-enabled");
+    const stored = getPref(APP_PREF_KEYS.soundEnabled);
     return stored === null ? true : stored === "true";
   });
 
   const enabledRef = useRef(enabled);
   useEffect(() => { enabledRef.current = enabled; }, [enabled]);
 
-  // Reuse a single AudioContext so it can be resumed if the browser
-  // autoplay policy suspends it (contexts created outside user gestures
-  // start in "suspended" state and produce no sound).
+  // Reuse a single AudioContext. Browsers may suspend it until a user gesture;
+  // the desktop WebView is less strict but the same path keeps behavior unified.
   const ctxRef = useRef<AudioContext | null>(null);
   const getCtx = useCallback((): AudioContext | null => {
     if (ctxRef.current && ctxRef.current.state !== "closed") return ctxRef.current;
@@ -47,6 +48,8 @@ export function useAudio() {
 
   const unlockAudio = useCallback((force = false) => {
     if (!force && !enabledRef.current) return;
+    // Desktop shell does not need the browser autoplay unlock dance.
+    if (isTauriDesktop() && !force) return;
     const ctx = getCtx();
     if (!ctx || ctx.state !== "suspended") return;
     ctx.resume().catch(() => {});
@@ -56,7 +59,7 @@ export function useAudio() {
     const next = !enabledRef.current;
     if (next) unlockAudio(true);
     enabledRef.current = next;
-    localStorage.setItem("pi-sound-enabled", String(next));
+    setPref(APP_PREF_KEYS.soundEnabled, String(next));
     setEnabled(next);
   }, [unlockAudio]);
 

@@ -1,8 +1,9 @@
 "use client";
 
-import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type CSSProperties } from "react";
 import { staticFileUrlForApi } from "@/mock/files";
 import { getFileIcon, FolderIcon } from "./FileIcons";
+import { DismissButton } from "./DismissButton";
 import {
   encodeFilePathForApi,
   getFileDirectory,
@@ -15,6 +16,7 @@ import type { GitFileStatus, GitFileStatusKind, GitStatusResponse } from "@/lib/
 import type { FileIndexEntry } from "@/lib/file-fuzzy";
 import { buildSearchTree, type SearchTreeNode } from "@/lib/search-tree";
 import { useI18n } from "@/hooks/useI18n";
+import { isImeComposing } from "@/lib/ime";
 type Translate = ReturnType<typeof useI18n>["t"];
 
 interface FileEntry {
@@ -22,6 +24,10 @@ interface FileEntry {
   isDir: boolean;
   size: number;
   modified: string;
+  /** Where a directory link leads when that is outside the browsable roots. */
+  outsideLinkTarget?: string;
+  /** That target contains the project or the home folder. */
+  outsideLinkEncloses?: boolean;
 }
 
 interface FileNode {
@@ -31,6 +37,8 @@ interface FileNode {
   size: number;
   children?: FileNode[];
   loaded?: boolean;
+  outsideLinkTarget?: string;
+  outsideLinkEncloses?: boolean;
 }
 
 interface Props {
@@ -79,19 +87,21 @@ interface PendingConflict {
   nonReplaceable: string[];
 }
 
+async function responseError(res: Response, fallback: string): Promise<Error> {
+  let message = `${fallback} (HTTP ${res.status})`;
+  try {
+    const data = await res.json() as { error?: string };
+    if (data.error) message = data.error;
+  } catch {
+    // ignore non-JSON error bodies
+  }
+  return new Error(message);
+}
+
 async function fetchEntries(dirPath: string): Promise<FileNode[]> {
   const encoded = encodeFilePathForApi(dirPath);
   const res = await fetch(`/api/files/${encoded}?type=list`);
-  if (!res.ok) {
-    let message = `Failed to load files (HTTP ${res.status})`;
-    try {
-      const data = await res.json() as { error?: string };
-      if (data.error) message = data.error;
-    } catch {
-      // ignore non-JSON error bodies
-    }
-    throw new Error(message);
-  }
+  if (!res.ok) throw await responseError(res, "Failed to load files");
   const data = await res.json() as { entries?: FileEntry[] };
   return (data.entries ?? []).map((e) => ({
     name: e.name,
@@ -100,7 +110,20 @@ async function fetchEntries(dirPath: string): Promise<FileNode[]> {
     size: e.size,
     children: e.isDir ? [] : undefined,
     loaded: !e.isDir,
+    outsideLinkTarget: e.outsideLinkTarget,
+    outsideLinkEncloses: e.outsideLinkEncloses,
   }));
+}
+
+// Sends the target the operator was shown, so a link pointed elsewhere since
+// the listing is refused instead of granting a directory nobody looked at.
+async function allowOutsideLink(linkPath: string, target: string): Promise<void> {
+  const res = await fetch(`/api/files/${encodeFilePathForApi(linkPath)}?type=allow-link`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target }),
+  });
+  if (!res.ok) throw await responseError(res, "Failed to allow the linked folder");
 }
 
 async function fetchGitStatus(cwd: string): Promise<GitStatusResponse> {
@@ -195,26 +218,17 @@ function MentionIcon({ size = 11 }: { size?: number }) {
   );
 }
 
-function DismissButton({ onClick, title }: { onClick: () => void; title: string }) {
+function OutsideLinkIcon({ size = 11 }: { size?: number }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-label={title}
-      style={{ width: 24, height: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "none", borderRadius: 4, background: "none", color: "var(--text-dim)", cursor: "pointer" }}
-      onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text-muted)"; event.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text-dim)"; event.currentTarget.style.background = "none"; }}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-        <path d="m6 6 12 12" />
-        <path d="m18 6-12 12" />
-      </svg>
-    </button>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </svg>
   );
 }
 
-function TreeNode({
+export function TreeNode({
   node,
   depth,
   cwd,
@@ -251,17 +265,34 @@ function TreeNode({
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
+  const [allowedLinkTarget, setAllowedLinkTarget] = useState<string | null>(null);
+  const [allowingLink, setAllowingLink] = useState(false);
+  const [allowLinkError, setAllowLinkError] = useState<string | null>(null);
+  // A link leading outside the project is refused until the operator allows
+  // its target, so it asks for that instead of listing (#748).
+  const pendingLinkTarget = node.outsideLinkTarget && node.outsideLinkTarget !== allowedLinkTarget
+    ? node.outsideLinkTarget
+    : null;
+
+  // A listing that reports the link again (a server restart forgets allowed
+  // targets, or the link was pointed elsewhere) needs a new decision.
+  useEffect(() => {
+    setAllowedLinkTarget(null);
+    setAllowLinkError(null);
+  }, [node.outsideLinkTarget]);
 
   const loadChildren = useCallback(async (force = false) => {
     if (loaded && !force) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const entries = await fetchEntries(node.fullPath);
       setChildren(entries);
       setLoaded(true);
-    } catch {
-      // ignore
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }
@@ -269,7 +300,7 @@ function TreeNode({
 
   // Re-fetch children when the tree refreshes and the directory is open.
   useEffect(() => {
-    if (refreshToken !== undefined && open && loaded) {
+    if (refreshToken !== undefined && open && loaded && !pendingLinkTarget) {
       loadChildren(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -279,16 +310,45 @@ function TreeNode({
     if (node.isDir) {
       const next = !open;
       onToggleExpanded(node.fullPath, next);
-      if (next && !loaded) loadChildren();
+      if (next && !loaded && !pendingLinkTarget) loadChildren();
     } else {
       onOpenFile(node.fullPath, node.name);
     }
-  }, [node.isDir, node.fullPath, node.name, loaded, open, loadChildren, onOpenFile, onToggleExpanded]);
+  }, [node.isDir, node.fullPath, node.name, loaded, open, pendingLinkTarget, loadChildren, onOpenFile, onToggleExpanded]);
+
+  const handleAllowLink = useCallback(async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!pendingLinkTarget) return;
+    // A link to `/`, `~` or a parent of the project opens far more than a
+    // sibling folder, and a cloned repository can contain one.
+    if (node.outsideLinkEncloses && !window.confirm(t("files.allowEnclosingLinkConfirm", { target: pendingLinkTarget }))) {
+      return;
+    }
+    setAllowingLink(true);
+    setAllowLinkError(null);
+    try {
+      await allowOutsideLink(node.fullPath, pendingLinkTarget);
+      setAllowedLinkTarget(pendingLinkTarget);
+      await loadChildren(true);
+    } catch (error) {
+      setAllowLinkError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAllowingLink(false);
+    }
+  }, [node.fullPath, node.outsideLinkEncloses, pendingLinkTarget, loadChildren, t]);
 
   return (
     <div>
       <div
+        role="button"
+        tabIndex={0}
+        title={node.fullPath}
         onClick={handleClick}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          handleClick();
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
@@ -331,6 +391,15 @@ function TreeNode({
         >
           {node.name}
         </span>
+        {!hovered && pendingLinkTarget && (
+          <span
+            title={t("files.outsideLink", { target: pendingLinkTarget })}
+            aria-label={t("files.outsideLink", { target: pendingLinkTarget })}
+            style={{ width: 14, height: 14, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)" }}
+          >
+            <OutsideLinkIcon />
+          </span>
+        )}
         {highlighted && (
           <span
             title={t("files.newlyUploaded")}
@@ -383,7 +452,7 @@ function TreeNode({
               padding: "0 8px",
               height: 20,
               background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
+              border: "var(--hairline) solid var(--border)",
               borderRadius: 4,
               color: "var(--accent)",
               cursor: "pointer",
@@ -414,7 +483,7 @@ function TreeNode({
               padding: "0 5px",
               height: 20,
               background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
+              border: "var(--hairline) solid var(--border)",
               borderRadius: 4,
               color: "var(--text-muted)",
               cursor: "pointer",
@@ -432,7 +501,52 @@ function TreeNode({
           </a>
         )}
       </div>
-      {node.isDir && open && (
+      {node.isDir && open && pendingLinkTarget && (
+        <div
+          style={{
+            paddingLeft: 8 + (depth + 1) * 14,
+            paddingRight: 8,
+            paddingTop: 3,
+            paddingBottom: 5,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 4,
+            fontSize: 11,
+            color: "var(--text-dim)",
+          }}
+        >
+          <span style={{ wordBreak: "break-all" }}>{t("files.outsideLink", { target: pendingLinkTarget })}</span>
+          {node.outsideLinkEncloses && (
+            <span style={{ color: "#f59e0b" }}>{t("files.outsideLinkEncloses")}</span>
+          )}
+          <button
+            type="button"
+            onClick={handleAllowLink}
+            disabled={allowingLink}
+            title={t("files.allowOutsideLinkTitle", { target: pendingLinkTarget })}
+            style={{
+              height: 20,
+              padding: "0 8px",
+              background: "var(--bg-panel)",
+              border: "var(--hairline) solid var(--border)",
+              borderRadius: 4,
+              color: "var(--accent)",
+              cursor: allowingLink ? "default" : "pointer",
+              opacity: allowingLink ? 0.6 : 1,
+              fontSize: 11,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("files.allowOutsideLink")}
+          </button>
+          {allowLinkError && (
+            <span role="alert" style={{ color: "#f87171", wordBreak: "break-word" }}>{allowLinkError}</span>
+          )}
+        </div>
+      )}
+      {node.isDir && open && !pendingLinkTarget && (
         <div>
           {children.map((child) => (
             <TreeNode
@@ -451,9 +565,14 @@ function TreeNode({
               t={t}
             />
           ))}
-          {children.length === 0 && loaded && (
+          {children.length === 0 && loaded && !loadError && (
             <div style={{ paddingLeft: 8 + (depth + 1) * 14, fontSize: 11, color: "var(--text-dim)", height: 22, display: "flex", alignItems: "center" }}>
               empty
+            </div>
+          )}
+          {loadError && (
+            <div role="alert" style={{ paddingLeft: 8 + (depth + 1) * 14, paddingRight: 8, paddingTop: 3, paddingBottom: 3, fontSize: 11, color: "#f87171", wordBreak: "break-word" }}>
+              {loadError}
             </div>
           )}
         </div>
@@ -566,7 +685,7 @@ function ChangeRow({
             padding: "0 8px",
             height: 20,
             background: "var(--bg-panel)",
-            border: "1px solid var(--border)",
+            border: "var(--hairline) solid var(--border)",
             borderRadius: 4,
             color: "var(--accent)",
             cursor: "pointer",
@@ -610,6 +729,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null);
   const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
   const [searchPaths, setSearchPaths] = useState<string[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
@@ -876,7 +996,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     <div style={{ minHeight: "100%" }}>
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
       {showUploadFeedback && (
-        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
         {uploadBusy && (
           <div role="status" aria-live="polite" aria-label={uploadPhase === "checking" ? t("files.checking") : t("files.uploading", { progress: uploadProgress })}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 14, color: "var(--text-muted)" }}>
@@ -902,7 +1022,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         )}
 
         {pendingConflict && (
-          <div role="alert" style={{ padding: 7, border: "1px solid color-mix(in srgb, #f59e0b 55%, var(--border))", borderRadius: 4, background: "color-mix(in srgb, #f59e0b 9%, var(--bg-panel))" }}>
+          <div role="alert" style={{ padding: 7, border: "var(--hairline) solid color-mix(in srgb, #f59e0b 55%, var(--border))", borderRadius: 4, background: "color-mix(in srgb, #f59e0b 9%, var(--bg-panel))" }}>
             <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.35, overflowWrap: "anywhere" }}>
               {t("files.conflictSummary", { count: pendingConflict.conflicts.length, countSuffix: pendingConflict.conflicts.length === 1 ? "" : "s", files: pendingConflict.conflicts.join(", ") })}
             </div>
@@ -912,10 +1032,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               </div>
             )}
             <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite")} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite")} style={{ height: 22, padding: "0 7px", border: "var(--hairline) solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
                 {t("files.replace")}
               </button>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip")} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip")} style={{ height: 22, padding: "0 7px", border: "var(--hairline) solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
                 {t("files.skipExisting")}
               </button>
               <button type="button" onClick={() => setPendingConflict(null)} style={{ height: 22, padding: "0 7px", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 10 }}>
@@ -970,7 +1090,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                   onClick={addUploadedFilesToChat}
                   title={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
                   aria-label={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
-                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
+                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "var(--hairline) solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
                 >
                   <MentionIcon />
                   {t("files.mention")}
@@ -994,7 +1114,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       )}
 
       {fileSearchOpen && (
-      <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
         <div style={{ position: "relative" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)", pointerEvents: "none" }}>
             <circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" />
@@ -1003,10 +1123,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             ref={searchInputRef}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Escape") onFileSearchOpenChange?.(false); }}
+            onKeyDown={(event) => { if (event.key === "Escape" && !isImeComposing(event)) onFileSearchOpenChange?.(false); }}
             placeholder={t("sidebar.searchFilesPlaceholder")}
             aria-label={t("sidebar.searchFiles")}
-            style={{ width: "100%", boxSizing: "border-box", padding: "6px 24px", border: "1px solid var(--border)", borderRadius: 5, outline: "none", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }}
+            style={{ width: "100%", boxSizing: "border-box", padding: "6px 24px", border: "var(--hairline) solid var(--border)", borderRadius: 5, outline: "none", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }}
           />
           {searchQuery && (
             <button
@@ -1092,9 +1212,24 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       {(changesCollapsed || gitFiles.length === 0) && (!fileSearchOpen || !hasSearchQuery) && (
         <div style={{ padding: "2px 4px" }}>
           {loading ? (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>Loading files...</div>
+            <div className="file-tree-loading" role="status" aria-label={t("files.loading")}>
+              {[0, 1, 2, 3, 4, 5].map((item) => (
+                <span key={item} style={{ "--skeleton-width": `${64 + ((item * 17) % 30)}%` } as CSSProperties} />
+              ))}
+            </div>
           ) : error ? (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>{error}</div>
+            <div className="file-tree-message is-error" role="alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  setTreeRefreshKey((value) => value + 1);
+                }}
+              >
+                {t("common.retry")}
+              </button>
+            </div>
           ) : (
             roots.map((node) => (
               <TreeNode

@@ -2,6 +2,8 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import { isDarkTheme, isThemePreference, type ThemePreference, type ResolvedTheme } from "@/lib/theme";
+import { APP_PREF_KEYS, getPref, setPref } from "@/lib/app-prefs";
+import { isTauriDesktop } from "@/lib/desktop-updater";
 
 export type { ThemePreference, ResolvedTheme } from "@/lib/theme";
 
@@ -12,7 +14,6 @@ type ThemeState = {
 
 type ToggleOrigin = { x: number; y: number };
 
-const STORAGE_KEY = "pi-theme";
 const SERVER_SNAPSHOT: ThemeState = { preference: "auto", theme: "light" };
 
 const listeners = new Set<() => void>();
@@ -30,7 +31,7 @@ function getSystemTheme(): ResolvedTheme {
 
 function readStoredPreference(): ThemePreference {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
+    const value = getPref(APP_PREF_KEYS.theme);
     if (isThemePreference(value)) return value;
   } catch {
     // ignore storage errors (private mode, quota, etc.)
@@ -59,11 +60,25 @@ function ensureState(): ThemeState {
   return state;
 }
 
+// The desktop shell mirrors the resolved theme into its config via the
+// `set_ui_theme` command: the packaged server's port (and therefore the
+// WebView origin, and therefore localStorage) can change between cold starts.
+async function persistNativeTheme(theme: ResolvedTheme): Promise<void> {
+  if (!isTauriDesktop()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_ui_theme", { theme: theme === "dark" ? "dark" : "light" });
+  } catch {
+    // Tauri IPC may not be ready on the very first tick; next toggle retries.
+  }
+}
+
 function setThemeState(preference: ThemePreference, theme: ResolvedTheme, persist: boolean): void {
   applyDomTheme(theme);
   if (persist) {
+    void persistNativeTheme(theme);
     try {
-      localStorage.setItem(STORAGE_KEY, preference);
+      setPref(APP_PREF_KEYS.theme, preference);
     } catch {
       // ignore storage errors (private mode, quota, etc.)
     }
@@ -124,7 +139,9 @@ export function useTheme() {
     };
 
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const supportsVT = typeof document.startViewTransition === "function";
+    // WebKitGTK crashes its UI process when startViewTransition is called, so
+    // the desktop shell keeps the existing instant-switch fallback.
+    const supportsVT = !isTauriDesktop() && typeof document.startViewTransition === "function";
 
     if (!supportsVT || reduceMotion) {
       apply();
@@ -160,10 +177,18 @@ export function useTheme() {
       });
   }, []);
 
+  const toggleTheme = useCallback((origin?: ToggleOrigin) => {
+    const current = ensureState();
+    const order: ThemePreference[] = ["light", "dark", "auto"];
+    const index = order.indexOf(current.preference);
+    setThemePreference(order[(index + 1) % order.length], origin);
+  }, [setThemePreference]);
+
   return {
     theme: snapshot.theme,
     preference: snapshot.preference,
     setThemePreference,
+    toggleTheme,
     isDark: isDarkTheme(snapshot.theme),
   };
 }

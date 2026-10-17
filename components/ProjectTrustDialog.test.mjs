@@ -17,14 +17,14 @@ const {
   MCP_LISTING_TIMEOUT_MS,
   projectTrustListingFrom,
 } = await jiti.import("./ProjectTrustDialog.tsx");
-const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
+const { englishMessages } = await jiti.import("@/lib/i18n/locale-plugins.ts");
 const source = await readFile(new URL("./ProjectTrustDialog.tsx", import.meta.url), "utf8");
 const apiTypesSource = await readFile(new URL("../lib/api-types.ts", import.meta.url), "utf8");
 const settingsCss = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
 const appShellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
 const h = React.createElement;
-const messages = enLocale.messages;
+const messages = englishMessages;
 
 function render(element) {
   return renderToStaticMarkup(h(I18nProvider, null, element));

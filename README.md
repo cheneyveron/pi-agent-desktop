@@ -132,7 +132,7 @@ Do not run `next build` or `npm run build` during normal development. They write
 PI_WEB_PASSWORD='choose-a-long-passphrase' npm run dev:lan
 ```
 
-With `PI_WEB_PASSWORD` set, the browser asks for it on first visit and failed attempts are throttled. The connection is still plain HTTP, so put it behind HTTPS or a trusted VPN, and use `PI_WEB_ALLOWED_HOSTS` (comma-separated) to allow a DNS name other than an IP address. The launcher prints a warning whenever it listens beyond loopback without a password. The packaged desktop app is unaffected: it binds to loopback and authenticates the WebView with a per-process token.
+With `PI_WEB_PASSWORD` set, the browser asks for it on first visit and failed attempts are throttled. The connection is still plain HTTP, so put it behind HTTPS or a trusted VPN, and use `PI_WEB_ALLOWED_HOSTS` (comma-separated) to allow a DNS name other than an IP address. Without a password the launcher refuses to listen beyond loopback; on a network you trust, `PI_WEB_ALLOW_UNAUTHENTICATED=1` starts it anyway with a warning. The packaged desktop app is unaffected: it binds to loopback and authenticates the WebView with a per-process token.
 
 ### Start Desktop Dev Mode
 

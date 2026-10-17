@@ -6,6 +6,9 @@ import ts from "typescript";
 
 const sourceText = readFileSync(new URL("./useAgentSession.ts", import.meta.url), "utf8");
 const source = ts.createSourceFile("useAgentSession.ts", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+// The summary itself lives in the fork-owned hook; useAgentSession only consumes it.
+const branchSummaryText = readFileSync(new URL("./useBranchSummary.ts", import.meta.url), "utf8");
+const branchSummarySource = ts.createSourceFile("useBranchSummary.ts", branchSummaryText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
 function find(node, match) {
   if (match(node)) return node;
@@ -16,12 +19,12 @@ function compile(text) {
   return ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText.trim().replace(/;$/, "");
 }
 
-const helperNode = find(source, (n) => ts.isFunctionDeclaration(n) && n.name?.text === "branchSummaryHolds");
+const helperNode = find(branchSummarySource, (n) => ts.isFunctionDeclaration(n) && n.name?.text === "branchSummaryHolds");
 const leafChangeNode = find(source, (n) => ts.isVariableDeclaration(n) && n.name.getText(source) === "handleLeafChange");
 assert.ok(helperNode, "branchSummaryHolds not found");
 assert.ok(leafChangeNode, "handleLeafChange not found");
 
-const helperJs = compile(helperNode.getText(source));
+const helperJs = compile(helperNode.getText(branchSummarySource).replace(/^export /, ""));
 const branchSummaryHolds = new Script(`${helperJs}; branchSummaryHolds`).runInNewContext({});
 
 function leafChangeHarness({ pendingSummarySessionId, currentSessionId }) {
@@ -76,8 +79,11 @@ test("send, branch switch and the lock banner all scope the summary to the curre
     sourceText.indexOf("  const handleSend = useCallback") + 600,
   );
   assert.match(sendSource, /if \(agentRunningRef\.current \|\| bashRunningRef\.current \|\| branchSummaryHolds\(branchSummarySessionIdRef\.current, sessionIdRef\.current\)\) \{/);
-  assert.match(sourceText, /const branchSummaryPending = branchSummaryHolds\(branchSummarySessionId, session\?\.id \?\? null\);/);
+  assert.match(branchSummaryText, /const branchSummaryPending = branchSummaryHolds\(branchSummarySessionId, sessionId\);/);
+  assert.match(sourceText, /useBranchSummary\(\{\s*sessionId: session\?\.id \?\? null,/);
   // No run/busy guard may test the bare ref: it still holds the previous session's id after a switch.
   // (summarizeAndNavigate's own `!sid || branchSummarySessionIdRef.current` keeps summaries single-flight.)
-  assert.doesNotMatch(sourceText, /(?:Ref\.current|isCompacting) \|\| branchSummarySessionIdRef\.current\)/);
+  for (const text of [sourceText, branchSummaryText]) {
+    assert.doesNotMatch(text, /(?:Ref\.current|isCompacting) \|\| branchSummarySessionIdRef\.current\)/);
+  }
 });

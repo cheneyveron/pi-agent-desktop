@@ -8,6 +8,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage as PiAgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { CacheWarmingInfo } from "./types";
+import type { UsageCostBreakdownEntry } from "./usage-breakdown";
+
+export type { PiAgentMessage };
 
 export interface ContextUsage {
   percent: number | null;
@@ -25,6 +29,8 @@ export interface ToolInfo {
   description: string;
   parameters?: unknown;
   promptGuidelines?: string[];
+  /** How the model reaches the tool (pi >= 0.99); absent means `direct`. */
+  exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
   sourceInfo?: unknown;
 }
 
@@ -54,6 +60,12 @@ export interface SessionStatsInfo {
   contextUsage?: ContextUsage;
   /** Estimated active time across all entries in the session file. */
   totalActiveMs?: number;
+  /** Cost per model that answered (lib/usage-breakdown.ts). */
+  costBreakdown?: UsageCostBreakdownEntry[];
+  /** Live sessions only. */
+  cacheWarming?: CacheWarmingInfo;
+  /** `provider/modelId` of the selected model; decides whether a one-row breakdown is worth showing. */
+  selectedModelKey?: string;
 }
 
 interface PromptTemplateLike {
@@ -73,15 +85,29 @@ interface ResourceLoaderLike {
   getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 }
 
+export interface NavigateTreeOptions {
+  summarize?: boolean;
+  customInstructions?: string;
+  replaceInstructions?: boolean;
+  label?: string;
+}
+
 interface ExtensionRunnerLike {
   getRegisteredCommands(): Array<{
     invocationName: string;
     description?: string;
     sourceInfo: SlashCommandInfo["sourceInfo"];
   }>;
-  emit?(event: { type: "session_shutdown"; reason: "quit" }): Promise<unknown>;
+  hasHandlers?(eventType: string): boolean;
+  emit?(
+    event:
+      | { type: "session_shutdown"; reason: "quit" }
+      | { type: "session_before_switch"; reason: "new" | "resume"; targetSessionFile?: string }
+      | { type: "session_before_fork"; entryId: string; position: "before" | "at" },
+  ): Promise<unknown>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
 }
+
 
 type DialogOptionsLike = {
   signal?: AbortSignal;
@@ -128,8 +154,15 @@ export interface AgentSessionLike {
   readonly sessionFile: string | undefined;
   readonly isStreaming: boolean;
   readonly isCompacting: boolean;
+  /** pi ≥ 0.86: false while retries, branch summaries, or queued continuations are pending. */
+  readonly isIdle?: boolean;
   readonly autoCompactionEnabled: boolean;
   readonly autoRetryEnabled: boolean;
+  /** pi ≥ 0.86: current auto-retry attempt, 0 when not retrying. */
+  readonly retryAttempt?: number;
+  /** pi ≥ 0.86: queued-message delivery mode ("all" | "one-at-a-time"). */
+  readonly steeringMode?: string;
+  readonly followUpMode?: string;
   readonly model: ModelLike | undefined;
   readonly modelRuntime: {
     getModel: (provider: string, modelId: string) => ModelLike | undefined;
@@ -137,12 +170,22 @@ export interface AgentSessionLike {
   };
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;
+  /**
+   * The prompt this session would send right now, rendered from its current options.
+   *
+   * Readable before the first run, unlike `agent.state.systemPrompt`, which replays the
+   * transcript and is empty until a run persists a system message. It does not keep the
+   * sections a `before_agent_start` handler changed for a finished run; the replay does.
+   */
+  readonly systemPrompt: string;
   readonly agent: {
     state?: {
       /** Replayed from the transcript's system messages since Pi 0.86; never assign it. */
       readonly systemPrompt?: string;
       thinkingLevel?: string;
       streamingMessage?: PiAgentMessage;
+      /** The declared tools, with the descriptions `prepareLoadout` hooks set for the model. */
+      readonly tools?: readonly { readonly name: string; readonly description: string }[];
     };
   };
   readonly extensionRunner: ExtensionRunnerLike;
@@ -157,7 +200,8 @@ export interface AgentSessionLike {
     images?: Array<{ type: "image"; data: string; mimeType: string }>;
     streamingBehavior?: "steer" | "followUp";
     source?: "interactive" | "rpc";
-    preflightResult?: (success: boolean) => void;
+    /** Called once the SDK accepts the input; a rejected prompt only rejects the returned promise. */
+    preflightResult?: (disposition: "handled" | "queued" | "started") => void;
   }): Promise<void>;
   sendCustomMessage<T = unknown>(message: {
     customType: string;
@@ -169,6 +213,12 @@ export interface AgentSessionLike {
     deliverAs?: "steer" | "followUp" | "nextTurn";
   }): Promise<void>;
   abort(): Promise<void>;
+  /** pi ≥ 0.86: cancel an in-flight auto-retry backoff. */
+  abortRetry?(): void;
+  setSteeringMode?(mode: "all" | "one-at-a-time"): void;
+  setFollowUpMode?(mode: "all" | "one-at-a-time"): void;
+  /** pi ≥ 0.86: thinking levels the current model actually supports. */
+  getAvailableThinkingLevels?(): string[];
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: {
     excludeFromContext?: boolean;
     operations?: BashOperations;
@@ -176,7 +226,11 @@ export interface AgentSessionLike {
   abortBash(): void;
   readonly isBashRunning: boolean;
   setModel(model: ModelLike): Promise<void>;
-  navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult>;
+  navigateTree(targetId: string, options?: NavigateTreeOptions): Promise<NavigateTreeResult>;
+  /** Command-capable context bound to this session, handed to an extension's `withSession()` callback. */
+  createReplacedSessionContext?(): unknown;
+  /** Rebuild the agent's context from the session manager after entries were appended outside a run. */
+  refreshContext?(): void;
   setThinkingLevel(level: string): void;
   compact(customInstructions?: string): Promise<unknown>;
   setSessionName(name: string): void;
@@ -184,8 +238,8 @@ export interface AgentSessionLike {
   getLastAssistantText(): string | undefined;
   setAutoCompactionEnabled(enabled: boolean): void;
   setAutoRetryEnabled(enabled: boolean): void;
-  steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
-  followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
+  steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<"handled" | "queued">;
+  followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<"handled" | "queued">;
   readonly pendingMessageCount: number;
   getSteeringMessages(): readonly string[];
   getFollowUpMessages(): readonly string[];
@@ -194,5 +248,10 @@ export interface AgentSessionLike {
   getActiveToolNames(): string[];
   setActiveToolsByName(names: string[]): void;
   abortCompaction(): void;
+  /** Under a virtual model, the physical model of the latest successful response (pi >= 0.99). */
+  readonly routedModel?: { model: ModelLike; thinkingLevel?: string };
+  readonly cacheWarmingStatus?: NonNullable<CacheWarmingInfo["status"]>;
+  /** Stop a branch summary that `navigateTree({ summarize: true })` is generating. */
+  abortBranchSummary?(): void;
   getContextUsage(): ContextUsage | undefined;
 }

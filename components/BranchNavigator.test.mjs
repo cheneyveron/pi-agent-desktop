@@ -10,7 +10,7 @@ const { BranchNavigator, buildActivePath, compressChain, hasSessionBranches, sel
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n.tsx");
-const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
+const { englishMessages } = await jiti.import("@/lib/i18n/locale-plugins.ts");
 
 const msg = (id, role, text) => ({ type: "message", id, parentId: null, timestamp: "t", message: { role, content: text } });
 const info = (id) => ({ type: "session_info", id, parentId: null, timestamp: "t", name: "x" });
@@ -195,7 +195,7 @@ test("a locked navigator keeps the tree readable but offers no branch to switch 
       locked,
     }),
   ));
-  const lockedNotice = enLocale.messages["i18n.branchesLockedWhileRunning"].replace("'", "&#x27;");
+  const lockedNotice = englishMessages["i18n.branchesLockedWhileRunning"].replace("'", "&#x27;");
 
   const unlocked = render(false);
   assert.match(unlocked, /second answer/);

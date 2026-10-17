@@ -812,7 +812,7 @@ test("keeps a detached viewport in place when streaming completes", () => {
   assert.match(source, /addEventListener\("scroll", handleScrollPositionChange/);
 });
 
-test("auto-compact slash command toggles session auto-compaction", () => {
+test("auto-compact slash command toggles session auto-compaction", async () => {
   const commandSource = source.slice(
     source.indexOf('case "auto-compact"'),
     source.indexOf('case "reload"'),
@@ -826,7 +826,9 @@ test("auto-compact slash command toggles session auto-compaction", () => {
   assert.match(commandSource, /setAutomation\(\(prev\) => \(\{ \.\.\.prev, autoCompactionEnabled: nextEnabled \}\)\)/);
   assert.doesNotMatch(commandSource, /!autoCompactionEnabled/);
   assert.doesNotMatch(source, /setAutoCompactionEnabled/, "a second auto-compaction state drifts from the gear");
-  assert.match(source, /autoCompactionEnabled: state\?\.autoCompactionEnabled \?\? prev\.autoCompactionEnabled/);
+  assert.match(source, /syncAutomation\(state\);/);
+  const automationSource = await jitiSource(new URL("./useSessionAutomation.ts", import.meta.url));
+  assert.match(automationSource, /autoCompactionEnabled: state\?\.autoCompactionEnabled \?\? prev\.autoCompactionEnabled/);
 });
 
 test("keeps the compaction control reachable while a turn is auto-compacting", () => {

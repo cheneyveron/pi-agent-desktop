@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import type { UnavailableWorkspace, WorkspaceAvailability } from "@/lib/workspace-availability";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -26,14 +25,15 @@ const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileEx
 const TerminalPanel = dynamic(() => import("./TerminalPanel").then((m) => m.TerminalPanel), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
-import { SETTINGS_SECTION_ITEMS, SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
+import { SettingsPanel } from "./SettingsPanel";
+import { SettingsEntryMenu, useSettingsEntryMenu } from "./SettingsEntryMenu";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref, setPrefJson } from "@/lib/app-prefs";
+import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref } from "@/lib/app-prefs";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
@@ -47,9 +47,10 @@ import { PRODUCT_NAME } from "@/lib/branding";
 import { isImeComposing } from "@/lib/ime";
 import {
   resolveInitialNavigation,
-  workspaceFileTabsMatchContext,
   type PersistedWorkspace,
 } from "@/lib/workspace-state";
+import { useDesktopWorkspaceTabs } from "@/hooks/useDesktopWorkspaceTabs";
+import { useWorkspaceAvailability } from "@/hooks/useWorkspaceAvailability";
 import { WindowControls, useDesktopChrome, useWindowDrag } from "./desktop";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
@@ -130,7 +131,6 @@ export function AppShell() {
     desktopMode ? getPrefJson<PersistedWorkspace>(APP_PREF_KEYS.workspace) : null
   ));
   const [initialNavigation, setInitialNavigation] = useState(() => resolveInitialNavigation(searchParams, persistedWorkspace));
-  const [workspaceHydrated, setWorkspaceHydrated] = useState(() => !desktopMode);
   // Subscribed for its side effects only: this hook installs the shared theme
   // store's listener for the app's lifetime, so an "auto" preference keeps
   // following OS scheme changes and the resolved palette keeps being mirrored
@@ -248,43 +248,14 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   useNativeContextMenu();
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const [settingsMenuPos, setSettingsMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const settingsMenuRef = useRef<HTMLDivElement>(null);
-  const settingsMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const closeSettingsMenu = useCallback(() => {
-    setSettingsMenuOpen(false);
-    setSettingsMenuPos(null);
-  }, []);
-  useEffect(() => {
-    if (!settingsMenuOpen) return;
-    const handleMouseDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (settingsMenuRef.current?.contains(target)) return;
-      // Clicks on the toggle button fall through to its onClick, which closes.
-      if (settingsMenuButtonRef.current?.contains(target)) return;
-      closeSettingsMenu();
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented && !isImeComposing(event)) closeSettingsMenu();
-    };
-    document.addEventListener("mousedown", handleMouseDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleMouseDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [settingsMenuOpen, closeSettingsMenu]);
+  const settingsEntryMenu = useSettingsEntryMenu(setSettingsSection);
+  const { settingsMenuOpen, settingsMenuButtonRef, closeSettingsMenu, toggleSettingsMenu } = settingsEntryMenu;
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
   const topMoreRef = useRef<HTMLDivElement>(null);
   const topMoreMenuRef = useRef<HTMLDivElement>(null);
   const [topMorePos, setTopMorePos] = useState<{ top: number; right: number } | null>(null);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
-  // "unknown": the probe itself failed, so nothing is blocked on its account.
-  const [workspaceStatus, setWorkspaceStatus] = useState<{ cwd: string; availability: WorkspaceAvailability | "unknown" } | null>(null);
-  const workspaceStatusRef = useRef(workspaceStatus);
-  const [workspaceStatusCheck, setWorkspaceStatusCheck] = useState(0);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<ProjectTrustFailure | null>(null);
@@ -758,7 +729,7 @@ export function AppShell() {
     }
   }, [desktopMode]);
 
-  const { state: connectionState, retry: retryConnection } = useDesktopConnection();
+  const { state: connectionState, retry: retryConnection } = useDesktopConnection(desktopMode);
   const [remoteProjectPickerOpen, setRemoteProjectPickerOpen] = useState(false);
   const [remoteProjectPickerBusy, setRemoteProjectPickerBusy] = useState(false);
   const [remoteProjectPickerError, setRemoteProjectPickerError] = useState<string | null>(null);
@@ -1559,141 +1530,25 @@ export function AppShell() {
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
-  const toggleSettingsMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    if (settingsMenuOpen) {
-      closeSettingsMenu();
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    const openDomMenu = () => {
-      const menuWidth = 184;
-      const menuHeight = 236;
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
-      const below = rect.bottom + 6;
-      const top = below + menuHeight > window.innerHeight - 8
-        ? Math.max(8, rect.top - menuHeight - 6)
-        : below;
-      setSettingsMenuPos({ top, left });
-      setSettingsMenuOpen(true);
-    };
-    // Always the DOM menu, also in the desktop shell: tauri's `menu.popup` command
-    // holds the webview's resource-table lock while the main thread runs the
-    // menu, so one IPC call that needs the lock in that window freezes the app.
-    // Settings is the only way into the panel, so it must not depend on that.
-    openDomMenu();
-  }, [settingsMenuOpen, closeSettingsMenu]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
-  // Reopen the last file tabs after the cold-start session/cwd restore settles.
-  useEffect(() => {
-    if (!desktopMode || !initialSessionRestored || workspaceHydrated) return;
-
-    const cwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
-    const canMatch = workspaceFileTabsMatchContext(
-      persistedWorkspace,
-      selectedSession?.id ?? null,
-      cwd,
-    );
-    const hasSavedTabs = Boolean(persistedWorkspace?.fileTabs?.length);
-
-    // Wait for sidebar auto-select before giving up on tab restore.
-    if (hasSavedTabs && !canMatch && !cwd && !showPlaceholder) return;
-
-    if (canMatch && persistedWorkspace) {
-      const tabs: Tab[] = persistedWorkspace.fileTabs.map((tab) => ({
-        id: `file:${tab.filePath}`,
-        label: tab.label,
-        filePath: tab.filePath,
-        sourceSessionId: tab.sourceSessionId,
-        initialDisplayMode: tab.initialDisplayMode,
-      }));
-      setFileTabs(tabs);
-      const activeId = persistedWorkspace.activeFileTabId;
-      setActiveFileTabId(
-        activeId && tabs.some((tab) => tab.id === activeId)
-          ? activeId
-          : (tabs[0]?.id ?? null),
-      );
-      setRightPanelOpen(Boolean(persistedWorkspace.rightPanelOpen && tabs.length > 0));
-    }
-    setWorkspaceHydrated(true);
-  }, [
+  useDesktopWorkspaceTabs({
+    desktopMode,
     initialSessionRestored,
-    desktopMode,
-    workspaceHydrated,
     persistedWorkspace,
-    selectedSession?.id,
-    selectedSession?.cwd,
-    newSessionCwd,
-    activeCwd,
+    sessionId: selectedSession?.id ?? null,
+    cwd: selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
     showPlaceholder,
-  ]);
-
-  // Persist workspace so the next desktop cold start can restore chat + files.
-  useEffect(() => {
-    if (!desktopMode || !workspaceHydrated) return;
-    setPrefJson(APP_PREF_KEYS.workspace, {
-      sessionId: selectedSession?.id ?? null,
-      cwd: selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
-      fileTabs: fileTabs.map((tab) => ({
-        filePath: tab.filePath,
-        label: tab.label,
-        sourceSessionId: tab.sourceSessionId,
-        initialDisplayMode: tab.initialDisplayMode,
-      })),
-      activeFileTabId,
-      rightPanelOpen,
-    } satisfies PersistedWorkspace);
-  }, [
-    workspaceHydrated,
-    desktopMode,
-    selectedSession?.id,
-    selectedSession?.cwd,
-    newSessionCwd,
-    activeCwd,
     fileTabs,
     activeFileTabId,
     rightPanelOpen,
-  ]);
+    setFileTabs,
+    setActiveFileTabId,
+    setRightPanelOpen,
+  });
 
-  // A workspace deleted outside the app keeps its history, but every cwd-scoped
-  // request then fails and the composer reported it as a model error (#1061).
-  // Probe the folder itself so the chat can say what happened and hold new runs.
-  useEffect(() => {
-    if (!projectTrustCwd) return;
-    const cwd = projectTrustCwd;
-    const controller = new AbortController();
-    fetch(`/api/cwd/status?cwd=${encodeURIComponent(cwd)}`, { signal: controller.signal })
-      .then(async (response) => {
-        const data = await response.json() as { availability?: WorkspaceAvailability };
-        return response.ok && data.availability ? data.availability : "unknown" as const;
-      })
-      .catch((error) => (error instanceof DOMException && error.name === "AbortError" ? null : "unknown" as const))
-      .then((availability) => {
-        if (!availability || controller.signal.aborted) return;
-        const previous = workspaceStatusRef.current;
-        const recovered = availability === "available"
-          && previous?.cwd === cwd
-          && previous.availability !== "available"
-          && previous.availability !== "unknown";
-        workspaceStatusRef.current = { cwd, availability };
-        setWorkspaceStatus({ cwd, availability });
-        // The model list loaded while the folder was gone only holds its error.
-        if (recovered) setModelsRefreshKey((key) => key + 1);
-      });
-    return () => controller.abort();
-  }, [projectTrustCwd, workspaceStatusCheck]);
-
-  const workspaceAvailability = projectTrustCwd && workspaceStatus?.cwd === projectTrustCwd
-    ? workspaceStatus.availability
-    : null;
-  const unavailableWorkspace = useMemo<UnavailableWorkspace | null>(() => (
-    projectTrustCwd && workspaceAvailability && workspaceAvailability !== "available" && workspaceAvailability !== "unknown"
-      ? { cwd: projectTrustCwd, availability: workspaceAvailability }
-      : null
-  ), [projectTrustCwd, workspaceAvailability]);
-  const recheckWorkspace = useCallback(() => setWorkspaceStatusCheck((check) => check + 1), []);
+  const { workspaceAvailability, unavailableWorkspace, recheckWorkspace } = useWorkspaceAvailability(projectTrustCwd, setModelsRefreshKey);
 
   useEffect(() => {
     setProjectTrust(null);
@@ -1819,7 +1674,7 @@ export function AppShell() {
       <button
         ref={settingsMenuButtonRef}
         className="sidebar-chrome-button"
-        onClick={toggleSettingsMenu}
+        onClick={(event) => toggleSettingsMenu(event, Boolean(projectTrustCwd))}
         title={translate("common.settings")}
         aria-label={translate("common.settings")}
         aria-haspopup="menu"
@@ -3120,7 +2975,6 @@ export function AppShell() {
                   ref={fileExplorerRef}
                   cwd={activeCwd}
                   onOpenFile={handleOpenFile}
-                  selectedFilePath={activeFileTab?.filePath ?? null}
                   refreshKey={explorerRefreshKey}
                   onAtMention={handleAtMention}
                   onAtMentions={handleAtMentions}
@@ -3154,37 +3008,7 @@ export function AppShell() {
         onProjectTrustChanged={handleProjectTrustChanged}
       />
     )}
-    {settingsMenuOpen && settingsMenuPos && createPortal(
-      <div
-        ref={settingsMenuRef}
-        className="sidebar-project-context-menu settings-entry-menu native-popover"
-        style={{ top: settingsMenuPos.top, left: settingsMenuPos.left }}
-        role="menu"
-        aria-label={translate("common.settings")}
-      >
-        {SETTINGS_SECTION_ITEMS.map((item) => {
-          const label = translate(item.labelKey);
-          const disabled = item.requiresProject && !projectTrustCwd;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              title={disabled ? translate("settings.projectRequired") : label}
-              onClick={() => {
-                closeSettingsMenu();
-                setSettingsSection(item.id);
-              }}
-            >
-              <SettingsSectionIcon section={item.id} size={14} strokeWidth={2} />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </div>,
-      document.body,
-    )}
+    <SettingsEntryMenu menu={settingsEntryMenu} hasProject={Boolean(projectTrustCwd)} onSelectSection={setSettingsSection} />
     {/* After Settings, so it opens above it (z-index 1100 over 1000) when Settings › MCP asks for it. */}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog

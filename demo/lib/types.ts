@@ -74,6 +74,8 @@ export interface AssistantMessage {
   content: AssistantContentBlock[];
   model: string;
   provider: string;
+  /** The model the provider reports having answered with (e.g. what OpenRouter `auto` resolved to). */
+  responseModel?: string;
   stopReason?: string;
   errorMessage?: string;
   timestamp?: number;
@@ -220,6 +222,40 @@ export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
   | { type: "extension_ui_response"; id: string; cancelled: true };
 
+/** Under a virtual model, the physical model that answered the latest response (pi's footer "auto → …"). */
+export interface RoutedModelInfo {
+  provider: string;
+  id: string;
+  thinkingLevel?: string;
+}
+
+/** pi's prompt-cache warming: the global mode plus the session's next decision, as `/session` shows it. */
+export interface CacheWarmingInfo {
+  mode: "off" | "streaming" | "idle";
+  /** Absent when the session has no cache warmer. */
+  status?: {
+    state: "inactive" | "scheduled" | "refreshing";
+    reason?: string;
+    nextWarmAt?: number;
+    decision?: {
+      phase: "streaming" | "idle";
+      warmCost: number;
+      missCost: number;
+      continuationProbability: number;
+      expectedSavings: number;
+      economicsAvailable: boolean;
+      action: "warm" | "stop";
+    };
+    extensionOverride?: boolean;
+  };
+}
+
+/** How a branch switch treats the branch being left (pi's "Summarize branch?" in /tree). */
+export interface LeafChangeOptions {
+  summarize?: boolean;
+  customInstructions?: string;
+}
+
 export interface ExtensionStatusItem {
   key: string;
   text: string;
@@ -357,7 +393,11 @@ export interface SessionInfo {
   created: string;
   modified: string;
   messageCount: number;
+  /** How many times the session was compacted; absent when never. */
+  compactionCount?: number;
   firstMessage: string;
+  /** Branch checked out in the session's worktree (fork sidebar display). */
+  worktreeBranch?: string;
   /** True while the sidebar has only header/stat metadata for this session. */
   detailsPending?: boolean;
   parentSessionId?: string; // source session for a fork, or parent session for a subagent
@@ -365,6 +405,9 @@ export interface SessionInfo {
    *  UI; only subagent relations form a visible parent/child tree. */
   relation?:
     | { kind: "fork"; originSessionId?: string }
+    /** Output of a scheduled task's run. Attached by /api/sessions from the run
+     *  index, hidden from the project tree and shown under Scheduled instead. */
+    | { kind: "scheduled"; taskId: string; runId: string }
     | {
         kind: "subagent";
         parentSessionId: string;

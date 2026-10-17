@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { isImeComposing } from "@/lib/ime";
 
 interface ImagePreviewProps {
   src: string;
@@ -79,7 +80,7 @@ export function ImagePreview({ src, alt = "", children, className, style }: Imag
             closePreview();
           }}
           onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
+            if (event.key !== "Escape" || isImeComposing(event)) return;
             event.preventDefault();
             event.stopPropagation();
             closePreview();

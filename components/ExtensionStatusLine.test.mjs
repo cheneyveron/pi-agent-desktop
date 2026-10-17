@@ -46,6 +46,7 @@ test("ctx.ui.setStatus reaches the shelf under the composer", () => {
   assert.match(chatWindowSource, /\{hasExtensionStatus && <ExtensionStatusLine statuses=\{extensionStatuses\} \/>\}/);
 });
 
-test("follows a session an extension command moved to", () => {
-  assert.match(hookSource, /case "session_replaced":[\s\S]*?onSessionForked\?\.\(event\.sessionId\)/);
+test("follows a session an extension command moved to", async () => {
+  const forkEventsSource = await readFile(new URL("../hooks/useForkAgentEvents.ts", import.meta.url), "utf8");
+  assert.match(forkEventsSource, /case "session_replaced":[\s\S]*?onSessionForked\?\.\(event\.sessionId\)/);
 });

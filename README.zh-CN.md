@@ -130,7 +130,7 @@ npm run dev
 PI_WEB_PASSWORD='换成足够长的口令' npm run dev:lan
 ```
 
-设置 `PI_WEB_PASSWORD` 后，浏览器首次访问需要输入密码，连续失败会被限流。连接仍是明文 HTTP，请放在 HTTPS 或可信 VPN 之后；如需用 IP 以外的域名访问，用 `PI_WEB_ALLOWED_HOSTS`（逗号分隔）放行。监听非回环地址且未设密码时，启动器会打印警告。桌面 App 不受影响：它只绑定回环地址，并用每进程 token 认证 WebView。
+设置 `PI_WEB_PASSWORD` 后，浏览器首次访问需要输入密码，连续失败会被限流。连接仍是明文 HTTP，请放在 HTTPS 或可信 VPN 之后；如需用 IP 以外的域名访问，用 `PI_WEB_ALLOWED_HOSTS`（逗号分隔）放行。未设密码时，启动器拒绝监听非回环地址；在可信网络上可以设 `PI_WEB_ALLOW_UNAUTHENTICATED=1` 强制启动，启动时会打印警告。桌面 App 不受影响：它只绑定回环地址，并用每进程 token 认证 WebView。
 
 ### 启动桌面开发模式
 

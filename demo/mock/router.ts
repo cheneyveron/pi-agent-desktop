@@ -28,6 +28,9 @@ import { autoTitle } from "./replies";
 import { demoOnlyMessage } from "./unavailable";
 import { settingsRoutes } from "./settings-routes";
 import { attachTerminalStream, terminalRoutes } from "./terminal";
+import { attachScheduledStream, scheduledTasksRoute } from "./scheduled";
+import { mcpRoute } from "./mcp";
+import { settings } from "./settings-state";
 
 type Handler = (request: MockRequest) => Promise<Response> | Response;
 
@@ -186,6 +189,11 @@ async function worktreesRoute(request: MockRequest): Promise<Response> {
 
 async function cwdRoute(request: MockRequest): Promise<Response> {
   const [, , action] = request.segments;
+  if (action === "status") {
+    const cwd = request.query("cwd") ?? "";
+    if (!projectRoot(cwd)) return error("Access denied", 403);
+    return json({ cwd, availability: "available" });
+  }
   if (action === "validate") {
     const body = await request.json<{ cwd?: string }>();
     const raw = (body.cwd ?? "").trim();
@@ -242,6 +250,40 @@ const ROUTES: Record<string, Handler> = {
     return json(await gitStatus(cwd));
   },
   push: () => error("Push notifications are not available in the static demo", 404),
+  "scheduled-tasks": scheduledTasksRoute,
+  mcp: mcpRoute,
+  artifacts: async (request) => {
+    if (request.method === "PUT") {
+      const body = await request.json<{ enabled?: unknown }>();
+      if (typeof body.enabled !== "boolean") return error("enabled must be a boolean", 400);
+      settings.artifactsEnabled = body.enabled;
+    }
+    return json({ enabled: settings.artifactsEnabled });
+  },
+  updates: () => {
+    const version = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
+    const now = Date.now();
+    return json({
+      checkedAt: new Date(now).toISOString(),
+      nextCheckAt: new Date(now + 6 * 60 * 60_000).toISOString(),
+      components: [{
+        project: "pi-agent-desktop",
+        name: "Pi Agent",
+        repository: "abcwyc/pi-agent-desktop",
+        repositoryUrl: "https://github.com/abcwyc/pi-agent-desktop",
+        currentVersion: version,
+        latestVersion: version,
+        releaseUrl: `https://github.com/abcwyc/pi-agent-desktop/releases/tag/v${version}`,
+        updateAvailable: false,
+        releaseStatus: "available",
+      }],
+      updates: [],
+    });
+  },
+  // The demo has no file manager to open; the sidebar shows the remote-only hint.
+  "open-in-explorer": (request) => request.method === "GET"
+    ? json({ supported: false, reason: "remote", platform: "darwin" })
+    : error(demoOnlyMessage(), 403),
   terminal: terminalRoutes,
 };
 
@@ -295,6 +337,9 @@ export function resolveApiStream(url: URL) {
   }
   if (segments[1] === "terminal" && segments[3] === "events") {
     return (source: MockEventSource) => attachTerminalStream(segments[2], source, url);
+  }
+  if (segments[1] === "scheduled-tasks" && segments[2] === "events") {
+    return (source: MockEventSource) => attachScheduledStream(source);
   }
   if (segments[1] === "auth" && segments[2] === "login") {
     return (source: MockEventSource) => {

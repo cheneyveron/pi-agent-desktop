@@ -6,7 +6,7 @@ import { createJiti } from "jiti";
 const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const searchSource = await readFile(new URL("./SessionSearch.tsx", import.meta.url), "utf8");
 const routeSource = await readFile(new URL("../app/api/sessions/search/route.ts", import.meta.url), "utf8");
-const { enLocale } = await createJiti(import.meta.url).import("../lib/i18n/messages/en.ts");
+const { englishMessages } = await createJiti(import.meta.url).import("../lib/i18n/locale-plugins.ts");
 
 // The full-text session search was fully implemented upstream (component + API
 // route) but the fork's rewritten sidebar never mounted it, so the feature sat
@@ -34,7 +34,7 @@ test("the search row confirms content search with Enter, not a mode button", () 
   assert.match(source, /className="sidebar-search-clear"[\s\S]{0,400}?setContentSearch\(false\)/);
   // Discoverability for the hidden gesture: the input itself carries the hint.
   assert.match(source, /title=\{t\("sidebar\.searchAllHint"\)\}/);
-  assert.match(enLocale.messages["sidebar.searchAllHint"], /Enter/);
+  assert.match(englishMessages["sidebar.searchAllHint"], /Enter/);
 });
 
 test("selecting a result carries the entry id so the chat can jump to the match", () => {

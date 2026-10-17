@@ -15,7 +15,7 @@ import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import { fetchWithRetry } from "@/lib/fetch-timeout";
-import { modelScopeWarningKey, type ModelScopeWarning } from "@/lib/model-scope-warnings";
+import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import { rememberScrollPosition, sessionScrollTops } from "@/lib/scroll-memory";
 import {
   deleteSessionViewSnapshot,
@@ -51,6 +51,11 @@ import {
 } from "@/lib/chat-lazy-load";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { useI18n } from "@/hooks/useI18n";
+import { branchSummaryHolds, useBranchSummary } from "@/hooks/useBranchSummary";
+import { compactNoopMessage, useCompactNotice } from "@/hooks/useCompactNotice";
+import { useScopeWarningDismissal } from "@/hooks/useScopeWarningDismissal";
+import { useSessionAutomation, useSessionAutomationActions } from "@/hooks/useSessionAutomation";
+import { useForkAgentEvents, type PendingBash, type SummarizationRetry } from "@/hooks/useForkAgentEvents";
 import {
   INITIAL_STREAMING_STATE,
   streamReducer,
@@ -118,12 +123,7 @@ type AgentStateResponse = {
   followUpMode?: string;
 };
 
-export interface SessionAutomation {
-  autoCompactionEnabled: boolean | null;
-  autoRetryEnabled: boolean | null;
-  steeringMode: string | null;
-  followUpMode: string | null;
-}
+export type { SessionAutomation } from "@/hooks/useSessionAutomation";
 
 export interface QueuedMessages {
   steering: string[];
@@ -137,15 +137,6 @@ function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] 
 type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
 type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 export type NoticeType = "info" | "success" | "warning" | "error";
-
-// pi refuses a manual compact by throwing when there is nothing to fold
-// (`AgentSession.compact()`); that is an answer about the session, not a failure.
-// The RPC reply carries the bare message, `compaction_end` prefixes it with
-// "Compaction failed: " — returns the bare message for a no-op, else null.
-export function compactNoopMessage(message: string): string | null {
-  const bare = message.replace(/^Compaction failed:\s*/, "");
-  return /^(Nothing to compact|Already compacted)\b/.test(bare) ? bare : null;
-}
 
 export type NoticeItem = {
   id: string;
@@ -239,21 +230,12 @@ const AGENT_STATE_RECONCILE_MS = 15_000;
 const BASH_STATE_RECONCILE_MS = 1_000;
 const EVENT_STREAM_READY_TIMEOUT_MS = 60_000;
 const EVENT_STREAM_RECONNECT_DELAY_MS = 1_000;
-// Live `!command` output is buffered client-side for the pending bubble; keep
-// only the tail so a chatty command cannot grow the state unbounded.
-const PENDING_BASH_OUTPUT_CAP = 16_000;
 const SESSION_LEASE_RENEW_INTERVAL_MS = 30_000;
 // Retry temporary model-list failures without requiring a page refresh.
 const MODELS_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const MAX_NOTICES = 5;
 const NOTICE_VISIBLE_MS = 5000;
 const NOTICE_EXIT_ANIMATION_MS = 180;
-// The hook stays mounted across session switches, so a summarized branch switch
-// still running for the previous session must not hold sends or switches in the next.
-function branchSummaryHolds(pendingSessionId: string | null, sessionId: string | null): boolean {
-  return pendingSessionId !== null && pendingSessionId === sessionId;
-}
-
 function createNoticeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -375,37 +357,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [streamState, dispatch] = useReducer(streamReducer, INITIAL_STREAMING_STATE);
   const [agentRunning, setAgentRunning] = useState(false);
   const [bashRunning, setBashRunning] = useState(false);
-  const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean; output: string } | null>(null);
-  // Session automation flags (auto-compaction / auto-retry / queue delivery
-  // modes) mirrored from get_state; null while unknown (new session).
-  const [automation, setAutomation] = useState<SessionAutomation>({
-    autoCompactionEnabled: null,
-    autoRetryEnabled: null,
-    steeringMode: null,
-    followUpMode: null,
-  });
+  const [pendingBash, setPendingBash] = useState<PendingBash | null>(null);
+  const { automation, setAutomation, syncAutomation } = useSessionAutomation();
   // Retry backoff for compaction/branch-summary regeneration (SDK 0.86
   // `summarization_retry_*`): shown next to the compact indicator so a
   // stuck-looking "Compacting…" explains itself.
-  const [summarizationRetry, setSummarizationRetry] = useState<{ attempt: number; maxAttempts: number } | null>(null);
+  const [summarizationRetry, setSummarizationRetry] = useState<SummarizationRetry | null>(null);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelScopeWarnings, setModelScopeWarnings] = useState<ModelScopeWarning[]>([]);
-  // Dismissed scope warnings are keyed per warning and reset on session switch:
-  // dismissal lives for the current conversation only, never persisted.
-  const [dismissedScopeWarningKeys, setDismissedScopeWarningKeys] = useState<ReadonlySet<string>>(() => new Set());
-  const dismissModelScopeWarnings = useCallback(() => {
-    setDismissedScopeWarningKeys((prev) => {
-      const next = new Set(prev);
-      for (const warning of modelScopeWarnings) next.add(modelScopeWarningKey(warning));
-      return next;
-    });
-  }, [modelScopeWarnings]);
-  const visibleModelScopeWarnings = useMemo(
-    () => modelScopeWarnings.filter((warning) => !dismissedScopeWarningKeys.has(modelScopeWarningKey(warning))),
-    [modelScopeWarnings, dismissedScopeWarningKeys],
-  );
+  const { visibleModelScopeWarnings, dismissModelScopeWarnings } = useScopeWarningDismissal(modelScopeWarnings);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(null);
@@ -428,19 +390,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [modelSwitching, setModelSwitching] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
-  // The session whose branch summary is being generated: a summarized switch is one
-  // blocking navigate_tree request that can take as long as an LLM call.
-  const [branchSummarySessionId, setBranchSummarySessionId] = useState<string | null>(null);
-  const branchSummarySessionIdRef = useRef<string | null>(null);
   const [compactError, setCompactError] = useState<string | null>(null);
-  const [compactNotice, setCompactNotice] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
-  const reportCompactFailure = useCallback((message: string) => {
-    const notice = compactNoopMessage(message);
-    if (notice) setCompactNotice(notice);
-    else setCompactError(message);
-    setCompactResult(null);
-  }, []);
+  const { compactNotice, setCompactNotice, reportCompactFailure } = useCompactNotice({ compactError, setCompactError, setCompactResult });
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
   const [promptAnchorActive, setPromptAnchorActive] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -472,7 +424,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // labelling it with whichever preset the resolved tools happen to match.
   const sessionToolsPinnedRef = useRef(false);
   const agentRunningRef = useRef(false);
-  const externalAppendRefreshAtRef = useRef(0);
   const sdkAgentActiveRef = useRef(false);
   const rpcPromptPendingRef = useRef(false);
   const notifiedPromptRunIdRef = useRef(-1);
@@ -681,13 +632,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     setRoutedModel(state?.routedModel ?? null);
     setCacheWarming(state?.cacheWarming ?? null);
-    setAutomation((prev) => ({
-      autoCompactionEnabled: state?.autoCompactionEnabled ?? prev.autoCompactionEnabled,
-      autoRetryEnabled: state?.autoRetryEnabled ?? prev.autoRetryEnabled,
-      steeringMode: state?.steeringMode ?? prev.steeringMode,
-      followUpMode: state?.followUpMode ?? prev.followUpMode,
-    }));
-  }, []);
+    syncAutomation(state);
+  }, [syncAutomation]);
 
   const resolveComposerDraftKey = useCallback((key: string | undefined) => {
     if (!key) return undefined;
@@ -1304,6 +1250,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
   }, []);
 
+  const { branchSummarySessionIdRef, branchSummaryPending, summarizeAndNavigate, handleAbortBranchSummary } = useBranchSummary({
+    sessionId: session?.id ?? null, sessionIdRef, loadSession, addNotice, t,
+  });
+
   const handleExtensionUiRequest = useCallback((request: ExtensionUiRequest) => {
     if (isBlockingExtensionUiRequest(request)) onAttentionNeeded?.(request);
 
@@ -1588,6 +1538,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunningRef.current = agentRunning;
   }, [agentRunning]);
 
+  const { handleForkAgentEvent } = useForkAgentEvents({
+    sessionIdRef, agentRunningRef, bashRunningRef, setPendingBash, setSummarizationRetry, loadSession, onSessionForked,
+  });
+
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
       case "connected": {
@@ -1868,61 +1822,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // countdown takes over via summarization_retry_scheduled.
         if (!event.willRetry) setSummarizationRetry(null);
         break;
-      case "summarization_retry_scheduled":
-        setSummarizationRetry({
-          attempt: event.attempt as number,
-          maxAttempts: event.maxAttempts as number,
-        });
-        break;
-      case "summarization_retry_attempt_start":
-        // The scheduled counter already shows; the attempt itself is covered
-        // by the compact indicator staying in its post-start visual state.
-        break;
-      case "summarization_retry_finished":
-        setSummarizationRetry(null);
-        break;
-      case "bash_execution_update": {
-        if (!bashRunningRef.current) break;
-        const delta = typeof event.delta === "string" ? event.delta : "";
-        if (!delta) break;
-        setPendingBash((prev) => prev
-          ? { ...prev, output: (prev.output + delta).slice(-PENDING_BASH_OUTPUT_CAP) }
-          : prev);
-        break;
-      }
       case "thinking_level_changed":
         setLiveThinkingLevel(asConcreteThinkingLevel(event.level as string));
         break;
-      case "session_info_changed":
-        // Renames from other windows/extensions arrive here; the server bumps
-        // sessionListVersion on this event, so the sidebar refreshes itself.
-        break;
-      case "entry_appended": {
-        // Entries appended outside a run (extension custom entries, cache
-        // warming) — refresh the transcript, throttled, when idle.
-        const sid = sessionIdRef.current;
-        if (!sid || agentRunningRef.current || bashRunningRef.current) break;
-        const now = Date.now();
-        if (now - externalAppendRefreshAtRef.current < 2000) break;
-        externalAppendRefreshAtRef.current = now;
-        loadSession(sid);
-        break;
-      }
       case "extension_ui_request":
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
       case "extension_ui_closed":
         setExtensionDialogs((queue) => removeExtensionUiRequest(queue, event.id as string));
         break;
-      case "session_replaced":
-        // An extension command called ctx.newSession / fork / switchSession: the
-        // server already created (or resolved) the target, so follow it like a fork.
-        if (typeof event.sessionId === "string" && event.sessionId !== sessionIdRef.current) {
-          onSessionForked?.(event.sessionId);
-        }
+      default:
+        handleForkAgentEvent(event);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, onSessionForked, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel]);
+  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, handleForkAgentEvent, loadSession, notifyPromptStage, onAgentEnd, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, setCompactNotice, settleUiStage, syncLiveModel]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -2056,7 +1969,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit]);
+  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit, branchSummarySessionIdRef]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -2108,57 +2021,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
-  /** Cancel an auto-retry backoff (0.86) without stopping the whole session. */
-  const handleAbortRetry = useCallback(async () => {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      await sendAgentCommand(sid, { type: "abort_retry" });
-    } catch (e) {
-      console.error("Failed to abort retry:", e);
-    }
-  }, []);
-
-  /** Toggle auto-compaction / auto-retry / queue delivery modes on the live session. */
-  const handleSetAutomation = useCallback(async (change: {
-    autoCompaction?: boolean;
-    autoRetry?: boolean;
-    steeringMode?: "all" | "one-at-a-time";
-    followUpMode?: "all" | "one-at-a-time";
-  }) => {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    // Optimistic: revert if the command fails.
-    setAutomation((prev) => ({
-      autoCompactionEnabled: change.autoCompaction ?? prev.autoCompactionEnabled,
-      autoRetryEnabled: change.autoRetry ?? prev.autoRetryEnabled,
-      steeringMode: change.steeringMode ?? prev.steeringMode,
-      followUpMode: change.followUpMode ?? prev.followUpMode,
-    }));
-    try {
-      if (change.autoCompaction !== undefined) {
-        await sendAgentCommand(sid, { type: "set_auto_compaction", enabled: change.autoCompaction });
-      }
-      if (change.autoRetry !== undefined) {
-        await sendAgentCommand(sid, { type: "set_auto_retry", enabled: change.autoRetry });
-      }
-      if (change.steeringMode !== undefined) {
-        await sendAgentCommand(sid, { type: "set_steering_mode", mode: change.steeringMode });
-      }
-      if (change.followUpMode !== undefined) {
-        await sendAgentCommand(sid, { type: "set_follow_up_mode", mode: change.followUpMode });
-      }
-    } catch (e) {
-      console.error("Failed to apply automation setting:", e);
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-      // Re-sync from the server's actual state.
-      try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
-        const d = await res.json() as { state?: AgentStateResponse };
-        syncLiveModel(d.state);
-      } catch { /* leave optimistic value; next reconcile fixes it */ }
-    }
-  }, [addNotice, syncLiveModel]);
+  const { handleAbortRetry, handleSetAutomation } = useSessionAutomationActions<AgentStateResponse>({
+    sessionIdRef, setAutomation, addNotice, resync: syncLiveModel,
+  });
 
   const handleFork = useCallback(async (entryId: string) => {
     if (bashRunningRef.current) return;
@@ -2202,46 +2067,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, loadSession, t]);
   handleNavigateRef.current = handleNavigate;
 
-  // A summarized switch cannot switch the view first: pi writes the summary as the new
-  // leaf, so the transcript to show only exists once the request returns.
-  const summarizeAndNavigate = useCallback(async (leafId: string, customInstructions?: string) => {
-    const sid = sessionIdRef.current;
-    if (!sid || branchSummarySessionIdRef.current) return;
-    branchSummarySessionIdRef.current = sid;
-    setBranchSummarySessionId(sid);
-    try {
-      const result = await sendAgentCommand<{ cancelled?: boolean; aborted?: boolean }>(sid, {
-        type: "navigate_tree",
-        targetId: leafId,
-        summarize: true,
-        ...(customInstructions ? { customInstructions } : {}),
-      });
-      if (sessionIdRef.current !== sid) return;
-      if (result?.aborted) {
-        addNotice({ type: "info", message: t("chat.branchSummaryStopped") });
-      } else if (result?.cancelled) {
-        addNotice({ type: "info", message: t("chat.branchSwitchCancelled") });
-      } else {
-        await loadSession(sid);
-      }
-    } catch (e) {
-      if (sessionIdRef.current === sid) {
-        addNotice({ type: "error", message: t("chat.branchSummaryFailed", { error: e instanceof Error ? e.message : String(e) }) });
-      }
-    } finally {
-      branchSummarySessionIdRef.current = null;
-      setBranchSummarySessionId(null);
-    }
-  }, [addNotice, loadSession, t]);
-
-  const handleAbortBranchSummary = useCallback(() => {
-    const sid = branchSummarySessionIdRef.current;
-    if (!sid) return;
-    sendAgentCommand(sid, { type: "abort_branch_summary" }).catch((e) => {
-      console.error("Failed to stop the branch summary:", e);
-    });
-  }, []);
-
   const handleLeafChange = useCallback(async (leafId: string | null, options?: LeafChangeOptions) => {
     // pi refuses navigate_tree mid-run: it moves the one leaf the running agent
     // appends to. Switching only the view would render the live run under
@@ -2263,7 +2088,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         addNotice({ type: "error", message: t("chat.navigateFailed", { error: e instanceof Error ? e.message : String(e) }) });
       });
     }
-  }, [addNotice, isCompacting, loadContext, summarizeAndNavigate, t]);
+  }, [addNotice, branchSummarySessionIdRef, isCompacting, loadContext, summarizeAndNavigate, t]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
     if (isNew) {
@@ -2336,7 +2161,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       setIsCompacting(false);
     }
-  }, [isCompacting, loadSession, reportCompactFailure]);
+  }, [isCompacting, loadSession, reportCompactFailure, setCompactNotice]);
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
@@ -2585,7 +2410,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (commandName === "compact") setIsCompacting(false);
     }
-  }, [activeLeafId, addNotice, reportCompactFailure, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onOpenSettings, onSessionForked, onSessionStatsPanelOpen, slashCommandsForMcp]);
+  }, [activeLeafId, addNotice, reportCompactFailure, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onOpenSettings, onSessionForked, onSessionStatsPanelOpen, slashCommandsForMcp, setAutomation, setCompactNotice]);
 
   // Let AgentSession.prompt decide atomically whether to queue against the
   // current run or start a new turn if it settled while the request was in
@@ -2957,7 +2782,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => onSystemInfoLoaderChange?.(null);
   }, [loadSystemInfoFor, onSystemInfoLoaderChange]);
 
-  const branchSummaryPending = branchSummaryHolds(branchSummarySessionId, session?.id ?? null);
   const branchSwitchLocked = agentRunning || bashRunning || isCompacting || branchSummaryPending;
   useEffect(() => {
     if (!onBranchDataChange) return;
@@ -3037,20 +2861,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const t = setTimeout(() => setCompactResult(null), 6000);
     return () => clearTimeout(t);
   }, [compactResult]);
-
-  // A failed compaction is a one-off answer to the last attempt, not a standing
-  // state: without this the banner stayed above the composer until the next compact.
-  useEffect(() => {
-    if (!compactError) return;
-    const t = setTimeout(() => setCompactError(null), 8000);
-    return () => clearTimeout(t);
-  }, [compactError]);
-
-  useEffect(() => {
-    if (!compactNotice) return;
-    const t = setTimeout(() => setCompactNotice(null), 6000);
-    return () => clearTimeout(t);
-  }, [compactNotice]);
 
   // Pause notice expiry while hovered or focused.
   // The remainingMs/startedAt/oldestId refs implement a true pause-and-resume instead of resetting the 5s timer.

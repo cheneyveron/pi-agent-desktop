@@ -17,12 +17,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "cwd required" }, { status: 400 });
     }
     const cwd = resolve(body.cwd);
-    if (!(await stat(cwd)).isDirectory()) {
-      return NextResponse.json({ error: "cwd must be a directory" }, { status: 400 });
-    }
+    // Authorize before stat: answering "not a directory" or ENOENT for a path
+    // outside the allowed roots would tell the caller what exists there.
     const roots = await getAllowedFileRoots();
     if (!isExistingFilePathAllowed(cwd, roots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    if (!(await stat(cwd)).isDirectory()) {
+      return NextResponse.json({ error: "cwd must be a directory" }, { status: 400 });
     }
     const id = createTerminal(
       cwd,

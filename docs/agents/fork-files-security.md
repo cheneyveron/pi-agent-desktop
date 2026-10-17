@@ -1,0 +1,29 @@
+# Files, worktrees and security — fork notes
+
+Fork-owned notes moved out of `AGENTS.md` to keep it short. The upstream doc on the same topic (`docs/agents/*.md` without the `fork-` prefix) may describe the same area in other words; where they disagree, these notes describe this fork. Hard rules that must survive a merge are also listed in `AGENTS.md` under **Hard rules**.
+
+## Security posture from the upstream main merge
+- `PI_WEB_PASSWORD` (off by default) enables browser password login with `pi_web_session` cookie (SameSite=Lax) and global backoff throttling (`lib/auth-throttle.ts`). When disabled, loopback/desktop-token paths behave exactly as before — desktop token auth is independent.
+- Manual-code OAuth handshake tokens are `crypto.randomUUID()`; never revert to Math.random.
+- Inline SVG previews opened as documents get a CSP that blocks script execution (`HTML_PREVIEW_CSP` in the files route).
+- Local HTML previews have two modes (`FileViewer` TextFileViewer). Default: the file is loaded from `/api/files/...?type=serve` in an iframe with `sandbox="allow-same-origin"` and no `allow-scripts`, so relative CSS/images/fonts resolve through the untyped-request fallback while `HTML_PREVIEW_CSP` and the sandbox block script. Opt-in "Run scripts" (shown only when the page has `<script>`): `srcDoc` with `sandbox="allow-scripts"` — an opaque origin, so its scripts cannot call the API, and local relative files do not load. Never give one iframe both `allow-scripts` and `allow-same-origin`; `app/api/files/stream-route.test.mjs` pins this, and that `getServeMime` keeps `SERVE_EXT_TO_MIME` (a merge once dropped it and HTML was served as `application/octet-stream`).
+
+## Worktrees and project grouping
+- `lib/worktree.ts` resolves linked worktree top-levels back to the main repo `projectRoot`; `listAllSessions()` attaches that to each `SessionInfo` so all worktrees for one repo are grouped together in the sidebar.
+- Worktree operations are served by `/api/worktrees` and guarded by the same allowed-root rules as `/api/files`.
+- New worktrees are created under `<repoRoot>-worktrees/<sanitized-branch>`. Existing branches are reused; otherwise `git worktree add -b` creates the branch.
+- Removing a dirty worktree returns `409` with `{ dirty: true }` so the UI can ask before retrying with `force`.
+- Sessions whose cwd points at a removed worktree are inferred back into the main project instead of becoming a phantom project row.
+- Worktrees are managed from the project row's "…" menu (`components/ProjectContextMenu.tsx`, state in `hooks/useProjectWorktreeActions.ts`): a Worktrees page (switch, remove with a confirm that escalates to force on `409 { dirty: true }`, New worktree… with a branch name) and the Switch branch page led by "Fetch from remote". The desktop shell shows both as native popups; typing a branch name, confirming a removal and showing a git error open the DOM menu at the same point (`openDomProjectMenu`). The old hidden header dropdown (`showLegacyHeaderProjectRows`, `WorktreeBranchList`) was removed in favour of this menu.
+- Switch branch changes the *current* checkout's branch in place: `PUT /api/worktrees { cwd, branch }` → `switchBranch()` (local branch, or `checkout -b --track` when the name exists on exactly one remote). Branch names are validated to not start with `-` — they are passed as git argv, never through a shell. `POST /api/worktrees/fetch` runs `git fetch --prune` (with `GIT_TERMINAL_PROMPT=0` so it fails fast instead of hanging on a credential prompt) and returns fresh local/remote-only branch lists.
+- The sidebar worktree state is event-driven by nature (agent end, cwd switch) — branches checked out *outside* pi would go stale. `SessionSidebar` therefore polls `/api/worktrees` every 10 s while the tab is visible and on window focus; the project menu reads its lists fresh each time a page opens.
+- A branch already checked out in another worktree cannot be checked out again (git refuses); picking it under Switch branch jumps to that worktree instead.
+
+## File access allow-list
+- `/api/files` is intentionally not a general filesystem browser. Allowed roots come from session cwds, their resolved project roots, `~/pi-cwd-*`, and roots explicitly added with `allowFileRoot()`.
+- `/api/cwd/validate`, `/api/default-cwd`, and `/api/worktrees` call `allowFileRoot()` when they make a new location browsable.
+
+## Web password throttling
+- `lib/auth-throttle.ts` is deliberately global, not per-IP: Next 16 route handlers have no socket address and `x-forwarded-for` is spoofable, while the server binds `127.0.0.1` for a single operator. Failures double the delay (1s → 60s cap) for everyone; a success or 5 idle minutes resets it. The reset window must stay longer than the max delay or waiting out one block restarts the burst.
+- State lives on `globalThis` under `Symbol.for("pi-web:auth-throttle")` so it survives hot reload and is shared by every module instance. Tests reset it with `recordAuthSuccess()`.
+- `POST /api/web-auth` and every `Authorization: Basic` header on `/api/*` share the counter; `proxy.ts` checks Basic before its `/api/web-auth` exemption, so `GET /api/web-auth` is not an unthrottled password oracle. A valid session cookie is checked first and is never blocked. While blocked, Basic gets `429` even with the right password (otherwise the answer leaks), and a Basic success does not reset the counter: Basic clients authenticate on every request, so a reset would restart an interleaved guesser at the base delay. The proxy and route handlers share the `globalThis` state under both `next dev` and `next start` (checked by failing one and observing `429` on the other).

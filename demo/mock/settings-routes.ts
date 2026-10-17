@@ -4,6 +4,7 @@
  * anything that would install software or contact a provider is refused with
  * a demo notice.
  */
+import nonChatCatalog from "./captured/nonchat-models.json";
 import skillsResponse from "./captured/skills.json";
 import subagentProfilesResponse from "./captured/subagent-profiles.json";
 import type { MockRequest } from "./http";
@@ -21,6 +22,8 @@ const enabledView: EnabledView = structuredClone(ENABLED_MODELS_RESPONSE);
 const authState = structuredClone(AUTH_PROVIDERS_RESPONSE);
 let modelsConfig = structuredClone(MODELS_CONFIG);
 const skillsState = structuredClone(skillsResponse);
+/** Defaults saved from the model selector's star; new chats start with them. */
+const defaults = { defaultModel: MODELS_RESPONSE.defaultModel, defaultThinkingLevel: MODELS_RESPONSE.defaultThinkingLevel as string };
 const profilesState = structuredClone(subagentProfilesResponse) as { profiles: Array<Record<string, unknown> & { name: string; scope: string; enabled?: boolean }> };
 
 function isProviderLoggedIn(providerId: string): boolean {
@@ -58,6 +61,7 @@ export function visibleModels() {
   const modelList = MODELS_RESPONSE.modelList.filter((model) => enabled.has(`${model.provider}/${model.id}`));
   return {
     ...MODELS_RESPONSE,
+    ...defaults,
     modelList,
     models: Object.fromEntries(Object.entries(MODELS_RESPONSE.models).filter(([key]) => enabled.has(key.replace(":", "/")))),
   };
@@ -78,6 +82,17 @@ function setEnabled(refs: Set<string>, enabled: boolean): Response | null {
 async function modelsRoute(request: MockRequest): Promise<Response> {
   const sub = request.segments[2];
   if (!sub) return json(visibleModels());
+  if (sub === "nonchat") return json(nonChatModels());
+  if (sub === "default") {
+    const body = await request.json<{ provider?: string; modelId?: string; thinkingLevel?: string }>();
+    if (body.provider && body.modelId) defaults.defaultModel = { provider: body.provider, modelId: body.modelId };
+    if (body.thinkingLevel) defaults.defaultThinkingLevel = body.thinkingLevel;
+    return json({
+      ok: true,
+      ...(body.provider && body.modelId ? { defaultModel: defaults.defaultModel } : {}),
+      ...(body.thinkingLevel ? { defaultThinkingLevel: body.thinkingLevel } : {}),
+    });
+  }
   if (sub === "refresh") {
     await delay(1200);
     return json({ completed: true, changed: false });
@@ -282,6 +297,25 @@ async function subagentsRoute(request: MockRequest): Promise<Response> {
   return error("Not found", 404);
 }
 
+function toolSettings() {
+  return {
+    isWindows: false,
+    powerShellEnabled: settings.powerShellEnabled,
+    codemode: settings.codemode,
+    codemodeMode: { value: settings.codemodeMode },
+    codemodeInlineBudget: settings.codemodeInlineBudget === undefined ? {} : { value: settings.codemodeInlineBudget },
+  };
+}
+
+/** Classifier and image models from pi's built-in catalog; none of their providers is signed in here. */
+function nonChatModels() {
+  const signedIn = (provider: string) => isProviderLoggedIn(provider);
+  const mark = <T extends { provider: string }>(models: T[]) =>
+    models.map((model) => ({ ...model, available: signedIn(model.provider) }))
+      .sort((a, b) => Number(b.available) - Number(a.available));
+  return { classifier: mark(nonChatCatalog.classifier), image: mark(nonChatCatalog.image), codemode: settings.codemode };
+}
+
 export async function settingsRoutes(request: MockRequest): Promise<Response> {
   switch (request.segments[1]) {
     case "models": return modelsRoute(request);
@@ -296,8 +330,15 @@ export async function settingsRoutes(request: MockRequest): Promise<Response> {
     case "plugins": return pluginsRoute(request);
     case "subagents": return subagentsRoute(request);
     case "tools": {
-      if (request.method === "PUT") return error("PowerShell tool settings are only available on Windows", 404);
-      return json({ isWindows: false, powerShellEnabled: settings.powerShellEnabled });
+      if (request.method === "PUT") {
+        const body = await request.json<{ enabled?: boolean; codemode?: unknown; codemodeMode?: unknown; codemodeInlineBudget?: unknown }>();
+        if ("codemode" in body && (body.codemode === "automatic" || body.codemode === "always")) settings.codemode = body.codemode;
+        else if ("codemodeMode" in body && (body.codemodeMode === "on" || body.codemodeMode === "only")) settings.codemodeMode = body.codemodeMode;
+        else if ("codemodeInlineBudget" in body && (body.codemodeInlineBudget === null || typeof body.codemodeInlineBudget === "number")) {
+          settings.codemodeInlineBudget = body.codemodeInlineBudget ?? undefined;
+        } else return error("PowerShell tool settings are only available on Windows", 404);
+      }
+      return json(toolSettings());
     }
     case "web-auth":
       return request.method === "GET" ? json({ enabled: false, authenticated: true }) : json({ ok: true });

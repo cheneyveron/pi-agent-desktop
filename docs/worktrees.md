@@ -2,21 +2,15 @@
 
 Pi Web can show all Git worktrees for one project in the sidebar. Use this when you want to keep separate checkouts for different branches, while keeping the project's sessions grouped together.
 
-## When the Worktree Control Appears
+## Where the Worktree Controls Are
 
-The worktree switcher appears below the project picker when the selected directory is a Git repository root.
+Worktrees are managed from a project's `…` menu in the sidebar's project tree. Choose `Worktrees…` to see the project's checkouts; in the desktop app this is a native menu, in the browser a small menu page.
 
-It is hidden when:
-
-- The selected directory is not a Git repository.
-- The selected directory is inside a repository, but not the repository root.
-- Git cannot read the repository's worktree list.
-
-If you are inside a repo subdirectory, open the repository root from the project picker to manage worktrees.
+For a folder that is not a Git repository the page says so instead of listing worktrees.
 
 ## Switching Worktrees
 
-Use the worktree switcher to choose which checkout Pi Web should use for new work in that project.
+Pick a checkout under `Worktrees…` to choose which one Pi Web should use for new work in that project. The current one carries a check mark.
 
 Switching worktrees affects:
 
@@ -28,7 +22,7 @@ Existing sessions stay grouped under the same project. Opening an existing sessi
 
 ## Creating a Worktree
 
-Choose `New worktree...` from the worktree menu and enter a branch name.
+Choose `New worktree…` under `Worktrees…` and enter a branch name (local branches are suggested). In the desktop app this step opens the small menu page, since a native menu cannot take text.
 
 Pi Web creates the checkout at:
 
@@ -52,7 +46,7 @@ If the branch already exists, Pi Web adds a worktree for that branch. If it does
 
 ## Removing a Worktree
 
-Use the remove button next to a non-main worktree to remove that checkout.
+Use the remove button next to a non-main worktree under `Worktrees…` (in the desktop app, `Remove worktree` in that menu) and confirm.
 
 Removing a worktree does not delete:
 
@@ -74,14 +68,17 @@ Each session still remembers the working directory it was created with. That mea
 
 ## Troubleshooting
 
-**I do not see the worktree switcher.**
-Select a Git repository root. Non-Git directories and repo subdirectories show a small hint instead of the switcher.
+**I do not see my worktrees.**
+Open the `…` menu of the project's row and choose `Worktrees…`. A folder that is not a Git repository shows a hint instead of a list.
+
+**A branch pushed elsewhere is missing.**
+Under `Switch branch`, choose `Fetch from remote` first; it runs `git fetch --prune` and refreshes the list.
 
 **A branch cannot be added as a worktree.**
 Git allows a branch to be checked out in only one worktree at a time. Switch to the existing worktree for that branch, or remove it first.
 
 **A removed worktree still shows up in Git.**
-Git can keep prunable worktree records after a checkout disappears. Pi Web filters those out of the switcher.
+Git can keep prunable worktree records after a checkout disappears. Pi Web filters those out of the worktree list.
 
 **The Explorer shows a different branch than the open chat.**
 The Explorer follows the selected worktree. The chat follows the opened session. Click the session again to move the sidebar back to that session's checkout.

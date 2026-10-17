@@ -16,51 +16,109 @@ export function registerAbortHandler(handler: (() => void) | null): void {
   globalAbortHandler = handler;
 }
 
+/**
+ * The global Esc shortcut: stops the running agent, unless the key belongs to
+ * something else. Typed into a textarea or input, it is that field's (ChatInput
+ * has its own Esc logic). Marked handled already (`defaultPrevented`), it was
+ * something nearer's: Settings, a menu or a viewer that closed on it. Those
+ * listen on `document` or below and run before this one on `window`, and
+ * closing them must not stop a run as well. Returns whether it stopped the
+ * agent.
+ */
+export function handleGlobalEscape(event: KeyboardEvent): boolean {
+  if (event.key !== "Escape" || event.defaultPrevented || !globalAbortHandler) return false;
+
+  const tag = (event.target as HTMLElement | null)?.tagName;
+  // Let textarea/input handle Esc internally (ChatInput menus / stop).
+  if (tag === "TEXTAREA" || tag === "INPUT") return false;
+
+  event.preventDefault();
+  globalAbortHandler();
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Hook: global keyboard shortcuts
 // ---------------------------------------------------------------------------
 
 interface UseGlobalKeyboardShortcutsOptions {
-  /** Called when Ctrl+Alt+N is pressed. Receives current cwd. */
+  /** Called when ⌘N (macOS) / Ctrl+N is pressed. Receives current cwd. */
   onNewSession?: (cwd: string) => void;
   /** The currently selected project directory (sidebar cwd). */
   activeCwd?: string | null;
+  /** Called by \\ to close the preview panel and return focus to the composer. */
+  onCloseRightPanel?: () => void;
+  /** Called by ⌘, (macOS) / Ctrl+, to open Settings. */
+  onOpenSettings?: () => void;
+}
+
+/**
+ * ⌘, / Ctrl+, opens Settings, the shortcut every desktop app's preferences use.
+ * The macOS menu bar already binds ⌘, (src-tauri/src/shell/macos_menu.rs); this
+ * covers Windows, Linux and the browser. Returns whether it took the key.
+ */
+export function handleOpenSettingsShortcut(event: KeyboardEvent, onOpenSettings: (() => void) | undefined): boolean {
+  if (event.key !== "," || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return false;
+  if (event.defaultPrevented || !onOpenSettings) return false;
+  event.preventDefault();
+  onOpenSettings();
+  return true;
 }
 
 /**
  * Register global keyboard shortcuts for the application.
  *
  * Shortcuts handled here:
- *   Esc          – stop the running agent (via module-level abort handler)
- *   Ctrl+Alt+N   – create a new session in the active project directory
+ *   Esc              – stop the running agent (via module-level abort handler)
+ *   ⌘N / Ctrl+N      – create a new session in the active project directory
+ *                      (Ctrl+Alt+N still works for backwards familiarity)
+ *   ⌘, / Ctrl+,      – open Settings at the last section
  *
  * Note: Esc inside <textarea> or <input> is deliberately NOT handled here.
  * ChatInput manages its own Esc logic (closing slash / @ file menus, stopping
  * the agent when no menu is open) because it needs intimate knowledge of menu
- * state that is local to that component.
+ * state that is local to that component. Nor is an Esc something nearer
+ * already handled (see `handleGlobalEscape()`).
  */
 export function useGlobalKeyboardShortcuts(
   options: UseGlobalKeyboardShortcutsOptions,
 ): void {
-  const { onNewSession, activeCwd } = options;
+  const { onNewSession, activeCwd, onCloseRightPanel, onOpenSettings } = options;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
       // ---- Esc: stop agent ----
       if (e.key === "Escape") {
-        if (!globalAbortHandler) return;
-
-        const tag = (e.target as HTMLElement)?.tagName;
-        // Let textarea/input handle Esc internally (ChatInput menus / stop).
-        if (tag === "TEXTAREA" || tag === "INPUT") return;
-
-        e.preventDefault();
-        globalAbortHandler();
+        handleGlobalEscape(e);
         return;
       }
 
-      // ---- Ctrl+Alt+N: new session ----
-      if (e.key === "n" && e.ctrlKey && e.altKey) {
+      // ---- \: hide the floating preview and go back to the conversation ----
+      if (
+        e.key === "\\"
+        && !e.metaKey
+        && !e.ctrlKey
+        && !e.altKey
+        && !e.shiftKey
+        && !e.defaultPrevented
+        && onCloseRightPanel
+      ) {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        const composing = target?.isContentEditable;
+        const insideComposer = Boolean(target?.closest?.(".chat-input-shell"));
+        if (!insideComposer && !composing && tag !== "TEXTAREA" && tag !== "INPUT" && tag !== "SELECT") {
+          e.preventDefault();
+          onCloseRightPanel();
+        }
+      }
+
+      if (handleOpenSettingsShortcut(e, onOpenSettings)) return;
+
+      // ---- ⌘N / Ctrl+N: new session ----
+      // Note: regular browsers reserve ⌘N/Ctrl+N for "new window"; this works
+      // in the desktop (Tauri) build where the page receives the event.
+      if (e.key.toLowerCase() === "n" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         if (!activeCwd || !onNewSession) return;
         e.preventDefault();
         onNewSession(activeCwd);
@@ -69,5 +127,5 @@ export function useGlobalKeyboardShortcuts(
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeCwd, onNewSession]);
+  }, [activeCwd, onNewSession, onCloseRightPanel, onOpenSettings]);
 }

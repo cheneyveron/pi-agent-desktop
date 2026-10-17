@@ -37,13 +37,6 @@
       "structuralDrift": 1741,
       "disposition": "accepted"
     },
-    "components/FileViewer.tsx": {
-      "risk": "high",
-      "drift": 549,
-      "reason": "Adds FileViewerToolbar and FileViewerStatus, file icons, a live-sync indicator and a retry action. Both components are defined inside FileViewer.tsx rather than moved out, so there is no cross-file resurrection risk \u2014 only a large diff. Kept deliberately.",
-      "structuralDrift": 420,
-      "disposition": "accepted"
-    },
     "components/FileExplorer.tsx": {
       "risk": "medium",
       "drift": 67,
@@ -204,6 +197,22 @@
     "components/UpdateReminder.tsx",
     "components/AppUpdatesSection.tsx",
     "components/path-ui.tsx",
+    "hooks/useBranchSummary.ts",
+    "hooks/useSessionAutomation.ts",
+    "hooks/useCompactNotice.ts",
+    "hooks/useScopeWarningDismissal.ts",
+    "hooks/useForkAgentEvents.ts",
+    "hooks/useSessionMentionPalette.ts",
+    "components/SessionMentionMenu.tsx",
+    "components/SessionAutomationMenu.tsx",
+    "components/ComposerProjectChip.tsx",
+    "hooks/useDesktopWorkspaceTabs.ts",
+    "hooks/useWorkspaceAvailability.ts",
+    "components/SettingsEntryMenu.tsx",
+    "components/ProjectContextMenu.tsx",
+    "hooks/useProjectWorktreeActions.ts",
+    "lib/session-replacement.ts",
+    "lib/i18n/locale-plugins.ts",
     "components/fork-extractions.test.mjs",
     "lib/branding.ts",
     "lib/branding.test.mjs",
@@ -235,6 +244,8 @@
     "2026-09-26 \u2014 components/ChatWindow.tsx: the empty-session branding header upstream renders above the composer (app icon + product name + version badge) is removed entirely rather than rebranded; the row now carries only NewSessionUpdateLink, which self-hides, so the row keeps no margin of its own. This is a deletion, not a move, so it needed a new sentinel direction: FORK_FEATURES entries gained `forbiddenMarkers` in components/fork-extractions.test.mjs, pinning apple-touch-icon and PRODUCT_NAME out of ChatWindow.tsx. A merge that re-adopts upstream's empty state now fails that test instead of silently restoring the branding.",
     "2026-09-26 \u2014 app/globals.css and app/settings.css restored to byte-identical with upstream 96966e5: ~470 + ~220 fork lines that had accumulated in them despite the rule moved to a 'fork base layer' at the top of app/native-theme.css (cascade verified unchanged by a computed-style comparison). scripts/upstream-css-baseline.test.mjs now pins both files to hashes in scripts/upstream-css-baseline.json; the sync workflow refreshes them after a merge with `node scripts/upstream-css-baseline.mjs update`, which refuses when either file differs from upstream. Design intent recorded in docs/native-theme.md.",
     "2026-10-04 \u2014 baseline moved 96966e5 -> 6fcd7d4. Segment G (c5a70eb) was a single-parent commit, so git never recorded 6fcd7d4 as merged: merge-base stayed at 96966e5, `npm run drift` reported structural 18077 instead of 9959, and a merge of the upstream tag would have replayed the whole range (39 conflicts in a dry run). An `-s ours` merge now records the ancestry without touching the tree. Risk levels re-measured: lib/file-access.ts low->medium, lib/directory-browser.ts and components/FileExplorer.tsx medium->low; components/FileIcons.tsx no longer differs from upstream and its entry is removed.",
-    "2026-10-09 \u2014 merged abcwyc/pi-agent-desktop main@f59e0b1: desktop materials, typography, composer controls and file context menus adopted. Remote backend management, scheduled tasks, browser downloads and the fork release identity/version are preserved. The pi-web drift baseline remains 6fcd7d4; store it as a valid Git ref so npm run drift works without a pi-web-upstream remote."
+    "2026-10-09 \u2014 merged abcwyc/pi-agent-desktop main@f59e0b1: desktop materials, typography, composer controls and file context menus adopted. Remote backend management, scheduled tasks, browser downloads and the fork release identity/version are preserved. The pi-web drift baseline remains 6fcd7d4; store it as a valid Git ref so npm run drift works without a pi-web-upstream remote.",
+    "2026-10-17 \u2014 components/FileViewer.tsx: removed the dead FileViewerStatus component. No runtime path used it, so the file retains the toolbar while matching the behavior upstream owns.",
+    "2026-10-17 \u2014 lib/i18n/messages/{en,zh-CN,zh-TW}.ts: restored to upstream shape; fork additions, replacements, and deliberate deletions moved to lib/i18n/locale-plugins.ts. Runtime message maps are unchanged, but future upstream locale edits no longer conflict with a rewritten fork pack."
   ]
 }

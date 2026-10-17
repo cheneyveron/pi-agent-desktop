@@ -92,9 +92,9 @@ const {
   mcpWithTestResults,
   postMcpTest,
 } = await jiti.import("./mcp-config-helpers.ts");
-const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
+const { englishMessages } = await jiti.import("@/lib/i18n/locale-plugins.ts");
 
-const messages = enLocale.messages;
+const messages = englishMessages;
 
 function server(overrides = {}) {
   return {

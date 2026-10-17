@@ -12,7 +12,7 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n.tsx");
 const { McpConfig, McpConfigView } = await jiti.import("./McpConfig.tsx");
 const { ConfigSidebarGroupSwitch } = await jiti.import("./SettingsUi.tsx");
-const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
+const { englishMessages } = await jiti.import("@/lib/i18n/locale-plugins.ts");
 const source = await readFile(new URL("./McpConfig.tsx", import.meta.url), "utf8");
 const helperSource = await readFile(new URL("./mcp-config-helpers.ts", import.meta.url), "utf8");
 const displaySource = await readFile(new URL("../lib/mcp-server-display.ts", import.meta.url), "utf8");
@@ -21,7 +21,7 @@ const cssSource = await readFile(new URL("../app/settings.css", import.meta.url)
 const settingsUiSource = await readFile(new URL("./SettingsUi.tsx", import.meta.url), "utf8");
 
 const h = React.createElement;
-const messages = enLocale.messages;
+const messages = englishMessages;
 
 function render(element) {
   return renderToStaticMarkup(h(I18nProvider, null, element));

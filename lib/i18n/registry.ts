@@ -1,9 +1,7 @@
-import { enLocale } from "./messages/en.ts";
-import { zhCNLocale } from "./messages/zh-CN.ts";
-import { zhTWLocale } from "./messages/zh-TW.ts";
+import { forkLocalePlugins } from "./locale-plugins.ts";
 import type { Locale, LocalePlugin } from "./types";
 
-const localePlugins: LocalePlugin[] = [enLocale, zhCNLocale, zhTWLocale];
+const localePlugins: LocalePlugin[] = forkLocalePlugins;
 
 /**
  * 根据标识获取已注册的语言包。

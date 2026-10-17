@@ -5,6 +5,9 @@ import { demoAssetPath } from "@/mock/base-path";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./settings.css";
+// The main app's restyle layer, synced with the other stylesheets; it must come
+// after them so its equal-specificity rules win the cascade.
+import "./native-theme.css";
 
 const notoSansMono = Noto_Sans_Mono({
   subsets: ["latin", "cyrillic"],

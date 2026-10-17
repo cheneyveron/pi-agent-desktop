@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 import type { FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
@@ -9,7 +9,7 @@ export interface Tab {
   id: string;
   label: string;
   filePath: string;
-  kind?: "terminal";
+  kind?: "terminal" | "artifact";
   closing?: boolean;
   sourceSessionId?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
@@ -24,33 +24,73 @@ interface Props {
   activeTabId: string;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onNewTerminal?: () => void;
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
+export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTerminal }: Props) {
   const { t } = useI18n();
-  const [hoveredClose, setHoveredClose] = useState<string | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // Flag which edges have tabs scrolled past them; the CSS turns each flag
+  // into a fade, so a tab sliding under the chips beside the bar dissolves
+  // instead of being cut off at a hard edge.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const update = () => {
+      const max = bar.scrollWidth - bar.clientWidth;
+      bar.toggleAttribute("data-overflow-start", bar.scrollLeft > 1);
+      bar.toggleAttribute("data-overflow-end", bar.scrollLeft < max - 1);
+    };
+    update();
+    bar.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(bar);
+    for (const child of Array.from(bar.children)) observer.observe(child);
+    return () => {
+      bar.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, [tabs]);
+
+  // The scrollbar is hidden, so a newly opened or activated tab would otherwise
+  // stay out of sight past the edge.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || !activeTabId) return;
+    const tab = Array.from(bar.querySelectorAll<HTMLElement>("[data-tab-id]"))
+      .find((element) => element.dataset.tabId === activeTabId);
+    tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeTabId, tabs.length]);
+
+  // A plain mouse wheel only scrolls vertically; map it onto the row.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      if (bar.scrollWidth <= bar.clientWidth) return;
+      event.preventDefault();
+      bar.scrollBy({ left: event.deltaY, behavior: "instant" });
+    };
+    bar.addEventListener("wheel", onWheel, { passive: false });
+    return () => bar.removeEventListener("wheel", onWheel);
+  }, []);
 
   return (
-    <div
-      role="tablist"
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        background: "var(--bg-panel)",
-        overflowX: "auto",
-        flexShrink: 0,
-        height: 36,
-      }}
-    >
+    <div ref={barRef} className="file-tab-bar" role="tablist" aria-label="Open files">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         return (
           <div
             key={tab.id}
+            className={`file-tab${isActive ? " is-active" : ""}`}
             role="tab"
             aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) : tab.label}
             aria-selected={isActive}
             tabIndex={isActive || (!activeTabId && tabs[0].id === tab.id) ? 0 : -1}
+            data-tab-id={tab.id}
+            title={tab.filePath}
             onKeyDown={(event) => {
               if (event.target !== event.currentTarget) return;
               if (event.key === "Enter" || event.key === " ") {
@@ -66,74 +106,38 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               }
             }}
             onClick={() => onSelectTab(tab.id)}
-            onMouseDown={(e) => {
-              if (e.button === 1) e.preventDefault();
+            onMouseDown={(event) => {
+              if (event.button === 1) event.preventDefault();
             }}
-            onAuxClick={(e) => {
-              if (e.button !== 1) return;
-              e.preventDefault();
-              e.stopPropagation();
-              if (!tab.closing) onCloseTab(tab.id);
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              height: 36,
-              paddingLeft: 12,
-              paddingRight: 6,
-              borderRight: "1px solid var(--border)",
-              background: isActive ? "var(--bg)" : "var(--bg-panel)",
-              cursor: "pointer",
-              fontSize: 12,
-              color: isActive ? "var(--text)" : "var(--text-muted)",
-              whiteSpace: "nowrap",
-              maxWidth: 180,
-              minWidth: 80,
-              flexShrink: 0,
-              userSelect: "none",
-              transition: "background 0.1s, color 0.1s",
+            onAuxClick={(event) => {
+              if (event.button !== 1) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onCloseTab(tab.id);
             }}
           >
-            <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
+            <span className="file-tab-icon">
               {tab.kind === "terminal" ? (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
+              ) : tab.kind === "artifact" ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3 3 8l9 5 9-5-9-5Z" /><path d="m3 13 9 5 9-5" />
+                </svg>
               ) : getFileIcon(tab.label, 13)}
             </span>
-            <span
-              style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                flex: 1,
-                fontWeight: isActive ? 500 : 400,
-              }}
-              title={tab.filePath}
-            >
+            <span className="file-tab-label" title={tab.filePath}>
               {tab.label}
             </span>
             <button
+              className="file-tab-close"
               disabled={tab.closing}
               onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
-              onMouseEnter={() => setHoveredClose(tab.id)}
-              onMouseLeave={() => setHoveredClose(null)}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 24, height: 24,
-                background: hoveredClose === tab.id ? "var(--bg-hover)" : "transparent",
-                border: "none",
-                borderRadius: 4,
-                color: hoveredClose === tab.id ? "var(--text)" : "var(--text-dim)",
-                cursor: "pointer",
-                padding: 0,
-                flexShrink: 0,
-                transition: "background 0.1s, color 0.1s",
-              }}
-               title={t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")}
-               aria-label={`${t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")} ${tab.label}`}
+              title={t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")}
+              aria-label={`${t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")} ${tab.label}`}
             >
-              <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
                 <line x1="2" y1="2" x2="8" y2="8" />
                 <line x1="8" y1="2" x2="2" y2="8" />
               </svg>
@@ -141,6 +145,22 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
           </div>
         );
       })}
+      {onNewTerminal && (
+        <div className="file-tab-add-anchor">
+          <button
+            type="button"
+            className="file-tab-add"
+            onClick={onNewTerminal}
+            title={t("terminal.newTerminal")}
+            aria-label={t("terminal.newTerminal")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

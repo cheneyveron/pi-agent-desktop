@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import type { BranchPreview, SessionEntry, SessionTreeNode } from "@/lib/types";
+import type { BranchPreview, LeafChangeOptions, SessionEntry, SessionTreeNode } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 
 interface Props {
   tree: SessionTreeNode[];
   activeLeafId: string | null;
-  onLeafChange: (leafId: string | null) => void;
+  onLeafChange: (leafId: string | null, options?: LeafChangeOptions) => void;
   /** When true, renders as a compact inline button for embedding in a top bar */
   inline?: boolean;
   /** When inline, use this ref's bounding rect to size/position the dropdown */
@@ -20,8 +20,16 @@ interface Props {
   hasSession?: boolean;
   /** When inline, render icon-only (no text label) to save horizontal space */
   compact?: boolean;
+  /** Horizontal px to keep clear on the dropdown's left (e.g. an open sidebar
+   *  that paints above the top bar's stacking context) */
+  /** Horizontal px to keep clear on the dropdown's right (e.g. the wide-desktop
+   *  file panel in split layout). The dropdown's left edge comes from the
+   *  anchor's own rect, which already excludes the sidebar. */
+  reserveRight?: number;
   /** Keep the inline dropdown mounted while another control supplies its trigger */
   hideInlineButton?: boolean;
+  /** The session is running: the tree stays readable but branches cannot be switched */
+  locked?: boolean;
 }
 
 // Find the visible entry IDs on the path from root to activeLeafId.
@@ -122,10 +130,57 @@ interface TreeNodeProps {
   depth: number;
   isLast: boolean;
   parentLines: boolean[]; // whether ancestor at each depth has more siblings after
-  onSelect: (id: string) => void;
+  /** Absent while switching is locked */
+  onSelect?: (id: string) => void;
+  /** Absent while switching is locked */
+  summary?: BranchSummaryControls;
 }
 
-function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelect }: TreeNodeProps) {
+/**
+ * pi can summarize the branch being left onto the one entered ("Summarize branch?" in the
+ * TUI's /tree). A plain click stays a plain switch, since rows are also how branches are
+ * browsed; rows of other branches offer the summarized switch as a separate action.
+ */
+interface BranchSummaryControls {
+  targetId: string | null;
+  open: (id: string) => void;
+  confirm: (id: string, customInstructions: string) => void;
+  cancel: () => void;
+}
+
+function BranchSummaryForm({ onConfirm, onCancel }: { onConfirm: (customInstructions: string) => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  const [instructions, setInstructions] = useState("");
+  return (
+    <form
+      className="branch-summary-form"
+      onClick={(event) => event.stopPropagation()}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onConfirm(instructions);
+      }}
+    >
+      <input
+        autoFocus
+        value={instructions}
+        onChange={(event) => setInstructions(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+            event.stopPropagation();
+            onCancel();
+          }
+        }}
+        placeholder={t("i18n.branchSummaryInstructionsPlaceholder")}
+        aria-label={t("i18n.branchSummaryInstructionsPlaceholder")}
+      />
+      <button type="submit" className="branch-summary-confirm">{t("i18n.branchSummarizeAction")}</button>
+      <button type="button" onClick={onCancel}>{t("chat.cancel")}</button>
+    </form>
+  );
+}
+
+function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelect, summary }: TreeNodeProps) {
+  const { t } = useI18n();
   const { node: rep, skipped, branchPreview, labelEntry } = compressChain(node);
   const isActive = activePathIds.has(rep.entry.id);
   const isOnPath = activePathIds.has(node.entry.id) || activePathIds.has(rep.entry.id);
@@ -140,13 +195,14 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
     <div>
       {/* This node row */}
       <div
+        className="branch-tree-row"
         style={{
           display: "flex",
           alignItems: "center",
           height: 24,
-          cursor: "pointer",
+          cursor: onSelect ? "pointer" : "default",
         }}
-        onClick={() => onSelect(rep.entry.id)}
+        onClick={onSelect ? () => onSelect(rep.entry.id) : undefined}
       >
         {/* Indent guide lines */}
         {parentLines.map((hasLine, i) => (
@@ -201,11 +257,11 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
         {/* Role badge */}
         {role && (
           <span style={{
-            fontSize: 9,
+            fontSize: 10,
             fontFamily: "var(--font-mono)",
             color: role === "user" ? "var(--accent)" : "var(--text-dim)",
-            background: role === "user" ? "rgba(37,99,235,0.08)" : "var(--bg-hover)",
-            border: `1px solid ${role === "user" ? "rgba(37,99,235,0.2)" : "var(--border)"}`,
+            background: role === "user" ? "var(--accent-soft, var(--user-bg))" : "var(--bg-hover)",
+            border: `1px solid ${role === "user" ? "var(--accent-border, var(--border))" : "var(--border)"}`,
             borderRadius: 3,
             padding: "0 4px",
             marginRight: 5,
@@ -236,7 +292,26 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
         }}>
           {label}
         </span>
+        {summary && !isOnPath && summary.targetId !== rep.entry.id && (
+          <button
+            type="button"
+            className="branch-summary-action"
+            title={t("i18n.branchSummarizeHint")}
+            onClick={(event) => {
+              event.stopPropagation();
+              summary.open(rep.entry.id);
+            }}
+          >
+            {t("i18n.branchSummarizeAction")}
+          </button>
+        )}
       </div>
+      {summary?.targetId === rep.entry.id && (
+        <BranchSummaryForm
+          onConfirm={(instructions) => summary.confirm(rep.entry.id, instructions)}
+          onCancel={summary.cancel}
+        />
+      )}
 
       {/* Children */}
       {rep.children.map((child, idx) => (
@@ -248,13 +323,14 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
           isLast={idx === rep.children.length - 1}
           parentLines={[...parentLines, !isLast]}
           onSelect={onSelect}
+          summary={summary}
         />
       ))}
     </div>
   );
 }
 
-export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession, compact, hideInlineButton }: Props) {
+export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession, compact, hideInlineButton, reserveRight = 0, locked = false }: Props) {
   const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
@@ -267,13 +343,18 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
     if (!anchor) return;
     const update = () => {
       const rect = anchor.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom, left: rect.left, width: rect.width });
+      setDropdownPos({
+        top: rect.bottom,
+        // The anchor rect already starts at the sidebar's right edge.
+        left: rect.left,
+        width: Math.max(0, rect.width - reserveRight),
+      });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(anchor);
     return () => ro.disconnect();
-  }, [open, inline, containerRef]);
+  }, [open, inline, containerRef, reserveRight]);
 
   const activePathIds = useMemo(
     () => buildActivePath(tree, activeLeafId),
@@ -283,6 +364,23 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   const handleSelect = useCallback((id: string) => {
     onLeafChange(id);
   }, [onLeafChange]);
+  const selectBranch = locked ? undefined : handleSelect;
+  const [summaryTargetId, setSummaryTargetId] = useState<string | null>(null);
+  const summaryControls = useMemo<BranchSummaryControls | undefined>(() => locked ? undefined : {
+    targetId: summaryTargetId,
+    open: setSummaryTargetId,
+    confirm: (id, customInstructions) => {
+      setSummaryTargetId(null);
+      onLeafChange(id, { summarize: true, customInstructions: customInstructions.trim() || undefined });
+    },
+    cancel: () => setSummaryTargetId(null),
+  }, [locked, onLeafChange, summaryTargetId]);
+
+  const lockedNotice = locked && (
+    <div style={{ padding: "2px 0 4px", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>
+      {t("i18n.branchesLockedWhileRunning")}
+    </div>
+  );
 
   const noBranchReason = !hasSession
     ? t("i18n.noActiveSession")
@@ -294,7 +392,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   const hasContent = !noBranchReason && topLevel.length > 0;
 
   const branchIcon = (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: hasContent ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: hasContent ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }}>
       <line x1="6" y1="3" x2="6" y2="15" />
       <circle cx="18" cy="6" r="3" />
       <circle cx="6" cy="18" r="3" />
@@ -313,6 +411,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "stretch" }}>
         <button
+          className="native-toolbar-button"
           ref={btnRef}
           onClick={() => onToggle ? onToggle() : setOpenInternal((v) => !v)}
           style={{
@@ -323,8 +422,6 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             padding: "0 12px",
             background: open ? "var(--bg-selected)" : "none",
             border: "none",
-            borderTop: open ? "2px solid var(--accent)" : "2px solid transparent",
-            borderRight: "1px solid var(--border)",
             cursor: "pointer",
             color: open ? "var(--text)" : "var(--text-muted)",
             fontSize: 11,
@@ -347,11 +444,12 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             left: dropdownPos.left,
             width: dropdownPos.width,
             background: "var(--bg-panel)",
-            borderBottom: "1px solid var(--border)",
+            borderBottom: "var(--hairline) solid var(--border)",
             zIndex: 500,
           }}>
             {hasContent ? (
               <div style={{ padding: "4px 12px 8px 12px", maxHeight: 260, overflowY: "auto" }}>
+                {lockedNotice}
                 {topLevel.map((child, idx) => (
                   <TreeNodeView
                     key={child.entry.id}
@@ -360,7 +458,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
                     depth={0}
                     isLast={idx === topLevel.length - 1}
                     parentLines={[]}
-                    onSelect={handleSelect}
+                    onSelect={selectBranch}
+                    summary={summaryControls}
                   />
                 ))}
               </div>
@@ -376,7 +475,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   }
 
   return (
-    <div style={{ borderBottom: "1px solid var(--border)", background: "var(--bg)", flexShrink: 0, position: "relative" }}>
+    <div style={{ borderBottom: "var(--hairline) solid var(--border)", background: "var(--bg)", flexShrink: 0, position: "relative" }}>
       {/* Header toggle */}
       <button
         onClick={() => setOpenInternal((v) => !v)}
@@ -407,12 +506,13 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           left: 0,
           right: 0,
           background: "var(--bg)",
-          borderBottom: "1px solid var(--border)",
+          borderBottom: "var(--hairline) solid var(--border)",
           boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
           zIndex: 100,
         }}>
           {hasContent ? (
             <div style={{ padding: "4px 12px 8px 12px", maxHeight: 260, overflowY: "auto" }}>
+              {lockedNotice}
               {topLevel.map((child, idx) => (
                 <TreeNodeView
                   key={child.entry.id}
@@ -421,7 +521,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
                   depth={0}
                   isLast={idx === topLevel.length - 1}
                   parentLines={[]}
-                  onSelect={handleSelect}
+                  onSelect={selectBranch}
+                  summary={summaryControls}
                 />
               ))}
             </div>
