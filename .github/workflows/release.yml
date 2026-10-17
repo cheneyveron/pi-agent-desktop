@@ -114,6 +114,29 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
+            ## Pi Agent Desktop 0.7.4
+
+            ### New
+
+            - **Manage worktrees from a project's "…" menu.** Create, switch and remove worktrees without leaving the sidebar.
+            - The `@` menu and session mentions, the session automation controls and the project chip in the composer now live in their own components, which keeps them stable across upstream updates.
+
+            ### Fixed
+
+            - The server refuses to listen on a LAN address without authentication, and the terminal authorizes its working directory before touching it.
+            - Installing a skill rejects package names that look like command-line options.
+            - Copying a file out of the app to a chosen location works from the browser too, and is restricted to files you can already open.
+            - The connection banner now checks that the server answered like pi-web, and "Retry" reloads the page in a browser.
+
+            ### Other
+
+            - Merged upstream pi-web changes; fork-specific translations moved to a separate layer so upstream message files stay unmodified.
+            - Security: `mammoth` now uses `argparse` 2.x.
+
+            Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
             ## Pi Agent Desktop 0.7.3
 
             ### Changed
