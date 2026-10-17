@@ -114,27 +114,11 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.2
+            ## Pi Agent Desktop 0.7.3
 
-            ### New
+            ### Changed
 
-            - **Manage scheduled tasks from a conversation.** The assistant gets a `scheduled_tasks` tool to list, create, edit, pause, resume, run and delete tasks, and `/schedule` does the quick actions directly: `/schedule`, `/schedule run|pause|resume|delete <task>`, or `/schedule new <what and when>` to describe a task in words. Tasks made this way default to the Default tools and ask for your approval before they can write; a session that is itself a scheduled run cannot change tasks.
-            - Settings follows each platform's preferences-window style: a centered toolbar on macOS, a navigation pane on Windows and Linux. ⌘, / Ctrl+, opens Settings.
-            - A redesigned composer: a round Send button, an in-card attach button, and reasoning level and tool preset in one chip. Steer and bash modes are visible again, and Compact moved into the gear menu.
-            - Settings › Models shows a provider's `modelOverrides` with an **Override** badge on affected models. Empty limit fields read "Not set" instead of placeholder numbers.
-            - Models settings explains how to enable the xhigh/max thinking levels.
-
-            ### Fixed
-
-            - Sending a message in a conversation with history no longer leaves a screenful of blank space under the start of the reply: the chat now follows the reply at the bottom instead of pinning your message to the top.
-            - The macOS traffic lights line up with the top bar again and use the macOS 26 style.
-            - On Windows and Linux, the sidebar buttons and the panel toggle line up with the top bar.
-            - The conversation navigator jumps to a turn again. Clicking its preview card also jumps.
-
-            ### Other
-
-            - The bundled pi SDK is upgraded to 1.3.0.
-            - The README explains how to open the app when macOS Gatekeeper blocks the first launch.
+            - **The backend switcher moved into Settings.** The π logo at the top-left of the sidebar is gone; open Settings › General › Desktop and use **Switch backend…** in the "Backend connection" row to pick Local or a saved remote server. The same row is available while connected to a remote server, so you can always switch back. Switching still restarts the app.
 
             Bundled components: pi 1.3.0, pi-web 0.10.0.
 
