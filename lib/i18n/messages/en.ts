@@ -111,6 +111,7 @@ export const enLocale: LocalePlugin = {
     "plugins.settings.error.minimum": "Must be at least {limit}.",
     "plugins.settings.error.maximum": "Must be at most {limit}.",
     "plugins.settings.error.format": "Must be a valid URL.",
+    "plugins.settings.error.pattern": "Does not match the required format.",
     "plugins.settings.error.unknown": "Not a setting of this plugin.",
     "plugins.settings.error.readonly": "Cannot be edited here.",
     "config.source": "Source",

@@ -885,6 +885,8 @@ export interface PluginSettingsField {
   minimum?: number;
   maximum?: number;
   format?: "password" | "uri";
+  /** ECMAScript regular expression (unicode mode) a string must match. */
+  pattern?: string;
   required: boolean;
 }
 
@@ -916,6 +918,7 @@ export type PluginSettingsErrorCode =
   | "minimum"
   | "maximum"
   | "format"
+  | "pattern"
   | "unknown"
   | "readonly";
 

@@ -107,3 +107,14 @@ test("an invalid recall_mode is rejected and nothing is written", { skip }, asyn
   assert.equal(await readFile(configPath, "utf8"), before);
   assert.equal((await putSettings({ recall_timeout_ms: 10 })).status, 422);
 });
+
+test("a bad bank name is rejected by the schema's pattern", { skip }, async () => {
+  const before = await readFile(configPath, "utf8");
+  for (const key of ["global_bank", "project_bank", "bank_prefix"]) {
+    const response = await putSettings({ [key]: "bad name/with spaces" });
+    assert.equal(response.status, 422, key);
+    assert.equal((await response.json()).fieldErrors[key].code, "pattern", key);
+  }
+  assert.equal(await readFile(configPath, "utf8"), before);
+  assert.equal((await putSettings({ global_bank: "life", bank_prefix: "pi-2" })).status, 200);
+});

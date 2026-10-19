@@ -111,6 +111,7 @@ export const zhCNLocale: LocalePlugin = {
     "plugins.settings.error.minimum": "不能小于 {limit}。",
     "plugins.settings.error.maximum": "不能大于 {limit}。",
     "plugins.settings.error.format": "必须是有效的 URL。",
+    "plugins.settings.error.pattern": "与要求的格式不符。",
     "plugins.settings.error.unknown": "不是此插件的设置项。",
     "plugins.settings.error.readonly": "无法在此处编辑。",
     "config.source": "来源",

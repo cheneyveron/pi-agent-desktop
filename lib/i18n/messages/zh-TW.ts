@@ -111,6 +111,7 @@ export const zhTWLocale: LocalePlugin = {
     "plugins.settings.error.minimum": "不能小於 {limit}。",
     "plugins.settings.error.maximum": "不能大於 {limit}。",
     "plugins.settings.error.format": "必須是有效的 URL。",
+    "plugins.settings.error.pattern": "與要求的格式不符。",
     "plugins.settings.error.unknown": "不是此外掛的設定項。",
     "plugins.settings.error.readonly": "無法在此處編輯。",
     "config.source": "來源",

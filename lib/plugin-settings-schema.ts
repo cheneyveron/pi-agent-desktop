@@ -11,7 +11,8 @@ import type {
 //
 // Supported: `type: "object"` with `properties` and `required`; property types
 // string, integer, number, boolean and array of strings; `enum`, `default`,
-// `title`, `description`, `minimum`, `maximum`, and `format: "password" | "uri"`
+// `title`, `description`, `minimum`, `maximum`, `pattern` (string only, a unicode-mode
+// ECMAScript regular expression; an invalid one makes the whole schema unusable), and `format: "password" | "uri"`
 // (string only). Unknown keywords are ignored. A property of any other type is
 // kept as `unsupported`: shown read-only as JSON, never written.
 
@@ -24,6 +25,7 @@ export class PluginSettingsSchemaError extends Error {
 }
 
 const MAX_PROPERTIES = 200;
+const MAX_PATTERN_LENGTH = 1000;
 const FORBIDDEN_KEYS = new Set(["__proto__"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -76,6 +78,17 @@ function parseField(key: string, raw: unknown, required: boolean): PluginSetting
 
   if (type === "string" && (source.format === "password" || source.format === "uri")) {
     field.format = source.format;
+  }
+  if (type === "string" && typeof source.pattern === "string") {
+    if (source.pattern.length > MAX_PATTERN_LENGTH) {
+      throw new PluginSettingsSchemaError(`The pattern of ${key} is longer than ${MAX_PATTERN_LENGTH} characters`);
+    }
+    try {
+      new RegExp(source.pattern, "u");
+    } catch {
+      throw new PluginSettingsSchemaError(`The pattern of ${key} is not a valid regular expression`);
+    }
+    field.pattern = source.pattern;
   }
   if (type === "integer" || type === "number") {
     const minimum = finiteNumber(source.minimum);
@@ -174,6 +187,9 @@ export function validatePluginSettingsValue(field: PluginSettingsField, value: u
     if (field.maximum !== undefined && value > field.maximum) {
       return fieldError("maximum", `${field.key} must be at most ${field.maximum}`, field.maximum);
     }
+  }
+  if (field.pattern !== undefined && typeof value === "string" && !new RegExp(field.pattern, "u").test(value)) {
+    return fieldError("pattern", `${field.key} does not match the required format`);
   }
   if (field.format === "uri" && typeof value === "string" && value !== "" && !isUri(value)) {
     return fieldError("format", `${field.key} must be a URL`);
