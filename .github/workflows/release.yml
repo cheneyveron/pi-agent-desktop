@@ -114,6 +114,23 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
+            ## Pi Agent Desktop 0.7.6
+
+            ### New
+
+            - **One Send/Stop button.** The separate Steer and Follow-up controls are replaced by a single round button. While the agent is running, an empty box stops it; a typed message waits in an editable outbox above the composer, where it can be sent now, edited or deleted.
+            - Menus, dropdowns and option pickers across Settings, projects, sessions and scheduled tasks share one themed menu style in light and dark mode.
+
+            ### Fixed
+
+            - Pasting a URL or typing a file path no longer opens the `/` command menu. `/` still opens it at the start of a line, after a space, or right after Chinese text.
+            - Session read/unread actions are translated in every language.
+            - A server self-update that fails to start the new container now rolls back instead of reporting success.
+
+            Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
             ## Pi Agent Desktop 0.7.5
 
             ### New
@@ -175,6 +192,23 @@ jobs:
             - **The backend switcher moved into Settings.** The π logo at the top-left of the sidebar is gone; open Settings › General › Desktop and use **Switch backend…** in the "Backend connection" row to pick Local or a saved remote server. The same row is available while connected to a remote server, so you can always switch back. Switching still restarts the app.
 
             Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
+            ## Pi Agent Desktop 0.7.6
+
+            ### 新增
+
+            - **合并为一个发送/停止按钮。** 原来分开的“引导”和“追加”控件改为一个圆形按钮。智能体运行时，输入框为空则停止运行；输入内容后会进入输入框上方可编辑的待发送列表，可以立即发送、编辑或删除。
+            - 设置、项目、会话和定时任务中的菜单、下拉框与选项选择器，在浅色和深色主题下统一使用同一种菜单样式。
+
+            ### 修复
+
+            - 粘贴网址或输入文件路径时，不再弹出 `/` 命令菜单。在行首、空格后或紧跟中文输入 `/` 时仍会弹出。
+            - 会话的已读/未读操作在所有语言下都有翻译。
+            - 服务端自升级时如果新容器启动失败，会自动回滚，不再误报成功。
+
+            内置组件版本：pi 1.3.0、pi-web 0.10.0。
 
             ---
 

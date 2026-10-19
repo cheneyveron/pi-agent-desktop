@@ -34,6 +34,7 @@ import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref } from "@/lib/app-prefs";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -273,6 +274,7 @@ export function AppShell() {
   const topMoreRef = useRef<HTMLDivElement>(null);
   const topMoreMenuRef = useRef<HTMLDivElement>(null);
   const [topMorePos, setTopMorePos] = useState<{ top: number; right: number } | null>(null);
+  useMenuNavigation(topMoreOpen && Boolean(topMorePos), topMoreMenuRef, () => setTopMoreOpen(false));
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const shortcutHelpDialogRef = useRef<HTMLDivElement | null>(null);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
@@ -2346,7 +2348,7 @@ export function AppShell() {
                     {topMoreOpen && topMorePos && createPortal(
                       <div
                         ref={topMoreMenuRef}
-                        className="native-popover app-topbar-more-menu"
+                        className="native-popover app-menu app-topbar-more-menu"
                         role="menu"
                         aria-label={translate("appshell.moreActions")}
                         style={{ position: "fixed", top: topMorePos.top, right: topMorePos.right, zIndex: 700 }}

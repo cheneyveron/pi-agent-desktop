@@ -66,3 +66,11 @@ Merged `72b2a81..3b6a877` from `abcwyc/pi-agent-desktop/main` (10 commits): the 
 - **Fork row behaviour kept on every upstream row**: `onUnreadChange`, `onGenerateTitle`, `onOpenFullHistory` and the native/DOM `openSessionMenu` are passed to the timeline and Chats rows too; the Delete menu item uses upstream's `beginDeleteConfirmation`.
 - **Web project picking stays `DirectoryPicker`** (standing rule), not upstream's `ProjectPicker` modal. It must not open on the hidden Chat directory: `initialPath` ignores `selectedCwdIsChat`, and `handleSelectProjectFromComposer` returns first for an active chat. The two upstream source-pattern tests were re-pinned to that shape.
 - **Release identity**: version tooling still reads `cheneyveron/pi-agent-desktop` releases (through upstream's new `fetchRecentReleases`/`nextDesktopVersion`), `component-versions.json` and the cask keep the fork repository; release notes gained a 0.7.5 section (English and Chinese) above the fork's history. CSS baseline is `3b6a877`.
+
+## Desktop upstream merge (15ab42a, 2026-10-19)
+
+Merged `3b6a877..15ab42a` from `abcwyc/pi-agent-desktop/main` (1 commit, #147): the single circular Send/Stop control, the editable server-owned composer outbox (`lib/composer-queue.ts`, `components/ComposerOutbox.tsx`), and shared `AppSelect`/`AppCombobox`/`.app-menu` option surfaces.
+
+- **`lib/desktop-menu.ts` keeps the fork's opt-in flag.** Upstream hard-codes `NATIVE_POPUP_MENUS_ENABLED = false`; the fork keeps `NEXT_PUBLIC_NATIVE_POPUP_MENUS === "1"`, which is off for every release build too, so `.github/workflows/desktop-test-build.yml` can still produce native-popup test installers.
+- **`scripts/fork-ownership.json`**: upstream's drift numbers and new `hooks/useAgentSession.ts` entry adopted; `upstreamBaseline` stays the plain ref `6fcd7d4` so `npm run drift` resolves it, and the fork's 2026-10-09 decision-log entry was restored.
+- `components/AppShell.auto-name.test.mjs` locates the DOM session menu by `session-item-menu"` instead of the full class string, since the menu gained `app-menu`. CSS baseline is `15ab42a`.

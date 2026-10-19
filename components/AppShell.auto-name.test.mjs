@@ -41,7 +41,7 @@ test("侧栏行菜单共用同一个标题生成器与完整历史入口", () =>
   }
   // Both the native popup and the DOM fallback carry the three new actions.
   const nativeMenu = sidebar.slice(sidebar.indexOf("const showNativeSessionMenu"), sidebar.indexOf("const openSessionMenu"));
-  const domMenu = sidebar.slice(sidebar.indexOf('className="native-popover session-item-menu"'), sidebar.indexOf("{actionError && createPortal("));
+  const domMenu = sidebar.slice(sidebar.indexOf('session-item-menu"'), sidebar.indexOf("{actionError && createPortal("));
   for (const action of ["generateTitle()", "copySessionId", "openFullHistory"]) {
     assert.ok(nativeMenu.includes(action), `${action} is missing from the native session row menu`);
     assert.ok(domMenu.includes(action), `${action} is missing from the DOM session row menu`);

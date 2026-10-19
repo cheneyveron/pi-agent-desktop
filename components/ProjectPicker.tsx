@@ -282,7 +282,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
         )}
       </button>
 
-      <AnimatedDropdown className="native-popover" open={dropdownOpen} style={panelStyle}>
+      <AnimatedDropdown className="native-popover app-menu" open={dropdownOpen} style={panelStyle}>
         {showProjectFilter && (
           <div style={{ padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
             <input
@@ -317,6 +317,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
             <button
               key={project}
               className="project-picker-option"
+              aria-current={project === selectedProject ? "true" : undefined}
               onClick={() => {
                 onSelectCwd(project);
                 closeDropdown();
