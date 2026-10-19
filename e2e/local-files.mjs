@@ -38,7 +38,7 @@ export async function checkLocalFiles(browser, base, sessionId, filePath, refere
       await page.goto(`${base}/?session=${sessionId}`);
       await page.locator(".markdown-code-block pre").waitFor();
       const panel = page.locator("#file-panel");
-      await page.locator('.app-topbar button[aria-label="Show file panel"]').click();
+      await page.locator('.app-topbar button[aria-label="Show workspace"]').click();
       // The panel opens as a preview area with its file list hidden, and closes it again after a pick.
       const showFileList = panel.locator('.file-tree-toggle[aria-label="Show file list"]');
       const revealFileList = async () => { if (await showFileList.isVisible()) await showFileList.click(); };

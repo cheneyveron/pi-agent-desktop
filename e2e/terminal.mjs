@@ -84,7 +84,7 @@ try {
       const button = page.getByRole("button", { name: "Show sidebar", exact: true });
       if (await button.count()) await button.click();
     };
-    const showPanel = () => page.getByRole("button", { name: "Show file panel", exact: true }).click();
+    const showPanel = () => page.getByRole("button", { name: "Show workspace", exact: true }).click();
     // The fork opens terminals from the file panel's "+" (the sidebar's project menu
     // offers "Open terminal here"); upstream's dedicated topbar button is gone.
     const openWorkspaceTerminal = async () => {
@@ -145,6 +145,9 @@ try {
       await waitOutput(`SESSION:alive:${pid}`);
 
       await page.reload();
+      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true, includeHidden: true }).waitFor({ state: "attached" });
+      // Mobile restores terminal tabs with the workspace panel closed.
+      if (await page.getByRole("button", { name: "Show workspace", exact: true }).isVisible()) await showPanel();
       await ready();
       await run("printf '\\nREFRESH:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`REFRESH:alive:${pid}`);
@@ -203,10 +206,10 @@ try {
       await run("export PR695_WORKSPACE=retained");
       await hidePanel();
       await showSidebar();
-      await page.getByRole("button").and(page.getByTitle(workspace, { exact: true })).first().click();
+      await page.getByRole("treeitem").and(page.getByTitle(workspace, { exact: true })).first().click();
       // A project row both selects its cwd and toggles the folder, so the target
       // may land collapsed; expand it before looking for its session.
-      const otherRow = page.getByRole("button").and(page.getByTitle(otherWorkspace, { exact: true }));
+      const otherRow = page.getByRole("treeitem").and(page.getByTitle(otherWorkspace, { exact: true }));
       await otherRow.click();
       if (await otherRow.getAttribute("aria-expanded") === "false") await otherRow.click();
       await page.getByText("Other workspace session", { exact: true }).waitFor();
