@@ -17,6 +17,10 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
   "en": {
     "set": {
       "appSettings.serverManaged": "Server updates are managed by your administrator.",
+      "appSettings.serverPulling": "Pulling the new image…",
+      "appSettings.serverWaiting": "Waiting for running sessions to finish…",
+      "appSettings.serverRestarting": "Restarting the server…",
+      "appSettings.serverUpdateNote": "The server pulls this release's Docker image and restarts. It waits for running sessions to finish first, and the page reloads when the server is back.",
       "chat.imageReadFailed": "Could not read the selected image. Please select it again.",
       "files.openDefaultApp": "Open with default app",
       "sidebar.viewSwitch": "Sidebar view",
@@ -529,6 +533,10 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
   "zh-CN": {
     "set": {
       "appSettings.serverManaged": "此服务由管理员部署和更新。",
+      "appSettings.serverPulling": "正在拉取新镜像…",
+      "appSettings.serverWaiting": "正在等待运行中的会话结束…",
+      "appSettings.serverRestarting": "正在重启服务…",
+      "appSettings.serverUpdateNote": "服务端会拉取此版本的 Docker 镜像并重启，会先等待运行中的会话结束；服务恢复后页面将自动刷新。",
       "chat.imageReadFailed": "无法读取所选图片，请重新选择。",
       "files.openDefaultApp": "使用默认应用打开",
       "sidebar.viewSwitch": "侧栏视图",
@@ -1044,6 +1052,10 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
   "zh-TW": {
     "set": {
       "appSettings.serverManaged": "此服務由管理員部署和更新。",
+      "appSettings.serverPulling": "正在拉取新映像…",
+      "appSettings.serverWaiting": "正在等待執行中的工作階段結束…",
+      "appSettings.serverRestarting": "正在重新啟動服務…",
+      "appSettings.serverUpdateNote": "服務端會拉取此版本的 Docker 映像並重新啟動，會先等待執行中的工作階段結束；服務恢復後頁面將自動重新整理。",
       "chat.imageReadFailed": "無法讀取所選圖片，請重新選擇。",
       "files.openDefaultApp": "使用預設應用程式開啟",
       "sidebar.viewSwitch": "側欄檢視",

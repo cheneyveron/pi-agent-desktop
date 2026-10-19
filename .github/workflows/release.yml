@@ -178,9 +178,15 @@ jobs:
   manifest:
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out pi-agent-desktop
         uses: actions/checkout@v7
+
+      - name: Read the release version
+        id: version
+        run: echo "version=$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Upload component manifest to the release
         env:
@@ -189,6 +195,16 @@ jobs:
           version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
           gh release upload "v$version" src-tauri/resources/component-versions.json --clobber
           gh release edit "v$version" --draft=false --latest
+
+  # Only after the Release is published (manifest), so a draft never gets an image.
+  image:
+    needs: manifest
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-image.yml
+    with:
+      version: ${{ needs.manifest.outputs.version }}
 
   # A partially failed matrix leaves the release a draft and skips `manifest`,
   # which is correct — but it was also completely silent. Four consecutive

@@ -1,0 +1,66 @@
+# Reference Compose project for the Web server image plus its updater sidecar.
+# Copy to /ssd/appdata/pi-agent-desktop (or any directory) next to updater.sh and
+# a .env with a concrete tag, this directory's absolute path and the host's
+# docker group id (stat -c %g /var/run/docker.sock):
+#     PI_AGENT_TAG=0.7.4
+#     PROJECT_DIR=/ssd/appdata/pi-agent-desktop
+#     DOCKER_GID=988
+# The sidecar rewrites the tag line when the server upgrades itself from Settings.
+name: pi-agent-desktop
+
+services:
+  web:
+    image: ghcr.io/cheneyveron/pi-agent-desktop:${PI_AGENT_TAG:?set PI_AGENT_TAG in .env}
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    network_mode: host
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      PI_CODING_AGENT_DIR: /var/lib/pi-agent
+      # Turns on the Upgrade button: the directory shared with the sidecar.
+      PI_WEB_UPDATER_DIR: /var/lib/pi-updater
+    volumes:
+      - ./state/agent:/var/lib/pi-agent
+      - ./state/updater:/var/lib/pi-updater
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8511/api/home').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # The only container with Docker access. It runs one fixed script that
+  # accepts a validated x.y.z tag from the shared directory, so keep that
+  # directory writable by the web service alone, and keep this service off the
+  # network. It runs as the web user (so both can read and replace each other's
+  # files) with the docker group added for the socket. The project directory is
+  # mounted at the same absolute path so the relative bind mounts above resolve
+  # to the right host paths.
+  updater:
+    image: docker:cli
+    restart: unless-stopped
+    network_mode: none
+    user: "1000:1000"
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in .env}"
+    entrypoint: ["sh", "/updater/updater.sh"]
+    environment:
+      UPDATER_DIR: /var/lib/pi-updater
+      PROJECT_DIR: ${PROJECT_DIR:?set PROJECT_DIR in .env}
+    working_dir: ${PROJECT_DIR}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PROJECT_DIR}:${PROJECT_DIR}
+      - ./state/updater:/var/lib/pi-updater
+      - ./updater.sh:/updater/updater.sh:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m

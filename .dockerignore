@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+.next
+.next-desktop
+src-tauri/target
+src-tauri/resources/server
+test-results
+demo
+.env*

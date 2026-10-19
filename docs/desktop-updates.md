@@ -78,3 +78,47 @@ or its 90-minute timeout does not stop the remote build; rerun to resume monitor
 Start **Publish signed desktop release** manually after the release changes reach `main`. It verifies that the bundled `pi` and `pi-web` versions match their latest stable Releases or the documented versions in `scripts/release-component-pins.json`, then sequentially creates Apple Silicon (`aarch64`) DMG/updater artifacts, a Linux x64 `.deb`, and a Windows x64 NSIS `-setup.exe`/updater archive. Intel Mac (`x86_64-apple-darwin`) artifacts are not built. The Release stays in draft until all platforms and the component manifest are present; only then is `v<pi-agent-desktop version>` published as the latest Release.
 
 The workflow currently uses ad-hoc macOS application signing, Tauri updater signatures, and the native Linux package format. Before distributing outside a controlled environment, configure an Apple Developer ID certificate/notarization and a Windows Authenticode certificate. Without Authenticode, Windows may show a SmartScreen warning even though updater verification remains cryptographically signed.
+
+## Remote server self-update (Docker)
+
+A server that runs the Web UI for browsers, or for the desktop app's custom backend URL, has no Tauri updater. When it runs in Docker with the updater sidecar, Settings › Version & Updates shows the same **Upgrade** button for it; any other server still reports "managed by your administrator". The button replaces the container with the newer **image**; nothing is built on the server.
+
+```
+Settings ─POST /api/updates/install─▶ web ──request file──▶ updater sidecar ──▶ docker compose pull / up -d web
+   ▲                                    ◀──── status file ───┘
+   └──── polls until the new version answers, then reloads ────┘
+```
+
+### Publishing the image
+
+`.github/workflows/docker-image.yml` builds the repository `Dockerfile` for `linux/amd64` and pushes `ghcr.io/cheneyveron/pi-agent-desktop:<version>` and `:latest` with the workflow's `GITHUB_TOKEN`. The signed release workflow calls it as its last job, after `manifest` has published the Release, so a draft never gets an image and a failed image build does not un-publish the release. Run it by hand (Actions › Publish server image, input `0.7.5`) to publish or republish an existing version.
+
+GHCR creates a new package private. After the first push, open the package settings once and set the visibility to Public (the package links to this repository through the `org.opencontainers.image.source` label), or run `docker login ghcr.io` on the host.
+
+### Deploying
+
+[deploy/docker/compose.yaml](../deploy/docker/compose.yaml) is the reference project: the `web` service, plus an `updater` sidecar running [deploy/docker/updater.sh](../deploy/docker/updater.sh) in `docker:cli`. Put these beside it in the project directory:
+
+```
+.env          PI_AGENT_TAG=0.7.4   PROJECT_DIR=<absolute path of this directory>   DOCKER_GID=<stat -c %g /var/run/docker.sock>
+updater.sh
+state/updater/   (writable by the web user)
+```
+
+`PI_WEB_UPDATER_DIR` on the web service is what turns the button on.
+
+### What happens on Upgrade
+
+1. The server finds the newest stable Release (never a version or URL from the request), waits up to 10 minutes until no session is running, and writes `request` (`id=`, `version=x.y.z`) into the shared directory.
+2. The sidecar validates both values, runs `docker compose pull web` with that tag, writes the tag to `PI_AGENT_TAG` in `.env` (so a later manual `docker compose up` keeps it) and recreates only `web`. The sidecar itself is not touched.
+3. It waits up to 3 minutes for the container's healthcheck. If it does not turn healthy, the previous tag is restored and `status` says `failed`; the page shows that message. A failed pull changes nothing.
+4. The page keeps polling `GET /api/updates/install` while the server is down and reloads when the restarted server reports a new version.
+
+`status` lines: `id`, `phase` (`pulling`, `restarting`, `done`, `failed`), `version`, `error`.
+
+### Security
+
+- The web container never gets the Docker socket. Only the sidecar has it; it runs one fixed script, has no network and no published port, runs as the web user with the docker group added, and accepts nothing but a validated `x.y.z` tag from the shared directory.
+- Anyone who can reach the server's update endpoint can trigger an update to the newest stable release. Keep the web password or an access proxy in front of a remote server.
+- Images are pulled from the fixed `ghcr.io/cheneyveron/pi-agent-desktop` repository named in the compose file, not from the request.
+- Rollback is the previous image tag, which stays on the host; keep `PI_AGENT_TAG` concrete, never `latest`.

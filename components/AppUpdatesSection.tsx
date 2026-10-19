@@ -11,6 +11,7 @@ import {
 import { handleExternalLinkClick } from "@/lib/desktop-native";
 import { isTauriDesktop, installLatestDesktopRelease, type DesktopUpgradeProgress } from "@/lib/desktop-updater";
 import { useI18n } from "@/hooks/useI18n";
+import { useServerUpgrade } from "@/hooks/useServerUpgrade";
 import { ConfigButton } from "./SettingsUi";
 
 interface Props {
@@ -34,6 +35,7 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [upgradeProgress, setUpgradeProgress] = useState<DesktopUpgradeProgress | null>(null);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const server = useServerUpgrade();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -56,7 +58,7 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
     return () => controller.abort();
   }, []);
 
-  const busy = Boolean(upgradeProgress);
+  const busy = Boolean(upgradeProgress) || server.active;
   useEffect(() => {
     onBusyChange?.(busy);
     return () => {
@@ -72,11 +74,22 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
     () => components.some((component) => component.updateAvailable),
     [components],
   );
+  const serverUpgrade = !desktop && server.supported;
   const canUpgrade = desktop && !loading && updateAvailable && !upgradeProgress;
+  const canServerUpgrade = serverUpgrade && !loading && updateAvailable && !server.active;
   const downloadPercent = upgradeProgress?.phase === "downloading" && upgradeProgress.totalBytes
     ? Math.min(100, Math.round((upgradeProgress.downloadedBytes ?? 0) / upgradeProgress.totalBytes * 100))
     : null;
-  const upgradeLabel = upgradeProgress?.phase === "checking"
+  const serverLabels: Record<string, string> = {
+    checking: t("appSettings.preparing"),
+    requested: t("appSettings.preparing"),
+    pulling: t("appSettings.serverPulling"),
+    waiting: t("appSettings.serverWaiting"),
+    restarting: t("appSettings.serverRestarting"),
+  };
+  const upgradeLabel = serverUpgrade
+    ? (server.active ? serverLabels[server.phase] ?? t("appSettings.preparing") : t("appSettings.update"))
+    : upgradeProgress?.phase === "checking"
     ? t("appSettings.preparing")
     : upgradeProgress?.phase === "downloading"
       ? (downloadPercent === null
@@ -156,22 +169,29 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
           </div>
         </dl>
         <div className="settings-update-side">
-          <span className="settings-update-status" role="status">{desktop ? statusText : t("appSettings.serverManaged")}</span>
+          <span className="settings-update-status" role="status">{desktop || serverUpgrade ? statusText : t("appSettings.serverManaged")}</span>
           {desktop && (updateAvailable || upgradeProgress) && (
             <ConfigButton variant="primary" disabled={!canUpgrade} onClick={() => void handleUpgrade()}>
               {upgradeLabel}
             </ConfigButton>
           )}
+          {serverUpgrade && (updateAvailable || server.active) && (
+            <ConfigButton variant="primary" disabled={!canServerUpgrade} onClick={() => void server.start()}>
+              {upgradeLabel}
+            </ConfigButton>
+          )}
         </div>
       </div>
-      {updateAvailable && (
+      {updateAvailable && (desktop || serverUpgrade) && (
         <p className="settings-general-description settings-updates-note">
-          {t("appSettings.updateNote", { name: APP_DISTRIBUTION_NAME })}
+          {serverUpgrade
+            ? t("appSettings.serverUpdateNote")
+            : t("appSettings.updateNote", { name: APP_DISTRIBUTION_NAME })}
         </p>
       )}
-      {upgradeError && (
+      {(upgradeError || server.error) && (
         <p role="alert" className="settings-general-error">
-          {upgradeError}
+          {upgradeError ?? server.error}
           {releaseUrl && (
             <a
               className="settings-updates-release-link"

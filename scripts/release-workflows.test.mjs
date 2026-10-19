@@ -303,3 +303,33 @@ test("the Tauri crates stay on the npm packages' major/minor", async () => {
     "align them in src-tauri/Cargo.lock (cargo update -p <crate> --precise <version>)",
   );
 });
+
+test("the server image is published to GHCR only after the Release is published", async () => {
+  const release = await readFile(join(root, ".github", "workflows", "release.yml"), "utf8");
+  const image = await readFile(join(root, ".github", "workflows", "docker-image.yml"), "utf8");
+
+  const job = release.slice(release.indexOf("\n  image:"), release.indexOf("\n  # A partially failed matrix"));
+  assert.match(job, /needs: manifest/);
+  assert.match(job, /uses: \.\/\.github\/workflows\/docker-image\.yml/);
+  assert.match(job, /packages: write/);
+  // `manifest` flips the draft to published; an image must never precede it.
+  assert.ok(release.indexOf("gh release edit") < release.indexOf("\n  image:"));
+
+  assert.match(image, /workflow_call:/);
+  assert.match(image, /workflow_dispatch:/);
+  assert.match(image, /ghcr\.io\/cheneyveron\/pi-agent-desktop/);
+  assert.match(image, /password: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+  assert.match(image, /\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$/, "the version input is validated");
+  assert.match(image, /ref: v\$\{\{ inputs\.version \}\}/, "the image is built from the release tag");
+  assert.match(image, /:\$\{\{ inputs\.version \}\}/);
+  assert.match(image, /:latest/);
+  const triggers = image.slice(image.indexOf("\non:"), image.indexOf("\npermissions:"));
+  assert.doesNotMatch(triggers, /\bpull_request\b|\bpush:/, "the image is never built from a branch push");
+});
+
+test("the image Dockerfile builds the web server and carries the repository label", async () => {
+  const dockerfile = await readFile(join(root, "Dockerfile"), "utf8");
+  assert.match(dockerfile, /RUN npm run build/);
+  assert.match(dockerfile, /org\.opencontainers\.image\.source="https:\/\/github\.com\/cheneyveron\/pi-agent-desktop"/);
+  assert.match(dockerfile, /^USER node$/m);
+});
