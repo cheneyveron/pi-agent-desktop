@@ -25,6 +25,7 @@ export function ConfirmDangerButton({ label, busyLabel, busy, onConfirm, classNa
     <button
       className={className ?? "native-button native-button-compact native-button-danger"}
       disabled={busy}
+      aria-live="polite"
       style={armed ? { ...style, background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" } : style}
       onClick={() => {
         if (armed) {

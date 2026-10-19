@@ -55,6 +55,8 @@ export interface AttachedImage {
 
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
+  /** Files picked with "+": images and other files. Without it the picker takes images only. */
+  onAttachFiles?: (files: File[]) => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -130,6 +132,8 @@ interface Props {
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
+  /** The hidden model-only chat workspace: images only, no file/shell mentions. */
+  chatOnly?: boolean;
   /** Project root shown in the composer so the session context is always visible. */
   projectPath?: string | null;
   /** Open the project chooser and switch the active project. */
@@ -773,7 +777,7 @@ export function ModelScopeWarningBanner({
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onSend, onAttachFiles, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, compactNotice, compactResult, summarizationRetry, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -785,6 +789,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
+  chatOnly = false,
   projectPath,
   onSelectProject,
   projectOptions = [],
@@ -842,9 +847,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
-  const projectLabel = getProjectLabel(projectPath);
+  const projectLabel = getProjectLabel(projectPath, projectOptions);
   const trimmedValue = value.trimStart();
-  const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
+  const bashMode = !chatOnly && attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [cursorPosition, setCursorPosition] = useState<number | null>(null);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -893,7 +898,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const {
     hashQuery, setHashQuery, hashMenuOpen, setHashMenuOpen, hashActiveIndex, setHashActiveIndex,
     hashMatches, hashItemRefs, sessionIndex, sessionMentionTargetsRef, updateHashQuery, applyHashCompletion,
-  } = useSessionMentionPalette({ cwd, value, setValue, setAtQuery, textareaRef });
+  } = useSessionMentionPalette({ cwd: chatOnly ? null : cwd, value, setValue, setAtQuery, textareaRef });
+  useEffect(() => {
+    if (!chatOnly) return;
+    setAtQuery(null);
+    setAtMenuOpen(false);
+    setHashQuery(null);
+    setHashMenuOpen(false);
+  }, [chatOnly, setHashMenuOpen, setHashQuery]);
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
 
@@ -1326,13 +1338,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // Recomputed from the text before the caret on every change/caret move.
   // Disabled entirely when there is no cwd (new session without a directory).
   const updateAtQuery = useCallback((text: string, cursor: number | null) => {
-    if (!cwd) {
+    if (chatOnly || !cwd) {
       setAtQuery(null);
       return;
     }
     const pos = cursor ?? text.length;
     setAtQuery(extractAtQuery(text.slice(0, pos)));
-  }, [cwd]);
+  }, [chatOnly, cwd]);
 
   const atQueryText = atQuery?.query ?? null;
   const atLocalFileMatches: FileIndexEntry[] = React.useMemo(() => (
@@ -1920,7 +1932,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return thinkingLevelMap[lvl] ?? lvl;
   })();
   const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "configured"))?.[0] ?? "configured";
-  const toolPresetLabel = rawToolPresetLabel === "chat-only" ? t("chat.chatOnly") : rawToolPresetLabel;
+  const toolPresetLabel = chatOnly || rawToolPresetLabel === "chat-only"
+    ? t("chat.chatOnly")
+    : rawToolPresetLabel;
   // One chip for reasoning + tools: the level always, the preset only when it
   // departs from settings.json ("configured" is the unremarkable default).
   // The session menu (gear) holds the automation switches once a wrapper
@@ -1929,6 +1943,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const canCompactNow = Boolean(onCompact && !isStreaming && !isCompacting);
   const runSettingsLabel = [
     onThinkingLevelChange ? thinkingDisplayLabel : null,
+    chatOnly ? t("chat.chatOnly") : null,
     onToolPresetChange && (!onThinkingLevelChange || rawToolPresetLabel !== "configured") ? toolPresetLabel : null,
   ].filter(Boolean).join(" · ");
   const runSettingsTitle = [
@@ -1937,6 +1952,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ? t("chat.currentReasoning", { level: thinkingDisplayLabel })
         : t("chat.changeReasoning", { level: thinkingDisplayLabel }))
       : null,
+    chatOnly ? `${t("chat.chatOnly")}: ${t("chat.chatOnlyDescription")}` : null,
     onToolPresetChange ? t("chat.changeToolPreset") + `: ${toolPresetLabel}` : null,
   ].filter(Boolean).join(" · ");
 
@@ -1990,12 +2006,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       {!compact && <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={chatOnly || !onAttachFiles ? "image/*" : undefined}
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
-          processImageFiles(files);
+          if (onAttachFiles) onAttachFiles(files);
+          else processImageFiles(files);
           e.target.value = "";
         }}
       />}
@@ -2588,8 +2605,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              title={t("chat.attachImage")}
-              aria-label={t("chat.attachImage")}
+              title={t(chatOnly || !onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
+              aria-label={t(chatOnly || !onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
               className="native-toolbar-button composer-attach-button"
               data-active={attachedImages.length > 0 || undefined}
             >
@@ -2662,7 +2679,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {/* The / @ # triggers, kept out of the placeholder: shown faintly
               beside Send only while the card is focused and empty. */}
           {!compact && !isNarrow && !isStreaming && value.length === 0 && (
-            <span className="composer-trigger-hint" aria-hidden="true">{t("chat.composerHint")}</span>
+            <span className="composer-trigger-hint" aria-hidden="true">
+              {t(chatOnly ? "chat.composerHintChatOnly" : "chat.composerHint")}
+            </span>
           )}
 
           {isStreaming ? (
@@ -2866,7 +2885,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {/* Run settings: reasoning level and tool preset share one chip and
                 one menu. Reasoning stays changeable mid-run (#851); the tool
                 section dims while a run is active instead of vanishing. */}
-            {(onThinkingLevelChange || onToolPresetChange) && (
+            {(onThinkingLevelChange || onToolPresetChange || chatOnly) && (
               <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
                 <button
                   className="native-toolbar-button"
@@ -2991,6 +3010,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           </button>
                         );
                       })}
+                      </>
+                    )}
+                    {chatOnly && (
+                      <>
+                        <div className="composer-menu-heading" data-separated={onThinkingLevelChange ? true : undefined}>
+                          {t("chat.toolsHeading")}
+                        </div>
+                        <div
+                          className="composer-menu-row"
+                          role="menuitem"
+                          aria-disabled="true"
+                          data-active="true"
+                          title={t("chat.chatOnlyDescription")}
+                        >
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
+                            <polyline points="1.5 5 4 7.5 8.5 2.5" />
+                          </svg>
+                          <span style={{ flex: 1 }}>{t("chat.chatOnly")}</span>
+                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8, whiteSpace: "normal" }}>
+                            {t("chat.chatOnlyDescription")}
+                          </span>
+                        </div>
                       </>
                     )}
                     </div>

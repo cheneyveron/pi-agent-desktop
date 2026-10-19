@@ -4,6 +4,7 @@ import {
   compareVersions,
   createComponentManifest,
   isReleasePinValid,
+  nextDesktopVersion,
   nextPatchVersion,
   normalizeVersion,
 } from "./release-components.mjs";
@@ -24,6 +25,14 @@ test("compares stable and prerelease versions", () => {
 test("bumps the patch version", () => {
   assert.equal(nextPatchVersion("v0.1.0"), "0.1.1");
   assert.equal(nextPatchVersion("1.2"), "1.2.1");
+});
+
+test("never reuses a released version, including a prerelease", () => {
+  assert.equal(nextDesktopVersion("0.7.3", ["0.7.2", "0.7.3"]), "0.7.4");
+  // 0.7.4 is prepared locally but not released yet: another sync keeps it.
+  assert.equal(nextDesktopVersion("0.7.4", ["0.7.2", "0.7.3"]), "0.7.4");
+  assert.equal(nextDesktopVersion("0.7.4", ["0.7.3", "0.7.4"]), "0.7.5");
+  assert.equal(nextDesktopVersion("0.7.3", ["0.7.2", "0.7.3", "0.7.4-rc.1"]), "0.7.5");
 });
 
 test("only accepts explicit pins for the exact bundled component version", () => {

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("./AgentsConfig.tsx", import.meta.url), "utf8");
+const confirmDangerSource = await readFile(new URL("./ConfirmDangerButton.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
 const chatInputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const modelSelectorSource = await readFile(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
@@ -147,11 +148,14 @@ test("duplicates any selected profile through the existing create flow", () => {
 });
 
 test("places duplicate and delete immediately before the enabled switch", () => {
-  assert.match(source, /onClick=\{beginDuplicate\}[\s\S]*?onClick=\{\(\) => void remove\(\)\}[\s\S]*?<ConfigSwitch checked=\{draft\.enabled\}/);
+  assert.match(source, /onClick=\{beginDuplicate\}[\s\S]*?onConfirm=\{\(\) => void remove\(\)\}[\s\S]*?<ConfigSwitch checked=\{draft\.enabled\}/);
 });
 
-test("confirms deletion and limits it to writable profiles", () => {
-  assert.match(source, /window\.confirm\(t\("agents\.deleteConfirm", \{ name: selected\.displayName \}\)\)/);
+test("confirms deletion inline and limits it to writable profiles", () => {
+  assert.match(source, /import \{ ConfirmDangerButton \} from "\.\/ConfirmDangerButton"/);
+  assert.match(source, /<ConfirmDangerButton[\s\S]*?onConfirm=\{\(\) => void remove\(\)\}/);
+  assert.match(confirmDangerSource, /aria-live="polite"/);
+  assert.doesNotMatch(source, /window\.confirm/);
   assert.match(source, /selected && isWritableScope\(selected\.scope\) && mode === "edit"/);
   assert.match(source, /method: "DELETE"/);
 });

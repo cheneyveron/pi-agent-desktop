@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleGlobalEscape, handleOpenSettingsShortcut, registerAbortHandler } from "./useKeyboardShortcuts.ts";
+import {
+  handleGlobalEscape,
+  handleOpenSettingsShortcut,
+  handleShortcutActivation,
+  registerAbortHandler,
+} from "./useKeyboardShortcuts.ts";
 
 function keydown(key, { tagName = "BUTTON", defaultPrevented = false } = {}) {
   return {
@@ -63,4 +68,24 @@ test("Cmd/Ctrl+, opens Settings unless it is already open or the key was taken",
   assert.equal(handleOpenSettingsShortcut(comma({ ctrlKey: true, defaultPrevented: true }), open), false);
   assert.equal(handleOpenSettingsShortcut(comma({ ctrlKey: true }), undefined), false);
   assert.equal(opened, 2);
+});
+
+test("accelerator shortcuts require a primary modifier and reject taken keys", () => {
+  const activation = (key, mods = {}) => ({
+    key,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    defaultPrevented: false,
+    ...mods,
+  });
+
+  assert.equal(handleShortcutActivation(activation("\\"), "\\"), false);
+  assert.equal(handleShortcutActivation(activation("\\", { metaKey: true }), "\\"), true);
+  assert.equal(handleShortcutActivation(activation("\\", { ctrlKey: true }), "\\"), true);
+  assert.equal(handleShortcutActivation(activation("\\", { ctrlKey: true, shiftKey: true }), "\\"), false);
+  assert.equal(handleShortcutActivation(activation("\\", { ctrlKey: true, altKey: true }), "\\"), false);
+  assert.equal(handleShortcutActivation(activation("\\", { ctrlKey: true, defaultPrevented: true }), "\\"), false);
+  assert.equal(handleShortcutActivation(activation("/", { metaKey: true }), "\\"), false);
 });

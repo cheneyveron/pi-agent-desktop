@@ -6,6 +6,7 @@ import { allowFileRoot } from "@/lib/file-access";
 import { directoryPermissionMessage, isPermissionError } from "@/lib/directory-browser";
 import { projectIdentityKey } from "@/lib/project-identity";
 import { resolveProject } from "@/lib/worktree";
+import { ensureChatWorkspace, isChatWorkspacePath } from "@/lib/chat-workspace";
 
 function normalizeCwd(cwd: string): string {
   if (cwd === "~") return userHome();
@@ -25,6 +26,17 @@ export async function POST(req: Request) {
     }
 
     const normalizedCwd = normalizeCwd(cwd);
+    if (isChatWorkspacePath(normalizedCwd)) {
+      const chatCwd = await ensureChatWorkspace();
+      allowFileRoot(chatCwd);
+      return NextResponse.json({
+        success: true,
+        cwd: chatCwd,
+        projectRoot: null,
+        projectKey: null,
+        workspaceKind: "chat",
+      });
+    }
     let stat: Stats;
     try {
       stat = statSync(normalizedCwd);

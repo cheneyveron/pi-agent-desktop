@@ -62,8 +62,16 @@ export interface CronPreview {
   nextRuns?: string[];
 }
 
+export interface SchedulerOwnerInfo {
+  pid: number;
+  startedAt: string;
+  heartbeatAt: string;
+  fresh: boolean;
+  alive: boolean;
+}
+
 export const scheduledApi = {
-  list: () => request<{ tasks: ScheduledTaskView[]; scheduler: { owner: boolean } }>(""),
+  list: () => request<{ tasks: ScheduledTaskView[]; scheduler: { owner: boolean; ownerInfo: SchedulerOwnerInfo | null } }>(""),
   create: (input: TaskInput) =>
     request<{ task: ScheduledTaskView }>("", { method: "POST", body: JSON.stringify(input) }),
   update: (id: string, patch: TaskInput) =>
@@ -82,6 +90,8 @@ export const scheduledApi = {
     request<{ run: ScheduledRun }>(`/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/seen`, { method: "POST" }),
   preview: (expr: string, timezone?: string) =>
     request<CronPreview>("/preview", { method: "POST", body: JSON.stringify({ expr, ...(timezone ? { timezone } : {}) }) }),
+  takeoverScheduler: () =>
+    request<{ owner: boolean }>("/scheduler/takeover", { method: "POST" }),
 };
 
 /** An error from the API in the reader's language, falling back to the English message. */

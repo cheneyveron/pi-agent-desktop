@@ -178,11 +178,11 @@
       "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual."
     },
     "app/api/cwd/validate/route.ts": {
-      "risk": "low",
-      "drift": 28,
-      "structuralDrift": 28,
+      "risk": "medium",
+      "drift": 40,
+      "structuralDrift": 40,
       "disposition": "accepted",
-      "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual."
+      "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. Also recognizes the hidden Chat workspace and returns its server-owned identity instead of treating it as a project. Incoming changes to path validation require review."
     }
   },
   "forkOwnedPaths": [

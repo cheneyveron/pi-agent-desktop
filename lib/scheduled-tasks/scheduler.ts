@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { decideSlot } from "./catch-up";
 import { emitScheduledTaskEvent } from "./events";
-import { acquireLease, isPidAlive, releaseLease } from "./lease";
+import { acquireLease, isPidAlive, readLeaseInfo, releaseLease, type LeaseInfo } from "./lease";
 import { executeRun, type RunnerDeps, type RunOutcome } from "./runner";
 import {
   appendRun,
@@ -44,6 +44,21 @@ export class RunRejectedError extends Error {
   }
 }
 
+export class SchedulerTakeoverError extends Error {
+  constructor(
+    readonly info: LeaseInfo | null,
+    message = "Another live process owns the scheduler lease",
+  ) {
+    super(message);
+    this.name = "SchedulerTakeoverError";
+  }
+}
+
+/** Use this, not `instanceof`: module graphs can duplicate the class. */
+export function isSchedulerTakeoverError(error: unknown): error is SchedulerTakeoverError {
+  return isNamedError(error, "SchedulerTakeoverError");
+}
+
 /** Use this, not `instanceof`: see isNamedError(). */
 export function isRunRejectedError(error: unknown): error is RunRejectedError {
   return isNamedError(error, "RunRejectedError");
@@ -77,6 +92,26 @@ export class Scheduler {
 
   isOwner(): boolean {
     return this.owner;
+  }
+
+  ownerInfo(): LeaseInfo | null {
+    return readLeaseInfo(scheduledTasksDir(this.agentDir), {
+      now: this.clock(),
+      alive: this.alive,
+    });
+  }
+
+  /** Try to acquire the lease now; a live owner cannot be overridden. */
+  async takeover(): Promise<boolean> {
+    if (this.ticking) {
+      const info = this.ownerInfo();
+      if (info && info.pid !== this.pid && info.fresh && info.alive) {
+        throw new SchedulerTakeoverError(info);
+      }
+    }
+    await this.tick();
+    if (this.owner) return true;
+    throw new SchedulerTakeoverError(this.ownerInfo());
   }
 
   activeRunCount(): number {

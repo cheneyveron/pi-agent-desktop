@@ -10,6 +10,7 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { selectProjectDirectoryNative, validateProjectDirectory } from "./ProjectPicker";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
+import { AppNoticeShelf } from "./AppNoticeShelf";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { clearDraft } from "@/lib/draft-store";
@@ -91,7 +92,7 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from "@/lib/panel-layout";
-import type { BlockingExtensionUiRequest, CacheWarmingInfo, LeafChangeOptions, SessionInfo, SessionTreeNode } from "@/lib/types";
+import type { BlockingExtensionUiRequest, CacheWarmingInfo, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind } from "@/lib/types";
 import { shouldShowUsageBreakdown, UNATTRIBUTED_USAGE_KEY } from "@/lib/usage-breakdown";
 import { cacheWarmingRows } from "@/lib/cache-warming-display";
 import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
@@ -167,11 +168,28 @@ export function AppShell() {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
+  const [newSessionWorkspaceKind, setNewSessionWorkspaceKind] = useState<SessionWorkspaceKind>("project");
+  // Resolve the hidden chat cwd independently of the sidebar's session poll so
+  // a chat URL or restored blank composer is classified on the first render.
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/chat-workspace", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<{ cwd?: string }> : null)
+      .then((data) => {
+        if (data?.cwd) setChatWorkspaceCwd(data.cwd);
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
   // The Scheduled page covers the chat area without unmounting it, so the open session keeps its state.
   const [scheduledOpen, setScheduledOpen] = useState(() => searchParams?.get("view") === "scheduled");
-  // Read by handleSelectSession, whose identity must not change when the page opens.
+  // Read by restoreWorkspaceContext and handleSelectSession; those identities
+  // must not change when the page opens.
   const scheduledOpenRef = useRef(scheduledOpen);
-  useEffect(() => { scheduledOpenRef.current = scheduledOpen; }, [scheduledOpen]);
+  scheduledOpenRef.current = scheduledOpen;
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
   // The panel is a preview surface; keep the file index hidden until asked for.
@@ -255,6 +273,8 @@ export function AppShell() {
   const topMoreRef = useRef<HTMLDivElement>(null);
   const topMoreMenuRef = useRef<HTMLDivElement>(null);
   const [topMorePos, setTopMorePos] = useState<{ top: number; right: number } | null>(null);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const shortcutHelpDialogRef = useRef<HTMLDivElement | null>(null);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
@@ -268,6 +288,7 @@ export function AppShell() {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
   }, [rightPanelOpen, isMobile]);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
+  const viewportCompactInitializedRef = useRef(false);
   // The desktop window has no native title bar. macOS keeps its traffic lights
   // and only needs the top bar inset for them; other platforms get the buttons
   // from <WindowControls />, which renders nothing in a browser build.
@@ -374,19 +395,27 @@ export function AppShell() {
   useEffect(() => {
     setSidebarOpen(isMobile ? false : desktopSidebarOpenRef.current);
   }, [isMobile]);
-  // Close right panel when viewport is too narrow for split-panel layout.
-  // Uses matchMedia's change event (not just the rightPanelOpen dependency)
-  // so it also fires when an already-open panel's viewport is resized narrow,
-  // not only when the panel itself is opened.
+  // Close an already-open panel when the viewport becomes too narrow for the
+  // split layout. The initial check only records the starting layout: compact
+  // reloads restore terminal state but intentionally start with the overlay
+  // hidden, while later crossings close it rather than trapping the chat.
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
-    const mql = window.matchMedia(`(max-width: ${SPLIT_PANEL_MIN_WIDTH - 1}px)`);
+    const compactQuery = window.matchMedia(`(max-width: ${SPLIT_PANEL_MIN_WIDTH - 1}px)`);
+    const desktopQuery = window.matchMedia(`(min-width: ${SPLIT_PANEL_MIN_WIDTH}px)`);
     const checkWidth = () => {
-      if (mql.matches) setRightPanelOpen(false);
+      // A load starts with the panel closed. On desktop, this marks the
+      // compact listeners initialized and leaves later resize events active.
+      if (compactQuery.matches && viewportCompactInitializedRef.current) setRightPanelOpen(false);
+      viewportCompactInitializedRef.current = compactQuery.matches;
     };
     checkWidth();
-    mql.addEventListener("change", checkWidth);
-    return () => mql.removeEventListener("change", checkWidth);
+    compactQuery.addEventListener("change", checkWidth);
+    desktopQuery.addEventListener("change", checkWidth);
+    return () => {
+      compactQuery.removeEventListener("change", checkWidth);
+      desktopQuery.removeEventListener("change", checkWidth);
+    };
   }, []);
   useEffect(() => {
     setMobileSidebarReady(true);
@@ -547,18 +576,6 @@ export function AppShell() {
     });
   }, [isMobile]);
 
-  const handleRightPanelToggle = useCallback(() => {
-    if (isMobile) {
-      setSidebarOpen(false);
-      setActiveTopPanel(null);
-    }
-    setTopMoreOpen(false);
-    setRightPanelOpen((open) => {
-      if (open) setRightPanelExpanded(false);
-      return !open;
-    });
-  }, [isMobile]);
-
   // The panel is a preview layer; the composer remains the home base. The
   // overlay and backslash shortcut both use this same exit.
   // Also leaves full width, like the toggle: reopening into full width would
@@ -670,14 +687,28 @@ export function AppShell() {
   const [artifactTabs, setArtifactTabs] = useState<ArtifactTab[]>([]);
   // artifactPanelTab reads each tab's newest title; this re-renders when one changes.
   useArtifactTitles(artifactTabs);
-  const panelTabs: Tab[] = [...fileTabs, ...terminalTabs.map((tab) => ({
+  const panelTabs: Tab[] = useMemo(() => [...fileTabs, ...terminalTabs.map((tab) => ({
     id: tab.id,
     label: getFileName(tab.cwd) || tab.cwd,
     filePath: tab.cwd,
     kind: "terminal" as const,
     closing: Boolean(tab.closing),
-  })), ...artifactTabs.map(artifactPanelTab)];
+  })), ...artifactTabs.map(artifactPanelTab)], [fileTabs, terminalTabs, artifactTabs]);
   const activeArtifactTab = artifactTabs.find((tab) => tab.id === activeFileTabId) ?? null;
+  const handleRightPanelToggle = useCallback(() => {
+    if (isMobile) {
+      setSidebarOpen(false);
+      setActiveTopPanel(null);
+    }
+    setTopMoreOpen(false);
+    setRightPanelOpen((open) => {
+      // A manual open with no tab lands on the project file tree, not a mostly
+      // empty "No file open" state.
+      if (!open && panelTabs.length === 0) setFileTreeOpen(true);
+      if (open) setRightPanelExpanded(false);
+      return !open;
+    });
+  }, [isMobile, panelTabs]);
 
   useEffect(() => {
     try {
@@ -742,6 +773,38 @@ export function AppShell() {
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const activeProjectKeyRef = useRef<string | null>(null);
+  const activeWorkspaceKind: SessionWorkspaceKind = (() => {
+    if (selectedSession) {
+      return selectedSession.workspaceKind
+        ?? (chatWorkspaceCwd && selectedSession.cwd === chatWorkspaceCwd ? "chat" : "project");
+    }
+    const cwd = newSessionCwd ?? activeCwd;
+    if (cwd && chatWorkspaceCwd && cwd === chatWorkspaceCwd) return "chat";
+    return newSessionWorkspaceKind;
+  })();
+  const isChatWorkspaceActive = activeWorkspaceKind === "chat";
+  // Project-scoped chrome (trust, pickers, file tree, window title) must never
+  // receive the hidden chat workspace path.
+  const visibleProjectCwd = isChatWorkspaceActive ? null : activeCwd;
+  const projectPickerStartCwd = isChatWorkspaceActive
+    ? null
+    : selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
+  // Until the server tells us the hidden chat cwd, an invalid URL cwd cannot
+  // be classified. Keep it out of the error card rather than risk showing the
+  // internal Chat workspace path during the first paint.
+  const showInitialRequestedCwd = Boolean(
+    chatWorkspaceCwd
+      && initialNavigation.requestedCwd
+      && initialNavigation.requestedCwd !== chatWorkspaceCwd,
+  );
+  useEffect(() => {
+    if (!isChatWorkspaceActive) return;
+    setRightPanelOpen(false);
+    setRightPanelExpanded(false);
+    setFileTreeOpen(false);
+    setFileTabs([]);
+    setActiveFileTabId(null);
+  }, [isChatWorkspaceActive]);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
   // sessionStorage is empty during SSR. Applying the tab's remembered session
@@ -797,7 +860,11 @@ export function AppShell() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const data = await response.json().catch(() => ({})) as { cwd?: string; error?: string };
+        const data = await response.json().catch(() => ({})) as {
+          cwd?: string;
+          error?: string;
+          workspaceKind?: SessionWorkspaceKind;
+        };
         if (!response.ok || !data.cwd) {
           throw new Error(data.error ?? `HTTP ${response.status}`);
         }
@@ -809,6 +876,10 @@ export function AppShell() {
         setNewSessionDraftId(draftId);
         activeNewSessionDraftKeyRef.current = `new:${draftId}:${data.cwd}`;
         setNewSessionCwd(data.cwd);
+        if (data.workspaceKind === "chat") {
+          setChatWorkspaceCwd(data.cwd);
+          setNewSessionWorkspaceKind("chat");
+        }
         setInitialCwdStatus("ready");
         if (!new URLSearchParams(window.location.search).get("cwd")) {
           router.replace(`?cwd=${encodeURIComponent(data.cwd)}`, { scroll: false });
@@ -859,8 +930,12 @@ export function AppShell() {
       // the restored session's messages.
       setSelectedSession(s);
       setSessionKey((k) => k + 1);
-      if (new URLSearchParams(window.location.search).get("session") !== s.id) {
-        router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
+      // A direct Scheduled URL can restore its hidden workspace while sessions
+      // load. That fills the chat but must not switch the visible page.
+      if (!scheduledOpenRef.current) {
+        if (new URLSearchParams(window.location.search).get("session") !== s.id) {
+          router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
+        }
       }
     };
     // Fast path: the sidebar already delivered the catalogue — restore
@@ -881,13 +956,15 @@ export function AppShell() {
     cwd: string | null,
     projectRoot?: string | null,
     projectKey?: string | null,
+    workspaceKind?: SessionWorkspaceKind,
   ) => {
     invalidateWorkspaceRestore();
     const currentFreshCwd = newSessionCwd ?? activeCwd;
     setActiveCwd(cwd);
+    if (workspaceKind) setNewSessionWorkspaceKind(workspaceKind);
     // Skip if cwd is null (initial mount).
     if (!cwd) return;
-    const newProject = projectKey ?? projectRoot ?? cwd;
+    const newProject = workspaceKind === "chat" ? cwd : projectKey ?? projectRoot ?? cwd;
     const currentProject = activeProjectKeyRef.current
       ?? (selectedSession ? workspaceKeyOf(selectedSession) : null);
     activeProjectKeyRef.current = newProject;
@@ -958,12 +1035,21 @@ export function AppShell() {
       // the default welcome page when none is remembered.
       restoreWorkspaceContext(newProject, cwd);
     }
-    router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    // This callback also runs when the sidebar picks its default project on a
+    // direct Scheduled URL. There is no explicit navigation away from that
+    // page yet, so retain the URL that made it visible.
+    if (!scheduledOpenRef.current) {
+      router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    }
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
     // Picking a session means leaving Scheduled; a cold-start restore must not.
     if (!isRestore) setScheduledOpen(false);
+    setNewSessionWorkspaceKind(
+      session.workspaceKind
+      ?? (chatWorkspaceCwd && session.cwd === chatWorkspaceCwd ? "chat" : "project"),
+    );
     setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
     invalidateWorkspaceRestore();
     const activeDraftKey = activeNewSessionDraftKeyRef.current;
@@ -1027,11 +1113,18 @@ export function AppShell() {
     } else if (!isRestore || new URLSearchParams(window.location.search).get("session") !== session.id) {
       router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
     }
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
+  }, [activeCwd, activeFileTabId, chatWorkspaceCwd, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
 
-  const handleNewSession = useCallback((sessionId: string, cwd: string) => {
+  const handleNewSession = useCallback((
+    sessionId: string,
+    cwd: string,
+    workspaceKind?: SessionWorkspaceKind,
+  ) => {
+    const resolvedWorkspaceKind = workspaceKind
+      ?? (chatWorkspaceCwd && cwd === chatWorkspaceCwd ? "chat" : newSessionWorkspaceKind);
     setScheduledOpen(false);
     invalidateWorkspaceRestore();
+    setNewSessionWorkspaceKind(resolvedWorkspaceKind);
     // "New task" is an explicit reset. A cwd-based blank-task draft would
     // otherwise be reloaded immediately when the composer remounts (legacy
     // key scheme kept for drafts written by older builds).
@@ -1056,9 +1149,16 @@ export function AppShell() {
     setSystemTools(null);
     setSystemInfoLoading(false);
     setActiveTopPanel(null);
+    if (resolvedWorkspaceKind === "chat") {
+      setFileTabs([]);
+      setActiveFileTabId(null);
+      setFileTreeOpen(false);
+      setRightPanelOpen(false);
+      setRightPanelExpanded(false);
+    }
     if (isMobile) setSidebarOpen(false);
     router.replace(`?cwd=${encodeURIComponent(cwd)}`, { scroll: false });
-  }, [invalidateWorkspaceRestore, router, isMobile]);
+  }, [chatWorkspaceCwd, invalidateWorkspaceRestore, router, isMobile, newSessionWorkspaceKind]);
 
   const handleProjectsChange = useCallback((projectRoots: string[]) => {
     setAvailableProjectRoots((previous) => (
@@ -1069,30 +1169,35 @@ export function AppShell() {
   }, []);
 
   const handleProjectChangeFromComposer = useCallback((projectRoot: string) => {
-    if (selectedSession) return;
-    handleNewSession(`project-${Date.now()}`, projectRoot);
-  }, [handleNewSession, selectedSession]);
+    if (selectedSession || isChatWorkspaceActive) return;
+    handleNewSession(`project-${Date.now()}`, projectRoot, "project");
+  }, [handleNewSession, isChatWorkspaceActive, selectedSession]);
 
   const handleSelectProjectFromComposer = useCallback(async () => {
+    if (isChatWorkspaceActive) return;
     if (!desktopMode) {
       setRemoteProjectPickerError(null);
       setRemoteProjectPickerOpen(true);
       return;
     }
     try {
-      const cwd = await selectProjectDirectoryNative(
-        selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
-        "",
-      );
-      if (cwd) handleNewSession(`project-${Date.now()}`, cwd);
+      const cwd = await selectProjectDirectoryNative(projectPickerStartCwd, "");
+      if (cwd) handleNewSession(`project-${Date.now()}`, cwd, "project");
     } catch (error) {
       console.error("Failed to switch project:", error);
     }
-  }, [desktopMode, selectedSession?.cwd, newSessionCwd, activeCwd, handleNewSession]);
+  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd]);
 
   const handleNativeMenuAction = useCallback((payload: string) => {
     if (payload === "new-session") {
-      if (activeCwd) handleNewSession(`native-menu-${Date.now()}`, activeCwd);
+      const cwd = isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd;
+      if (cwd) {
+        handleNewSession(
+          `native-menu-${Date.now()}`,
+          cwd,
+          isChatWorkspaceActive ? "chat" : "project",
+        );
+      }
       return;
     }
     if (payload === "settings-general" || payload === "settings-models") {
@@ -1101,15 +1206,28 @@ export function AppShell() {
       setTopMoreOpen(false);
       setSettingsSection(payload === "settings-general" ? "general" : "models");
     }
-  }, [activeCwd, closeSettingsMenu, handleNewSession]);
+  }, [activeCwd, chatWorkspaceCwd, closeSettingsMenu, handleNewSession, isChatWorkspaceActive]);
 
   const openSettingsAtLastSection = useCallback(() => {
     closeSettingsMenu();
     setActiveTopPanel(null);
     setTopMoreOpen(false);
     // A project-only section without a project falls back to General (SettingsPanel re-checks).
-    setSettingsSection(getLastSettingsSection(selectedSession?.cwd ?? newSessionCwd ?? activeCwd));
-  }, [activeCwd, closeSettingsMenu, newSessionCwd, selectedSession]);
+    setSettingsSection(getLastSettingsSection(
+      isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
+    ));
+  }, [activeCwd, closeSettingsMenu, isChatWorkspaceActive, newSessionCwd, selectedSession]);
+
+  const toggleShortcutHelp = useCallback(() => {
+    setShortcutHelpOpen((open) => {
+      if (!open) {
+        closeSettingsMenu();
+        setActiveTopPanel(null);
+        setTopMoreOpen(false);
+      }
+      return !open;
+    });
+  }, [closeSettingsMenu]);
 
   // The native macOS menu is the only reliable route when the webview has no
   // focused element. Route its custom items back through the same app state.
@@ -1117,13 +1235,52 @@ export function AppShell() {
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
-    onNewSession: (cwd: string) => handleNewSession(`kb-${Date.now()}`, cwd),
-    activeCwd,
+    onNewSession: settingsSection || shortcutHelpOpen
+      ? undefined
+      : (cwd: string) => handleNewSession(
+        `kb-${Date.now()}`,
+        cwd,
+        isChatWorkspaceActive ? "chat" : "project",
+      ),
+    activeCwd: isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd,
     // Only while open: a closed panel must leave \ and focus alone.
-    onCloseRightPanel: rightPanelOpen ? handleRightPanelClose : undefined,
+    onCloseRightPanel: rightPanelOpen && !shortcutHelpOpen ? handleRightPanelClose : undefined,
     // Already open: leave it where it is.
     onOpenSettings: settingsSection ? undefined : openSettingsAtLastSection,
+    onShortcutHelp: settingsSection ? undefined : toggleShortcutHelp,
+    onToggleSidebar: settingsSection || shortcutHelpOpen ? undefined : handleSidebarToggle,
+    onFocusComposer: settingsSection || shortcutHelpOpen ? undefined : () => chatInputRef.current?.focus(),
   });
+
+  useEffect(() => {
+    if (!shortcutHelpOpen) return;
+    const dialog = shortcutHelpDialogRef.current;
+    const opener = document.activeElement;
+    dialog?.focus({ preventScroll: true });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        setShortcutHelpOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = dialog?.querySelectorAll<HTMLElement>(`
+        button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])
+      `);
+      if (!focusable?.length) return;
+      event.preventDefault();
+      const next = event.shiftKey ? focusable[focusable.length - 1] : focusable[0];
+      next.focus({ preventScroll: true });
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      const focusable = opener as (Element & Partial<HTMLElement>) | null;
+      if (focusable?.isConnected && typeof focusable.focus === "function") {
+        focusable.focus({ preventScroll: true });
+      }
+    };
+  }, [shortcutHelpOpen]);
 
   // Client-built transient SessionInfo (new session / fork) lacks the
   // server-computed projectKey, which the same-project check in
@@ -1199,8 +1356,8 @@ export function AppShell() {
 
   // Validated and allow-listed like any project pick, which /api/models needs for the new folder.
   const handleBrowseScheduledFolder = useCallback(
-    () => selectProjectDirectoryNative(selectedSession?.cwd ?? newSessionCwd ?? activeCwd, ""),
-    [selectedSession?.cwd, newSessionCwd, activeCwd],
+    () => selectProjectDirectoryNative(projectPickerStartCwd, ""),
+    [projectPickerStartCwd],
   );
 
   // Called by ChatWindow when a new session gets its real id from pi
@@ -1380,6 +1537,7 @@ export function AppShell() {
     if (selectedSession?.id === sessionId) {
       clearTabOpenSession(sessionId);
       const cwd = selectedSession.cwd;
+      const wasChat = isChatWorkspaceActive || selectedSession.workspaceKind === "chat";
       const draftId = typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -1387,6 +1545,14 @@ export function AppShell() {
       activeNewSessionDraftKeyRef.current = cwd ? `new:${draftId}:${cwd}` : null;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
+      if (wasChat) {
+        setNewSessionWorkspaceKind("chat");
+        setFileTabs([]);
+        setActiveFileTabId(null);
+        setFileTreeOpen(false);
+        setRightPanelOpen(false);
+        setRightPanelExpanded(false);
+      }
       setBranchTree([]);
       setBranchActiveLeafId(null);
       setBranchSwitchLocked(false);
@@ -1396,13 +1562,14 @@ export function AppShell() {
       setActiveTopPanel(null);
       router.replace(cwd ? `?cwd=${encodeURIComponent(cwd)}` : (typeof window !== "undefined" ? window.location.pathname : "/"), { scroll: false });
     }
-  }, [invalidateWorkspaceRestore, selectedSession, router]);
+  }, [invalidateWorkspaceRestore, isChatWorkspaceActive, selectedSession, router]);
 
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
     options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
   ) => {
+    if (isChatWorkspaceActive) return;
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const page = options?.page;
@@ -1419,7 +1586,7 @@ export function AppShell() {
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
-  }, [isMobile]);
+  }, [isChatWorkspaceActive, isMobile]);
 
   const [copiedSessionField, setCopiedSessionField] = useState<SessionCopyField | null>(null);
   const sessionCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1432,27 +1599,30 @@ export function AppShell() {
   }, []);
 
   const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
+    if (isChatWorkspaceActive) return;
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
-  }, [handleOpenFile, selectedSession?.id]);
+  }, [handleOpenFile, isChatWorkspaceActive, selectedSession?.id]);
 
   const handleOpenTerminal = useCallback((cwd: string) => {
+    if (isChatWorkspaceActive) return;
     const existing = terminalTabs.find((tab) => tab.cwd === cwd);
     const tab = existing ?? newTerminalTab(cwd);
     if (!existing) setTerminalTabs((tabs) => [...tabs, tab]);
     setActiveFileTabId(tab.id);
     setRightPanelOpen(true);
     if (isMobile) setSidebarOpen(false);
-  }, [terminalTabs, isMobile]);
+  }, [isChatWorkspaceActive, terminalTabs, isMobile]);
 
   // Message cards open artifacts through lib/artifact-store. An automatic open
   // (a streamed artifact just finished) is skipped on mobile, where the panel
   // would cover the reply that is still being read.
   useEffect(() => setArtifactOpener((request) => {
+    if (isChatWorkspaceActive) return;
     if (request.auto && isMobile) return;
     setArtifactTabs((tabs) => upsertArtifactTab(tabs, request, Date.now()));
     setActiveFileTabId(artifactTabId(request.sessionId, request.identifier));
     if (request.reveal !== false) setRightPanelOpen(true);
-  }), [isMobile]);
+  }), [isChatWorkspaceActive, isMobile]);
 
   const selectedSessionId = selectedSession?.id ?? null;
   // Read by the effect below without re-running it on every tab change.
@@ -1529,7 +1699,9 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
-  const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const projectTrustCwd = isChatWorkspaceActive
+    ? null
+    : selectedSession?.cwd ?? effectiveNewSessionCwd;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -1538,7 +1710,7 @@ export function AppShell() {
     initialSessionRestored,
     persistedWorkspace,
     sessionId: selectedSession?.id ?? null,
-    cwd: selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
+    cwd: isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
     showPlaceholder,
     fileTabs,
     activeFileTabId,
@@ -1640,8 +1812,7 @@ export function AppShell() {
       if (fileTreeAutoCollapsed) setFileTreeNarrowOverride(true);
     }
   };
-  const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - ${PRODUCT_NAME}` : PRODUCT_NAME;
+  const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   const topBarTitle = scheduledOpen
     ? translate("scheduled.title")
     : selectedSession
@@ -1652,9 +1823,18 @@ export function AppShell() {
         || selectedSession.firstMessage
         || translate("appshell.untitledTask")
       : showChat
-        ? translate("appshell.newTask")
+        ? translate(isChatWorkspaceActive ? "sidebar.newChatTitle" : "appshell.newTask")
         : PRODUCT_NAME;
-  const topBarSubtitle = scheduledOpen ? "" : activeCwdName ?? translate("appshell.subtitle");
+  const topBarSubtitle = scheduledOpen
+    ? ""
+    : isChatWorkspaceActive
+      ? translate("workspace.chatTitle")
+      : activeCwdName ?? translate("appshell.subtitle");
+  const windowTitle = isChatWorkspaceActive
+    ? `${topBarTitle} - ${PRODUCT_NAME}`
+    : activeCwdName
+      ? `${activeCwdName} - ${PRODUCT_NAME}`
+      : PRODUCT_NAME;
 
   useEffect(() => {
     const syncWindowTitle = () => {
@@ -1721,12 +1901,13 @@ export function AppShell() {
         scheduledOpen={scheduledOpen}
         onGenerateTitle={generateSessionTitleFor}
         onOpenFullHistory={openFullHistory}
+        onChatWorkspaceCwdChange={setChatWorkspaceCwd}
       />
     </>
   );
 
   const renderProjectTrustWarning = (mobileBanner: boolean) => {
-    if (!showChat || scheduledOpen || !projectTrust?.requiresTrust || projectTrust.trusted) return null;
+    if (isChatWorkspaceActive || !showChat || scheduledOpen || !projectTrust?.requiresTrust || projectTrust.trusted) return null;
     return (
       <button
         type="button"
@@ -1777,9 +1958,9 @@ export function AppShell() {
   };
 
 
-  // The file panel shows a project's files, which the Scheduled page has none of, so its
-  // toggle is hidden there. An already open panel keeps it: on desktop it is the only way to close it.
-  const showFilePanelToggle = !scheduledOpen || rightPanelOpen;
+  // The workspace can still show a terminal or artifact while Scheduled is open,
+  // and the overlay always needs its own visible way back to the page.
+  const showFilePanelToggle = !isChatWorkspaceActive && (isMobile || !scheduledOpen || rightPanelOpen);
 
   const renderMainFileToggle = () => {
     return (
@@ -1789,8 +1970,8 @@ export function AppShell() {
         onClick={handleRightPanelToggle}
         aria-controls="file-panel"
         aria-expanded={rightPanelOpen}
-        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+        title={rightPanelOpen ? translate("workspace.hidePanelHint") : translate("workspace.showPanel")}
+        aria-label={rightPanelOpen ? translate("workspace.hidePanel") : translate("workspace.showPanel")}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
@@ -2043,17 +2224,19 @@ export function AppShell() {
                 </svg>
                  {!isMobile && <span>{translate("history.label")}</span>}
               </button>
-              <BranchNavigator
-                tree={branchTree}
-                activeLeafId={branchActiveLeafId}
-                onLeafChange={handleBranchLeafChange}
-                inline
-                compact={isMobile}
-                containerRef={topBarRef}
-                open={activeTopPanel === "branches"}
-                onToggle={() => toggleTopPanel("branches")}
-                hasSession
-              />
+              {!isChatWorkspaceActive && (
+                <BranchNavigator
+                  tree={branchTree}
+                  activeLeafId={branchActiveLeafId}
+                  onLeafChange={handleBranchLeafChange}
+                  inline
+                  compact={isMobile}
+                  containerRef={topBarRef}
+                  open={activeTopPanel === "branches"}
+                  onToggle={() => toggleTopPanel("branches")}
+                  hasSession
+                />
+              )}
               {(() => {
                 // Persisted stats win so compressed sessions can still name
                 // themselves; the file message count covers sessions whose
@@ -2310,7 +2493,7 @@ export function AppShell() {
           )}
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && showFilePanelToggle && renderMainFileToggle()}
-          {isMobile && sessionHasBranches && (
+          {isMobile && !isChatWorkspaceActive && sessionHasBranches && (
             <BranchNavigator
               tree={branchTree}
               activeLeafId={branchActiveLeafId}
@@ -2378,7 +2561,7 @@ export function AppShell() {
                       return `${s}s`;
                     };
                     const totalActiveMs = sessionStats.totalActiveMs ?? 0;
-                    const ws = selectedSession;
+                    const ws = isChatWorkspaceActive ? null : selectedSession;
                     const sessionRows = [
                        ...(sessionStats.sessionName ? [{ label: translate("session.name"), value: sessionStats.sessionName, copyField: null }] : []),
                        { label: translate("session.file"), value: sessionStats.sessionFile ?? translate("session.inMemory"), copyField: "file" as const },
@@ -2582,6 +2765,7 @@ export function AppShell() {
             <ChatWindow
               key={sessionKey}
               session={selectedSession}
+              workspaceKind={activeWorkspaceKind}
               searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
               onSearchTargetHandled={handleSearchTargetHandled}
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
@@ -2597,7 +2781,7 @@ export function AppShell() {
               workspaceUnavailable={unavailableWorkspace}
               onRecheckWorkspace={recheckWorkspace}
               chatInputRef={chatInputRef}
-              onBranchDataChange={handleBranchDataChange}
+              onBranchDataChange={isChatWorkspaceActive ? undefined : handleBranchDataChange}
               onSystemPromptChange={handleSystemPromptChange}
               onSystemToolsChange={handleSystemToolsChange}
               onSystemInfoLoaderChange={handleSystemInfoLoaderChange}
@@ -2605,11 +2789,11 @@ export function AppShell() {
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onOpenSettings={openSettingsSection}
               onContextUsageChange={handleContextUsageChange}
-              onSelectProject={() => void handleSelectProjectFromComposer()}
-              projectOptions={selectedSession ? [] : availableProjectRoots}
-              onProjectChange={selectedSession ? undefined : handleProjectChangeFromComposer}
+              onSelectProject={isChatWorkspaceActive ? undefined : () => void handleSelectProjectFromComposer()}
+              projectOptions={selectedSession || isChatWorkspaceActive ? [] : availableProjectRoots}
+              onProjectChange={selectedSession || isChatWorkspaceActive ? undefined : handleProjectChangeFromComposer}
               onOpenModelsConfig={() => setSettingsSection("models")}
-              onOpenFile={handleOpenLinkedFile}
+              onOpenFile={isChatWorkspaceActive ? undefined : handleOpenLinkedFile}
               onOpenSession={handleOpenSession}
               onAskInNewChat={handleAskInNewChat}
               quoteSelectionEnabled={quoteSelectionEnabled}
@@ -2624,24 +2808,23 @@ export function AppShell() {
               role="status"
               style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
             >
-               <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
+              <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
             </div>
           ) : initialCwdStatus === "error" ? (
             <div
               role="alert"
               style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
             >
-               <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
+              <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
+              {showInitialRequestedCwd && (
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                  {initialNavigation.requestedCwd}
+                </div>
+              )}
               <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
             </div>
           ) : showPlaceholder ? (
-            activeCwd ? (
+            visibleProjectCwd ? (
               <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
                  {translate("workspace.selectSession")}
               </div>
@@ -2665,7 +2848,7 @@ export function AppShell() {
         {scheduledOpen && (
           <ScheduledView
             projectRoots={availableProjectRoots}
-            defaultCwd={selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
+            defaultCwd={isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
             onBrowseFolder={desktopMode ? handleBrowseScheduledFolder : undefined}
             onOpenSession={async (sessionId) => {
               // handleOpenSession only logs a failure; this page has to tell the user.
@@ -2685,7 +2868,8 @@ export function AppShell() {
 
       {/* Mobile keeps this fixed toggle (the desktop topbar renders its own);
           rendering both on desktop stacks two overlapping icons whose clicks
-          intercept each other. */}
+          intercept each other. Scheduled keeps it available because closing
+          that page must not strand an open mobile overlay. */}
       {isMobile && showFilePanelToggle && (
         <button
           type="button"
@@ -2693,8 +2877,8 @@ export function AppShell() {
           onClick={handleRightPanelToggle}
           aria-controls="file-panel"
           aria-expanded={rightPanelOpen}
-          title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-          aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+          title={rightPanelOpen ? translate("workspace.hidePanel") : translate("workspace.showPanel")}
+          aria-label={rightPanelOpen ? translate("workspace.hidePanel") : translate("workspace.showPanel")}
           aria-pressed={rightPanelOpen}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2709,6 +2893,50 @@ export function AppShell() {
         className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
         onClick={handleRightPanelClose}
       />
+      {shortcutHelpOpen && createPortal(
+        <div
+          className="shortcut-help-backdrop"
+          onClick={toggleShortcutHelp}
+        >
+          <div
+            className="shortcut-help-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={translate("shortcutHelp.title")}
+            tabIndex={-1}
+            ref={shortcutHelpDialogRef}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="shortcut-help-header">
+              <strong>{translate("shortcutHelp.title")}</strong>
+              <button
+                type="button"
+                className="file-workbench-icon-button"
+                onClick={toggleShortcutHelp}
+                aria-label={translate("i18n.close")}
+                title={translate("i18n.close")}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </header>
+            <dl className="shortcut-help-list">
+              <div><dt><kbd>Esc</kbd></dt><dd>{translate("shortcutHelp.stop")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+N</kbd></dt><dd>{translate("shortcutHelp.newSession")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+,</kbd></dt><dd>{translate("shortcutHelp.settings")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+/</kbd></dt><dd>{translate("shortcutHelp.help")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+\</kbd></dt><dd>{translate("shortcutHelp.hideWorkspace")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+B</kbd></dt><dd>{translate("shortcutHelp.toggleSidebar")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+L</kbd></dt><dd>{translate("shortcutHelp.focusComposer")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+Enter</kbd></dt><dd>{translate("shortcutHelp.send")}</dd></div>
+              <div><dt><kbd>↑</kbd></dt><dd>{translate("shortcutHelp.inputHistory")}</dd></div>
+              <div><dt><kbd>Tab / →</kbd></dt><dd>{translate("shortcutHelp.acceptCompletion")}</dd></div>
+            </dl>
+          </div>
+        </div>,
+        document.body,
+      )}
       {rightPanelOpen && (
         <div
           {...rightPanelResizer.separatorProps}
@@ -2790,10 +3018,10 @@ export function AppShell() {
               activeTabId={activeFileTabId ?? ""}
               onSelectTab={setActiveFileTabId}
               onCloseTab={handleCloseFileTab}
-              onNewTerminal={activeCwd ? () => handleOpenTerminal(activeCwd) : undefined}
+              onNewTerminal={visibleProjectCwd ? () => handleOpenTerminal(visibleProjectCwd) : undefined}
             />
           </div>
-          {activeCwd && (
+          {visibleProjectCwd && (
             <button
               type="button"
               className={`file-workbench-icon-button file-tree-toggle${fileTreeShown ? " is-active" : ""}`}
@@ -2832,8 +3060,9 @@ export function AppShell() {
             onClick={handleRightPanelClose}
             aria-controls="file-panel"
             aria-expanded={rightPanelOpen}
-            title={translate("files.hidePanel")}
-            aria-label={translate("files.hidePanel")}
+            aria-keyshortcuts="Meta+\\ Control+\\"
+          title={translate("workspace.hidePanelHint")}
+          aria-label={translate("workspace.hidePanel")}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -2857,7 +3086,7 @@ export function AppShell() {
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
               filePath={activeFileTab.filePath}
-              cwd={activeCwd ?? undefined}
+              cwd={visibleProjectCwd ?? undefined}
               sourceSessionId={activeFileTab.sourceSessionId}
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
@@ -2881,7 +3110,7 @@ export function AppShell() {
             <div className="right-panel-empty">
               <span>{translate("files.noneOpen")}</span>
               {/* The file list starts hidden; offer it where the panel is empty. */}
-              {activeCwd && !fileTreeShown && (
+              {visibleProjectCwd && !fileTreeShown && (
                 <button type="button" className="right-panel-empty-action" onClick={handleFileTreeToggle}>
                   {translate("contextPanel.showFileList")}
                 </button>
@@ -2902,7 +3131,7 @@ export function AppShell() {
         </div>
       
         {/* Explorer column — always-on project file tree */}
-          {activeCwd && fileTreeShown && (
+          {visibleProjectCwd && fileTreeShown && (
             <>
               <div
                 {...fileTreeResizer.separatorProps}
@@ -2955,6 +3184,7 @@ export function AppShell() {
                   onClick={() => fileExplorerRef.current?.openUploadPicker()}
                   disabled={explorerUploadBusy}
                   title={translate("sidebar.uploadFilesTitle")}
+                  aria-label={translate("sidebar.uploadFilesTitle")}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center",
                     width: 26, height: 26, padding: 0,
@@ -2973,7 +3203,7 @@ export function AppShell() {
               <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
                 <FileExplorer
                   ref={fileExplorerRef}
-                  cwd={activeCwd}
+                  cwd={visibleProjectCwd}
                   onOpenFile={handleOpenFile}
                   refreshKey={explorerRefreshKey}
                   onAtMention={handleAtMention}
@@ -3024,6 +3254,7 @@ export function AppShell() {
     )}
     <UpdateReminder onOpenSettings={() => setSettingsSection("general")} />
     <DomContextMenuHost />
+    <AppNoticeShelf />
     </div>
     </>
   );

@@ -92,7 +92,7 @@ try {
       const backdrop = page.locator(".sidebar-overlay-backdrop:visible");
       if (await backdrop.count()) await backdrop.click({ position: { x: 380, y: 400 } });
       // Desktop: topbar toggle. Mobile: the fixed floating toggle outside the topbar.
-      const showPanel = page.locator('button[aria-label="Show file panel"]:visible').first();
+      const showPanel = page.locator('button[aria-label="Show workspace"]:visible').first();
       if (await showPanel.count()) await showPanel.click();
       await page.locator("#file-panel").getByRole("button", { name: "New terminal", exact: true }).click();
     };
@@ -103,8 +103,8 @@ try {
     // only exists as that strip chip now.
     const hidePanel = async () => {
       const controls = [
-        page.locator('.app-topbar button[aria-label="Hide file panel"]'),
-        page.locator('#file-panel [aria-label="Hide file panel"]'),
+        page.locator('.app-topbar button[aria-label="Hide workspace"]'),
+        page.locator('#file-panel [aria-label="Hide workspace"]'),
       ];
       for (const control of controls) {
         if (await control.count() === 0) continue;

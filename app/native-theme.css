@@ -636,12 +636,11 @@
   }
 }
 
-/* While the agent or a bash command is running, fork/navigate actions on user
-   messages are inert (the handlers early-return) — hide them here instead of
-   toggling their props, so MessageView memoization survives busy transitions. */
-.chat-window[data-session-busy="true"] .user-msg-actions {
-  opacity: 0 !important;
-  pointer-events: none !important;
+/* While the session is busy, in-session edit branches must wait. Keep the
+   action visible and disabled (MessageView supplies the reason) so users do
+   not lose the affordance; fork stays available during ordinary agent runs. */
+.chat-window[data-session-busy="true"] .user-msg-actions button:disabled {
+  opacity: 0.48;
 }
 
 /* ---- from settings.css --------------------------------------------------- */
@@ -711,6 +710,88 @@
 
 .settings-general-tagline:first-child {
   color: var(--text);
+}
+
+/* A quiet overview card keeps the product summary from reading as an
+   unlabeled twin of the Version & Updates section below it. */
+.settings-general-overview {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+
+/* Keyboard reference: a small command panel that stays light enough to open
+   repeatedly while learning the app. */
+.shortcut-help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 750;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 16, 18, 0.24);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.shortcut-help-dialog {
+  width: min(430px, 100%);
+  max-height: min(520px, calc(100dvh - 48px));
+  overflow: auto;
+  padding: 16px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-dialog);
+}
+
+.shortcut-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: var(--fs-title);
+}
+
+.shortcut-help-list {
+  display: grid;
+  margin: 0;
+}
+
+.shortcut-help-list > div {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: var(--hairline) solid var(--separator);
+}
+
+.shortcut-help-list > div:last-child {
+  border-bottom: none;
+}
+
+.shortcut-help-list kbd {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 6px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+
+.shortcut-help-list dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-body);
 }
 
 /* Version card: current and latest release side by side with the update
@@ -2200,6 +2281,24 @@ html.dark .sidebar-view-switcher-thumb {
   min-height: 0;
 }
 
+.sidebar-project-timeline {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  padding: 2px 0 8px;
+}
+
+.session-item-project {
+  max-width: 34%;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-project-tree-header {
   display: flex;
   align-items: center;
@@ -2220,11 +2319,57 @@ html.dark .sidebar-view-switcher-thumb {
   color: var(--text-dim);
 }
 
+.sidebar-chats-header {
+  margin-top: 2px;
+}
+
+.sidebar-chats-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sidebar-chats-add:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar-chats-add:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.sidebar-chats-empty {
+  padding: 3px 10px 6px 31px;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
 .sidebar-project-tree-tools {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.sidebar-project-tree-header:hover .sidebar-project-tree-tools,
+.sidebar-project-tree-header.is-menu-open .sidebar-project-tree-tools,
+.sidebar-project-tree-header:focus-within .sidebar-project-tree-tools {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-project-tree-menu,
@@ -2243,10 +2388,61 @@ html.dark .sidebar-view-switcher-thumb {
   transition: background 120ms ease, color 120ms ease;
 }
 
+@media (hover: none) {
+  .sidebar-project-tree-tools {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .sidebar-project-tree-menu:hover,
-.sidebar-project-tree-add:hover {
+.sidebar-project-tree-add:hover,
+.sidebar-project-tree-menu.is-open {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.project-view-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  width: 216px;
+  padding: 5px;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.project-view-menu-heading {
+  padding: 5px 8px 4px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+
+.project-view-menu button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 0 8px;
+  text-align: left;
+}
+
+.project-view-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.project-view-menu-check {
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.project-view-menu-separator {
+  height: var(--hairline);
+  margin: 4px 6px;
+  background: var(--separator);
 }
 
 .sidebar-project-tree-menu-popover .sidebar-project-tree-menu-item {
@@ -2533,6 +2729,14 @@ html.dark .sidebar-view-switcher-thumb {
   padding-right: 7px !important;
   border-left: 0 !important;
   border-radius: 8px;
+}
+
+/* Session rows are treeitems, but the native div does not expose a focus
+   ring through a label. Keep keyboard traversal visible without displacing
+   the compact row. */
+.session-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 /* Border blends into the selected background — no darker accent ring */
@@ -4465,6 +4669,56 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   margin-bottom: 18px !important;
 }
 
+/* Message actions are pointer-revealed on hover-only devices, but remain in
+   the tab order. Reveal them for keyboard focus and on touch, where there is
+   no hover affordance. */
+.message-copy-actions,
+.user-msg-actions {
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.message-user:hover .message-copy-actions,
+.message-user:focus-within .message-copy-actions,
+.message-user:hover .user-msg-actions,
+.message-user:focus-within .user-msg-actions,
+.message-assistant:hover .message-copy-action,
+.message-assistant:focus-within .message-copy-action {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .message-copy-actions,
+  .user-msg-actions,
+  .message-copy-action {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* The workbench styles above this point can layer broad interaction rules
+   after the message section. Keep action affordances authoritative here. */
+.message-user:hover .message-copy-actions,
+.message-user:focus-within .message-copy-actions,
+.message-user:hover .user-msg-actions,
+.message-user:focus-within .user-msg-actions,
+.message-assistant:hover .message-copy-action,
+.message-assistant:focus-within .message-copy-action {
+  pointer-events: auto !important;
+}
+
+@media (hover: none) {
+  .message-copy-actions,
+  .user-msg-actions,
+  .message-copy-action {
+    pointer-events: auto !important;
+  }
+}
+
 .message-user-bubble {
   /* Width is capped by the wrapper in MessageView; a percentage here would
      resolve against that shrink-to-fit wrapper and collapse short bubbles. */
@@ -6136,6 +6390,94 @@ span.linenumber {
   letter-spacing: -0.005em;
 }
 
+.app-notice-shelf {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 1200;
+  display: flex;
+  width: min(420px, calc(100vw - 24px));
+  flex-direction: column;
+  align-items: stretch;
+  pointer-events: none;
+}
+
+.app-notice-item {
+  position: relative;
+  display: flex;
+  min-height: 48px;
+  max-height: 460px;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 7px;
+  overflow: hidden;
+  padding: 10px 9px 10px 13px;
+  pointer-events: auto;
+}
+
+.app-notice-item.is-exiting {
+  animation: notice-shelf-out 180ms var(--ease-native) forwards;
+}
+
+.app-notice-message {
+  flex: 1;
+  min-width: 0;
+  max-height: 440px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.app-notice-action,
+.app-notice-dismiss {
+  flex: 0 0 auto;
+  min-height: 26px;
+  border: 1px solid var(--separator);
+  border-radius: 7px;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.app-notice-action {
+  padding: 0 10px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.app-notice-dismiss {
+  display: inline-flex;
+  width: 26px;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-notice-action:hover,
+.app-notice-action:focus-visible,
+.app-notice-dismiss:hover,
+.app-notice-dismiss:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--separator));
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
+
+.app-notice-count {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .native-update-reminder {
   border-color: var(--separator) !important;
   border-radius: 14px !important;
@@ -6991,6 +7333,30 @@ span.linenumber {
 }
 
 .scheduled-warning p { margin: 0; }
+
+.scheduled-owner-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.scheduled-owner-notice .scheduled-mono {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+
+.scheduled-owner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scheduled-owner-actions .scheduled-button {
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--fs-small);
+}
 
 /* Buttons and inputs */
 .scheduled-button {

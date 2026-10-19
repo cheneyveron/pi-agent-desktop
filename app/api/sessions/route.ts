@@ -14,6 +14,8 @@ import {
 } from "@/lib/rpc-manager";
 import { startServerPerf } from "@/lib/perf";
 import { attachScheduledRelations } from "@/lib/scheduled-tasks/run-index";
+import { ensureChatWorkspace } from "@/lib/chat-workspace";
+import { allowFileRoot } from "@/lib/file-access";
 
 export const dynamic = "force-dynamic";
 
@@ -31,29 +33,28 @@ export async function GET(req: Request) {
       : listAllSessions({ force });
     // Capture before awaiting: mutations during the scan still require a later refresh.
     const sessionListVersion = getSessionListVersion();
-    const [persistedSessions, runtimeSessions] = await Promise.all([
+    const [persistedSessions, runtimeSessions, chatWorkspaceCwd] = await Promise.all([
       persistedSessionsPromise,
       attachSessionProjectInfo(getRpcSessionInfos()),
+      ensureChatWorkspace(),
     ]);
+    allowFileRoot(chatWorkspaceCwd);
     perf?.span("scan+projects");
     const sessions = attachScheduledRelations(mergeSessionLists(persistedSessions, runtimeSessions));
+    const payload = {
+      sessions,
+      sessionListVersion,
+      runningSessionIds: getRunningRpcSessionIds(),
+      completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
+      chatWorkspaceCwd,
+    };
     return perf?.attach(jsonResponse(
       req,
-      {
-        sessions,
-        sessionListVersion,
-        runningSessionIds: getRunningRpcSessionIds(),
-        completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
-      },
+      payload,
       { headers: { "Cache-Control": "no-store" } },
     )) ?? jsonResponse(
       req,
-      {
-        sessions,
-        sessionListVersion,
-        runningSessionIds: getRunningRpcSessionIds(),
-        completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
-      },
+      payload,
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

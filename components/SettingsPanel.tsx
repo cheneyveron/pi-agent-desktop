@@ -190,39 +190,13 @@ function GeneralSettings({
     <div className="settings-general">
       <h2 className="settings-general-title">{t("settings.general")}</h2>
 
-      <div className="settings-general-intro">
-        <p className="settings-general-tagline">{t("appSettings.tagline", { product: PRODUCT_NAME })}</p>
-        <p className="settings-general-tagline">{t("appSettings.taglineDetails")}</p>
-      </div>
-
       <div className="settings-general-columns">
         <div className="settings-general-col">
-          <AppUpdatesSection onBusyChange={onBusyChange} />
-
-          <section className="settings-general-section">
-            <h3 className="settings-general-heading">{t("common.language")}</h3>
-            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
-              {supportedLocales.map((plugin) => {
-                const selected = locale === plugin.id;
-                return (
-                  <button
-                    key={plugin.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setLocale(plugin.id as typeof locale)}
-                    className="settings-language-option"
-                  >
-                    <span className="settings-language-radio">
-                      {selected && <span className="settings-language-radio-dot" />}
-                    </span>
-                    <span className="settings-language-label">{plugin.label}</span>
-                    <span className="settings-language-code">{plugin.id}</span>
-                  </button>
-                );
-              })}
-            </div>
+          <section className="settings-general-section settings-general-intro settings-general-overview">
+            <p className="settings-general-tagline">{t("appSettings.tagline", { product: PRODUCT_NAME })}</p>
+            <p className="settings-general-tagline">{t("appSettings.taglineDetails")}</p>
           </section>
+          <AppUpdatesSection onBusyChange={onBusyChange} />
 
           <section className="settings-general-section">
             <h3 className="settings-general-heading">{t("settings.chat")}</h3>
@@ -366,6 +340,31 @@ function GeneralSettings({
         </div>
 
         <div className="settings-general-col">
+          <section className="settings-general-section">
+            <h3 className="settings-general-heading">{t("common.language")}</h3>
+            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
+              {supportedLocales.map((plugin) => {
+                const selected = locale === plugin.id;
+                return (
+                  <button
+                    key={plugin.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setLocale(plugin.id as typeof locale)}
+                    className="settings-language-option"
+                  >
+                    <span className="settings-language-radio">
+                      {selected && <span className="settings-language-radio-dot" />}
+                    </span>
+                    <span className="settings-language-label">{plugin.label}</span>
+                    <span className="settings-language-code">{plugin.id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
           <section className="settings-general-section">
             <h3 className="settings-general-heading">{t("settings.appearance")}</h3>
             <div role="radiogroup" aria-label={t("settings.appearance")} className="settings-theme-options">
@@ -551,7 +550,7 @@ export function SettingsPanel({
         <div className="settings-dialog-header">
           <strong className="settings-dialog-title">{t("settings.title")}</strong>
           <select
-            aria-label={t("settings.title")}
+            aria-label={t("settings.sectionPicker")}
             value={section}
             onChange={(event) => activateSection(event.target.value as SettingsSection)}
             className="settings-mobile-section-picker"

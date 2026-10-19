@@ -8,6 +8,7 @@ import type { SessionInfo } from "@/lib/types";
 export function getRecentProjects(sessions: SessionInfo[]): string[] {
   const latestByRoot = new Map<string, string>(); // projectRoot -> most recent modified
   for (const s of sessions) {
+    if (s.workspaceKind === "chat") continue;
     const root = s.projectRoot ?? s.cwd;
     if (!root) continue;
     const prev = latestByRoot.get(root);

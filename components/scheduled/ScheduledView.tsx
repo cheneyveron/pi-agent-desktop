@@ -24,7 +24,7 @@ type Mode = { kind: "list" } | { kind: "detail"; id: string } | { kind: "edit"; 
 /** The Scheduled page: task list, a task's detail with its run history, and the editor. */
 export function ScheduledView({ projectRoots, defaultCwd, onBrowseFolder, onOpenSession }: Props) {
   const { t, locale } = useI18n();
-  const { tasks, loaded, error, schedulerOwner, runningTaskIds } = useScheduledTasks();
+  const { tasks, loaded, error, schedulerOwner, schedulerOwnerInfo, runningTaskIds } = useScheduledTasks();
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -65,6 +65,42 @@ export function ScheduledView({ projectRoots, defaultCwd, onBrowseFolder, onOpen
     const time = task.lastRun?.startedAt ?? task.lastRun?.scheduledFor;
     return time ? formatRelativeTime(time, locale) : t("scheduled.never");
   };
+  const ownerTakeoverReady = Boolean(schedulerOwnerInfo && (!schedulerOwnerInfo.fresh || !schedulerOwnerInfo.alive));
+  const ownerPanel = schedulerOwner === false && (
+    <div className="scheduled-notice scheduled-owner-notice" role="status">
+      <p>{t("scheduled.ownerNotice")}</p>
+      {schedulerOwnerInfo && (
+        <p className="scheduled-mono">
+          {t("scheduled.ownerDetails", {
+            pid: schedulerOwnerInfo.pid,
+            heartbeat: formatRelativeTime(schedulerOwnerInfo.heartbeatAt, locale),
+            started: formatDateTime(schedulerOwnerInfo.startedAt, locale),
+          })}
+        </p>
+      )}
+      <p>{t(ownerTakeoverReady ? "scheduled.ownerTakeoverReady" : "scheduled.ownerTakeoverHint")}</p>
+      <div className="scheduled-owner-actions">
+        <button
+          type="button"
+          className="scheduled-button"
+          disabled={busy !== null}
+          onClick={() => void act("scheduler-refresh", () => refreshScheduledTasks())}
+        >
+          {t("scheduled.checkAgain")}
+        </button>
+        {ownerTakeoverReady && (
+          <button
+            type="button"
+            className="scheduled-button scheduled-button--primary"
+            disabled={busy !== null}
+            onClick={() => void act("scheduler-takeover", () => scheduledApi.takeoverScheduler())}
+          >
+            {busy === "scheduler-takeover" ? t("scheduled.takingOver") : t("scheduled.takeOver")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <section
@@ -87,7 +123,7 @@ export function ScheduledView({ projectRoots, defaultCwd, onBrowseFolder, onOpen
                 {t("scheduled.new")}
               </button>
             </header>
-            {schedulerOwner === false && <p className="scheduled-notice" role="status">{t("scheduled.ownerNotice")}</p>}
+            {ownerPanel}
             {error && <p className="scheduled-error" role="alert">{t("scheduled.loadFailed", { error })}</p>}
             {!loaded && <p className="scheduled-hint">{t("scheduled.loading")}</p>}
             {loaded && !error && tasks.length === 0 && (
@@ -165,7 +201,7 @@ export function ScheduledView({ projectRoots, defaultCwd, onBrowseFolder, onOpen
 
             {actionError && <p className="scheduled-error" role="alert">{actionError}</p>}
             {selected.autoPausedReason && <p className="scheduled-warning" role="status">{t("scheduled.autoPaused", { reason: selected.autoPausedReason })}</p>}
-            {schedulerOwner === false && <p className="scheduled-notice" role="status">{t("scheduled.ownerNotice")}</p>}
+            {ownerPanel}
 
             <dl className="scheduled-facts">
               <div><dt>{t("scheduled.field.schedule")}</dt><dd>{describeSchedule(selected.schedule, t, locale)}</dd></div>

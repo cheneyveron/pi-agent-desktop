@@ -74,9 +74,12 @@ test("allowing a link sends the target the operator was shown", () => {
   assert.match(source, /if \(next && !loaded && !pendingLinkTarget\) loadChildren\(\);/);
 });
 
-test("a link that encloses the project or home folder warns and confirms before allowing", () => {
+test("a link that encloses the project or home folder warns before allowing", () => {
   const html = renderNode({ ...linkedNode, outsideLinkTarget: "/", outsideLinkEncloses: true });
   assert.match(html, /That folder contains this project or your home folder\./);
+  assert.match(html, /<button type="button"[^>]*aria-live="polite"[^>]*>Allow browsing<\/button>/);
   assert.doesNotMatch(renderNode(linkedNode), /contains this project/);
-  assert.match(source, /if \(node\.outsideLinkEncloses && !window\.confirm\(t\("files\.allowEnclosingLinkConfirm"/);
+  assert.doesNotMatch(source, /window\.confirm/);
+  assert.match(source, /setConfirmEnclosingLink\(true\)/);
+  assert.match(source, /\{confirmEnclosingLink && \(\s*<span>\{t\("files\.allowEnclosingLinkConfirm"/);
 });

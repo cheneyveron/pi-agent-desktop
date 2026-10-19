@@ -11,7 +11,8 @@ const draftStore = await jiti.import("../lib/draft-store.ts");
 
 function callbackBody(name, nextName) {
   const start = source.indexOf(`const ${name} = useCallback`);
-  const end = source.indexOf(`\n  const ${nextName}`, start);
+  const nextCallbackOffset = source.slice(start + 1).search(/\n  const [A-Za-z_$][\w$]* = useCallback/);
+  const end = nextCallbackOffset === -1 ? -1 : start + 1 + nextCallbackOffset;
   assert.notEqual(start, -1, `${name} callback not found`);
   assert.notEqual(end, -1, `${nextName} callback not found after ${name}`);
   return source.slice(start, end);
@@ -82,12 +83,17 @@ test("New restores the draft after session navigation and workspace auto-restore
         getLastOpenSession: (key) => key === cwd ? session.id : null,
         clearLastOpen() {},
         workspaceKeyOf: (value) => value.projectKey ?? value.cwd,
+        useEffect: () => {},
         useCallback: (callback) => callback,
         useGlobalKeyboardShortcuts() {},
         useNativeAppMenu() {},
         handleRightPanelClose() {},
+        handleSidebarToggle() {},
+        chatInputRef: { current: null },
         rightPanelOpen: false,
+        shortcutHelpOpen: false,
         activeNewSessionDraftKeyRef: { current: `new:initial:${cwd}` },
+        scheduledOpenRef: { current: false },
         activeProjectKeyRef: { current: cwd },
         workspaceRestoreTokenRef: { current: 0 },
         suppressCwdBumpRef: { current: false },
@@ -100,11 +106,14 @@ test("New restores the draft after session navigation and workspace auto-restore
         settingsSection: null,
         getLastSettingsSection: () => "general",
         isMobile: false,
+        isChatWorkspaceActive: false,
         desktopMode: false,
         activeCwd: cwd,
         activeFileTabId: null,
+        chatWorkspaceCwd: null,
         newSessionCwd: cwd,
         newSessionDraftId: "initial",
+        newSessionWorkspaceKind: "project",
         selectedSession: null,
         sessionCatalog: [],
         sessionKey: 0,

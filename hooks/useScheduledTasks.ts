@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { scheduledApi } from "@/lib/scheduled-tasks/client";
+import type { SchedulerOwnerInfo } from "@/lib/scheduled-tasks/client";
 import { openSharedEventStream } from "@/lib/scheduled-tasks/shared-stream";
 import type { ScheduledTaskEvent, ScheduledTaskView } from "@/lib/scheduled-tasks/types";
 
@@ -11,6 +12,8 @@ export interface ScheduledTasksState {
   error: string | null;
   /** False when another process holds the scheduler lease and this one will not fire tasks. */
   schedulerOwner: boolean | null;
+  /** Diagnostic metadata for the process holding the scheduler lease. */
+  schedulerOwnerInfo: SchedulerOwnerInfo | null;
   /** Task ids with a run in progress, from the event stream. */
   runningTaskIds: ReadonlySet<string>;
 }
@@ -20,6 +23,7 @@ const INITIAL: ScheduledTasksState = {
   loaded: false,
   error: null,
   schedulerOwner: null,
+  schedulerOwnerInfo: null,
   runningTaskIds: new Set(),
 };
 
@@ -51,7 +55,13 @@ export async function refreshScheduledTasks(): Promise<void> {
     for (const task of data.tasks) {
       if (task.lastRun?.sessionId) scheduledSessionIds.add(task.lastRun.sessionId);
     }
-    setState({ tasks: data.tasks, loaded: true, error: null, schedulerOwner: data.scheduler.owner });
+    setState({
+      tasks: data.tasks,
+      loaded: true,
+      error: null,
+      schedulerOwner: data.scheduler.owner,
+      schedulerOwnerInfo: data.scheduler.ownerInfo,
+    });
   } catch (error) {
     if (id !== loadId) return;
     setState({ loaded: true, error: error instanceof Error ? error.message : String(error) });

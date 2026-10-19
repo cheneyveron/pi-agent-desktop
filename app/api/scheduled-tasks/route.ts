@@ -10,9 +10,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const now = new Date();
+    const scheduler = getScheduler();
     return NextResponse.json({
       tasks: listTasks().map((task) => toTaskView(task, now)),
-      scheduler: { owner: getScheduler().isOwner() },
+      scheduler: { owner: scheduler.isOwner(), ownerInfo: scheduler.ownerInfo() },
     });
   } catch (error) {
     return errorResponse(error);

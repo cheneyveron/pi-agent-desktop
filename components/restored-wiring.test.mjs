@@ -58,7 +58,7 @@ test("the right-panel file tree refreshes when a run ends", async () => {
 test("the sidebar scrollbar hides again and a failed list load is reported", async () => {
   const sidebar = await read("./SessionSidebar.tsx");
   // Without the ref the hide timer finds no element and `is-scrolling` sticks.
-  assert.match(sidebar, /<div ref=\{listScrollRef\} className="sidebar-project-tree" onScroll=\{handleListScroll\}>/);
+  assert.match(sidebar, /<div\s+ref=\{listScrollRef\}\s+className="sidebar-project-tree"\s+role="tree"\s+aria-label=\{`\$\{t\("sidebar\.chats"\)\} \/ \$\{t\("sidebar\.projects"\)\}`\}\s+onScroll=\{handleListScroll\}\s*>/);
   assert.match(sidebar, /t\("sidebar\.loadFailed"\)/);
   assert.match(sidebar, /onClick=\{\(\) => void loadSessions\(true, true\)\}/);
 });

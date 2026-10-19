@@ -19,7 +19,16 @@ test("the sidebar mounts the content-search wrapper around the project tree", ()
   assert.match(source, /query=\{sessionQuery\}/);
   assert.match(source, /onSelectSession=\{handleSelectSessionFromList\}/);
   // The tree must stay the wrapper's child, not a sibling the results replace.
-  assert.match(source, /<SessionSearch[\s\S]{0,400}?<div ref=\{listScrollRef\} className="sidebar-project-tree" onScroll=\{handleListScroll\}>/);
+  const treeStart = source.indexOf("<SessionSearch");
+  const treeEnd = source.indexOf("onScroll={handleListScroll}", treeStart);
+  const treeMarkup = source.slice(treeStart, treeEnd);
+  assert.match(treeMarkup, /ref=\{listScrollRef\}/);
+  assert.match(treeMarkup, /className="sidebar-project-tree"/);
+  assert.match(treeMarkup, /role="tree"/);
+  assert.ok(
+    treeMarkup.includes('aria-label={`${t("sidebar.chats")} / ${t("sidebar.projects")}`}'),
+    "the tree label names both the chat and project sections",
+  );
 });
 
 test("the search row confirms content search with Enter, not a mode button", () => {
@@ -35,6 +44,7 @@ test("the search row confirms content search with Enter, not a mode button", () 
   // Discoverability for the hidden gesture: the input itself carries the hint.
   assert.match(source, /title=\{t\("sidebar\.searchAllHint"\)\}/);
   assert.match(englishMessages["sidebar.searchAllHint"], /Enter/);
+  assert.match(englishMessages["sidebar.searchSessions"], /Enter/);
 });
 
 test("selecting a result carries the entry id so the chat can jump to the match", () => {
@@ -43,4 +53,16 @@ test("selecting a result carries the entry id so the chat can jump to the match"
   assert.match(searchSource, /onSelectSession\(session, entryId, blockIndex\)/);
   assert.match(source, /onSelectSession\(s, false, entryId, blockIndex\)/);
   assert.match(routeSource, /searchSessionContents\(sessions, query, request\.signal\)/);
+});
+
+test("content-search rows label chats without exposing the hidden workspace path", () => {
+  assert.match(
+    searchSource,
+    /title=\{session\.workspaceKind === "chat" \? t\("sidebar\.chats"\) : session\.cwd\}/,
+  );
+  assert.match(
+    searchSource,
+    /\{session\.workspaceKind === "chat" \? t\("sidebar\.chats"\) : session\.cwd\}/,
+  );
+  assert.match(englishMessages["sidebar.chats"], /Chats/);
 });

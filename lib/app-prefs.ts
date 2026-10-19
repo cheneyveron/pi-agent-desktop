@@ -14,10 +14,12 @@ export const APP_PREF_KEYS = {
   rightPanelWidth: "pi-right-panel-width",
   unreadSessionIds: "pi-web:unread-session-ids",
   archivedProjects: "pi-web:archived-projects",
+  /** Sidebar Projects pane layout: grouped project tree or chronological sessions. */
+  projectViewMode: "pi-web:project-view-mode",
   /** Project roots whose session list is folded in the sidebar tree. */
   collapsedProjects: "pi-web:collapsed-projects",
-  /** Sidebar session list layout: "projects" (grouped) or "recent" (flat, newest first). */
-  sidebarView: "pi-web:sidebar-view",
+  /** Project root -> additional five-session pages shown past the preview cap. */
+  expandedProjects: "pi-web:expanded-projects",
   updateSnooze: "pi-web:update-snooze",
   closeQuits: "pi-desktop-close-quits",
   notifyOnComplete: "pi-desktop-notify-on-complete",

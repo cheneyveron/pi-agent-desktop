@@ -19,15 +19,15 @@ export async function checkFilePanel(page, filePath) {
   }
   const panel = page.locator("#file-panel");
   const showPanel = page.viewportSize().width <= 640
-    ? page.locator('.right-panel-toggle-button[aria-label="Show file panel"]')
-    : page.locator('.app-topbar button[aria-label="Show file panel"]');
+    ? page.locator('.right-panel-toggle-button[aria-label="Show workspace"]')
+    : page.locator('.app-topbar button[aria-label="Show workspace"]');
   const hidePanel = page.viewportSize().width <= 640
-    ? page.locator('#file-panel [aria-label="Hide file panel"]')
-    : page.locator('.app-topbar button[aria-label="Hide file panel"]');
+    ? page.locator('#file-panel [aria-label="Hide workspace"]')
+    : page.locator('.app-topbar button[aria-label="Hide workspace"]');
   // The strip's own chip exists only while the topbar toggle is unreachable
   // (full-width desktop, and mobile where the floating toggle sits under the
   // panel), so closing from full width has to use it.
-  const hidePanelInStrip = page.locator('#file-panel [aria-label="Hide file panel"]');
+  const hidePanelInStrip = page.locator('#file-panel [aria-label="Hide workspace"]');
   await showPanel.click();
   await panel.waitFor({ state: "visible" });
   // The panel opens as a preview surface; the file list starts hidden.

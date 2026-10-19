@@ -12,6 +12,7 @@ export interface RecentProject {
 export function getRecentProjects(sessions: readonly SessionInfo[]): RecentProject[] {
   const latestByProject = new Map<string, { root: string; modified: string }>();
   for (const session of sessions) {
+    if (session.workspaceKind === "chat") continue;
     const root = session.projectRoot ?? session.cwd;
     if (!root) continue;
     const key = workspaceKeyOf(session);
@@ -32,6 +33,7 @@ export function getProjectActivity(
 ): Map<string, { running: number; unread: number }> {
   const counts = new Map<string, { running: number; unread: number }>();
   for (const session of sessions) {
+    if (session.workspaceKind === "chat") continue;
     const key = workspaceKeyOf(session);
     if (!key) continue;
     let entry = counts.get(key);
@@ -49,5 +51,7 @@ export function sessionsForProject(
   sessions: readonly SessionInfo[],
   projectKey: string,
 ): SessionInfo[] {
-  return sessions.filter((session) => workspaceKeyOf(session) === projectKey);
+  return sessions.filter((session) => (
+    session.workspaceKind !== "chat" && workspaceKeyOf(session) === projectKey
+  ));
 }

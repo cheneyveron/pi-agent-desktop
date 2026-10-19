@@ -3,7 +3,13 @@ import { liveRunnerDeps } from "./runtime";
 
 export * from "./types";
 export { subscribeScheduledTaskEvents, emitScheduledTaskEvent } from "./events";
-export { RunRejectedError, Scheduler, isRunRejectedError } from "./scheduler";
+export {
+  RunRejectedError,
+  Scheduler,
+  SchedulerTakeoverError,
+  isRunRejectedError,
+  isSchedulerTakeoverError,
+} from "./scheduler";
 
 const SCHEDULER_KEY = Symbol.for("pi-web:scheduler");
 

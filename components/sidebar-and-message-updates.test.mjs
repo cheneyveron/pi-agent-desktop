@@ -7,7 +7,23 @@ const messageSource = readFileSync(new URL("./MessageView.tsx", import.meta.url)
 
 test("session rows keep the action menu reachable on touch devices", () => {
   assert.match(sidebarSource, /matchMedia\?\.\("\(hover: none\)"\)/);
-  assert.match(sidebarSource, /hovered \|\| touchMode \|\| menuOpen \?/);
+  assert.match(sidebarSource, /hovered \|\| treeFocused \|\| touchMode \|\| menuOpen \?/);
+});
+
+test("message actions stay reachable for keyboard and touch users", () => {
+  assert.match(messageSource, /className="message-copy-actions"/);
+  assert.match(messageSource, /className="user-msg-actions"/);
+  assert.match(messageSource, /aria-live="polite"/);
+  assert.doesNotMatch(messageSource, /pointerEvents: hovered/);
+  assert.doesNotMatch(messageSource, /opacity: hovered/);
+});
+
+test("busy sessions disable in-session edits without hiding the action", () => {
+  const chatWindowSource = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+  assert.match(chatWindowSource, /onEditContent=\{handleEditContent\}/);
+  assert.match(chatWindowSource, /editDisabled=\{sessionBusy\}/);
+  assert.match(messageSource, /disabled=\{editBlocked\}/);
+  assert.match(messageSource, /t\("i18n\.editFromHereBusyTitle"\)/);
 });
 
 test("rename and delete failures surface an error instead of being swallowed", () => {

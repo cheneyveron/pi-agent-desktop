@@ -157,7 +157,7 @@ test("the manifest job only publishes when every platform succeeded", async () =
 
   assert.match(manifestJob, /needs: build/);
   assert.doesNotMatch(manifestJob, /if: (always|success\(\) \|\|)/);
-  assert.match(manifestJob, /--draft=false --latest/);
+  assert.match(manifestJob, /--draft=false --latest --prerelease=false/);
 });
 
 test("release workflow publishes Apple Silicon, Linux x64, and Windows x64 installers", async () => {
@@ -183,7 +183,7 @@ test("release workflow publishes Apple Silicon, Linux x64, and Windows x64 insta
   assert.doesNotMatch(workflow, /x86_64-apple-darwin/);
   assert.doesNotMatch(workflow, /macos-15/);
   assert.match(workflow, /uploadUpdaterJson: true/);
-  assert.match(workflow, /gh release edit "v\$version" --draft=false --latest/);
+  assert.match(workflow, /gh release edit "v\$version" --draft=false --latest --prerelease=false/);
 });
 
 test("nothing reintroduces a literal homedir() into an fs call", async () => {

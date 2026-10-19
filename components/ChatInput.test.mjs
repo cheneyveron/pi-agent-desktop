@@ -983,6 +983,34 @@ test("a missing workspace replaces the model error and disables Send", () => {
   assert.match(source, /const canSend = canQueueStreamingMessage && !workspaceUnavailable;/);
   assert.match(source, /onClick=\{handleSend\}\s*disabled=\{!canSend\}/);
 });
+
+test("chat-only composer keeps shell, file and session mentions out of the input", () => {
+  const html = renderWithI18n(
+    React.createElement(ChatInput, {
+      onSend() {},
+      onAbort() {},
+      isStreaming: false,
+      chatOnly: true,
+      cwd: "/repo",
+      toolPreset: "none",
+      onThinkingLevelChange() {},
+    }),
+  );
+
+  assert.match(html, /accept="image\/\*"/);
+  assert.match(html, /aria-label="Attach image"/);
+  assert.match(html, /Chat only · \/ commands · images/);
+  assert.doesNotMatch(html, /@ files/);
+  assert.doesNotMatch(html, /# sessions/);
+  assert.doesNotMatch(html, />Shell</);
+
+  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  assert.match(source, /const bashMode = !chatOnly && attachedImages\.length === 0/);
+  assert.match(source, /if \(chatOnly \|\| !cwd\) \{\s*setAtQuery\(null\)/);
+  assert.match(source, /useSessionMentionPalette\(\{ cwd: chatOnly \? null : cwd/);
+  assert.match(source, /\{chatOnly && \([\s\S]*?t\("chat\.chatOnlyDescription"\)/);
+});
+
 test("only the chat composer offers saving a default model or reasoning level", () => {
   const chatInputSource = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
   const agentsConfigSource = readFileSync(new URL("./AgentsConfig.tsx", import.meta.url), "utf8");

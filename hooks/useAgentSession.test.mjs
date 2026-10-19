@@ -137,10 +137,13 @@ test("fresh sessions use the preference while persisted and live sessions restor
 
   assert.match(
     preferenceSource,
-    /const existingSessionId = session\?\.id;[\s\S]*?useLayoutEffect\(\(\) => \{\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;\s*setToolPresetState\(getPreferredToolPreset\(\)\)/,
+    /const existingSessionId = session\?\.id;[\s\S]*?useLayoutEffect\(\(\) => \{\s*if \(chatWorkspace\) \{\s*setToolPresetState\("none"\);\s*return;\s*\}\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;\s*setToolPresetState\(getPreferredToolPreset\(\)\)/,
   );
   assert.match(source, /if \(agentState\?\.running\) \{\s*loadTools\(session\.id\)/);
-  assert.match(source, /d\.toolNames !== undefined \? getPresetFromToolNames\(d\.toolNames\) : CONFIGURED_TOOL_PRESET/);
+  assert.match(
+    source,
+    /setToolPresetState\(chatWorkspace\s*\? "none"\s*: d\.toolNames !== undefined\s*\? getPresetFromToolNames\(d\.toolNames\)\s*: CONFIGURED_TOOL_PRESET\)/,
+  );
   assert.match(changeSource, /setPreferredToolPreset\(preset\)/);
   assert.match(changeSource, /type: "set_tools",\s*\.\.\.\(toolNames !== undefined \? \{ toolNames \} : \{\}\),/);
   assert.match(changeSource, /activeSessionId !== sid \|\| result\?\.recreated/);
@@ -162,13 +165,13 @@ test("sessions the user never overrode follow pi's configured defaultTools (#700
   // A new session must omit toolNames entirely rather than pin pi-web's own preset.
   assert.match(ensureSource, /\.\.\.\(toolNames !== undefined \? \{ toolNames \} : \{\}\),/);
   assert.doesNotMatch(ensureSource, /^ +toolNames,$/m);
-  assert.match(ensureSource, /sessionToolsPinnedRef\.current = toolNames !== undefined/);
+  assert.match(ensureSource, /sessionToolsPinnedRef\.current = chatWorkspace \|\| toolNames !== undefined/);
 
   // An unpinned session keeps saying "configured" instead of borrowing whichever
   // preset its resolved tools happen to match.
   assert.match(
     loadToolsSource,
-    /setToolPresetState\(sessionToolsPinnedRef\.current \? getPresetFromTools\(tools\) : CONFIGURED_TOOL_PRESET\)/,
+    /setToolPresetState\(chatWorkspace\s*\? "none"\s*: sessionToolsPinnedRef\.current\s*\? getPresetFromTools\(tools\)\s*: CONFIGURED_TOOL_PRESET\)/,
   );
 });
 
@@ -202,7 +205,10 @@ test("forking stays available during a run while in-session branch switches wait
   // Fork copies into a new file, so only a shell command blocks it; the
   // in-session edit still waits because pi refuses navigate_tree mid-run.
   assert.match(chatWindowSource, /onFork=\{bashRunning \|\| isNew \? undefined : handleFork\}/);
-  assert.match(chatWindowSource, /onEditContent=\{sessionBusy \? undefined : handleEditContent\}/);
+  assert.match(chatWindowSource, /onEditContent=\{handleEditContent\}/);
+  assert.match(chatWindowSource, /editDisabled=\{sessionBusy\}/);
+  assert.match(messageViewSource, /disabled=\{editBlocked\}/);
+  assert.match(messageViewSource, /t\("i18n\.editFromHereBusyTitle"\)/);
   assert.match(chatWindowSource, /onAskInNewChat && quotedSelection\.sourceEntryId && !bashRunning &&/);
   assert.match(forkSource, /addNotice\(\{ type: "error", message:/);
 

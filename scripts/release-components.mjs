@@ -57,6 +57,25 @@ export function nextPatchVersion(value) {
 }
 
 /**
+ * Choose the desktop version for the next release. A version that already has
+ * a GitHub Release (stable or prerelease) must never be reused, while a local
+ * version that has not been released yet stays as-is so repeated component
+ * syncs do not skip a patch number.
+ */
+export function nextDesktopVersion(current, releasedVersions) {
+  const normalizedCurrent = normalizeVersion(current);
+  const released = (releasedVersions ?? []).map(normalizeVersion);
+  if (!released.some((version) => compareVersions(version, normalizedCurrent) === 0)) {
+    return normalizedCurrent;
+  }
+  const newest = released.reduce(
+    (highest, version) => (compareVersions(version, highest) > 0 ? version : highest),
+    normalizedCurrent,
+  );
+  return nextPatchVersion(newest);
+}
+
+/**
  * A component can be intentionally kept behind its upstream release only when
  * the exact bundled version and a human-readable reason are committed.
  * This keeps release verification strict by default while making fork pins
@@ -113,6 +132,40 @@ export async function fetchLatestRelease(repository, options = {}) {
     tag: release.tag_name,
     url: release.html_url,
   };
+}
+
+/** Every published release, including prereleases, newest first as returned by GitHub. */
+export async function fetchRecentReleases(repository, options = {}) {
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "pi-agent-desktop-release-automation",
+  };
+  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  const response = await (options.fetcher ?? fetch)(
+    `https://api.github.com/repos/${repository}/releases?per_page=100`,
+    { headers },
+  );
+  if (response.status === 404 && options.allowMissing) return [];
+  if (!response.ok) throw new Error(`${repository} release list request failed with HTTP ${response.status}.`);
+  const releases = await response.json();
+  if (!Array.isArray(releases)) {
+    throw new Error(`${repository} returned an invalid release list payload.`);
+  }
+  return releases.flatMap((release) => {
+    if (!release || release.draft === true || typeof release.tag_name !== "string") return [];
+    try {
+      return [{
+        version: normalizeVersion(release.tag_name),
+        tag: release.tag_name,
+        prerelease: release.prerelease === true,
+        url: typeof release.html_url === "string" ? release.html_url : "",
+      }];
+    } catch {
+      // A non-version tag is not one of this repository's release versions.
+      return [];
+    }
+  });
 }
 
 export async function readRemoteComponentVersions() {

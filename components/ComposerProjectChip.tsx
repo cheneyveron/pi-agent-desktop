@@ -7,12 +7,15 @@
 
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
+import { getProjectDisplayName } from "@/lib/project-display";
 import { useI18n } from "@/hooks/useI18n";
 
-export function getProjectLabel(projectPath: string | null | undefined): string | null {
-  const normalized = projectPath?.replace(/[\\/]+$/, "");
-  if (!normalized) return null;
-  return normalized.split(/[\\/]/).pop() ?? normalized;
+export function getProjectLabel(
+  projectPath: string | null | undefined,
+  allProjectPaths: readonly string[] = [],
+): string | null {
+  if (!projectPath) return null;
+  return getProjectDisplayName(projectPath, allProjectPaths);
 }
 
 interface ComposerProjectChipProps {
@@ -49,7 +52,7 @@ export function ComposerProjectChip({
             if (canUseNativeMenu()) {
               void showNativeMenu(
                 projectOptions.map((projectRoot) => ({
-                  label: getProjectLabel(projectRoot) ?? projectRoot,
+                  label: getProjectLabel(projectRoot, projectOptions) ?? projectRoot,
                   checked: projectRoot === projectPath,
                   onSelect: () => {
                     if (projectRoot !== projectPath) onProjectChange(projectRoot);
@@ -84,7 +87,7 @@ export function ComposerProjectChip({
           }}
         >
           {projectOptions.map((projectRoot) => {
-            const optionLabel = getProjectLabel(projectRoot) ?? projectRoot;
+            const optionLabel = getProjectLabel(projectRoot, projectOptions) ?? projectRoot;
             const isCurrent = projectRoot === projectPath;
             return (
               <button

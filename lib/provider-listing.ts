@@ -27,6 +27,12 @@ export interface ProviderListingInput {
   id: string;
   /** Provider display name (`provider.name`). */
   name: string;
+  /**
+   * A provider declared only in models.json, not one of pi's built-in
+   * providers. ModelsConfig renders it from models.json itself, so it must not
+   * also appear in the API-key list.
+   */
+  isCustomProvider?: boolean;
   /** True when the provider declares an API-key login method. */
   hasApiKeyLogin: boolean;
   /** True when the provider declares an OAuth login method. */
@@ -74,15 +80,22 @@ function dedupeById(providers: readonly ProviderListingInput[]): ProviderListing
  * Providers that can be authenticated with an API key.
  *
  * Custom `models.json` providers are excluded because the Models panel already
- * renders them from `models.json` itself. A provider currently authenticated
- * with an OAuth credential is reported as not configured here, so it is listed
- * once — in the OAuth list — instead of twice.
+ * renders them from `models.json` itself. `isCustomProvider` is derived from
+ * the models.json provider ids, not from the credential source: a custom
+ * provider that also has an auth.json key reports `source: "stored"` and would
+ * otherwise be listed in both places. The credential-source check stays as a
+ * fallback for callers that cannot read models.json.
+ *
+ * A provider currently authenticated with an OAuth credential is reported as
+ * not configured here, so it is listed once — in the OAuth list — instead of
+ * twice.
  */
 export function buildApiKeyProviderList(
   providers: readonly ProviderListingInput[],
 ): ApiKeyProviderListing[] {
   const result: ApiKeyProviderListing[] = [];
   for (const provider of dedupeById(providers)) {
+    if (provider.isCustomProvider) continue;
     if (!provider.hasApiKeyLogin) continue;
     if (provider.status.source && CUSTOM_PROVIDER_SOURCES.has(provider.status.source)) continue;
 

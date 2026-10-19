@@ -1,9 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  compareVersions,
-  fetchLatestRelease,
-  nextPatchVersion,
+  fetchRecentReleases,
+  nextDesktopVersion,
   normalizeVersion,
   rootDir,
 } from "./release-components.mjs";
@@ -13,10 +12,8 @@ const cargoPath = join(rootDir, "src-tauri", "Cargo.toml");
 const lockPath = join(rootDir, "src-tauri", "Cargo.lock");
 const desktopPackage = JSON.parse(await readFile(packagePath, "utf8"));
 const current = normalizeVersion(desktopPackage.version);
-const latest = await fetchLatestRelease("cheneyveron/pi-agent-desktop", { allowMissing: true });
-const next = latest && compareVersions(latest.version, current) >= 0
-  ? nextPatchVersion(latest.version)
-  : current;
+const released = await fetchRecentReleases("cheneyveron/pi-agent-desktop", { allowMissing: true });
+const next = nextDesktopVersion(current, released.map((release) => release.version));
 
 desktopPackage.version = next;
 await writeFile(packagePath, `${JSON.stringify(desktopPackage, null, 2)}\n`);

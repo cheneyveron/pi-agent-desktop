@@ -3,7 +3,7 @@ import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { UnavailableWorkspace } from "@/lib/workspace-availability";
-import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
+import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind, ToolResultMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
@@ -42,6 +42,7 @@ import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 
 interface Props {
   session: SessionInfo | null;
+  workspaceKind?: SessionWorkspaceKind;
   searchTarget?: { sessionId: string; entryId: string; blockIndex?: number } | null;
   onSearchTargetHandled?: (target: { sessionId: string; entryId: string }) => void;
   initialScrollPosition?: ChatScrollPosition | null;
@@ -257,9 +258,10 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, onSelectProject, projectOptions, onProjectChange, onProjectFilesImported, quoteSelectionEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, onSelectProject, projectOptions, onProjectChange, onProjectFilesImported, quoteSelectionEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
+  const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
   const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
 
@@ -315,6 +317,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
   } = useAgentSession({
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd: wrappedOnAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
+    chatWorkspace: chatOnly,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     onOpenSettings,
     deferInitialScroll: Boolean(pendingScrollRestore),
@@ -787,20 +790,18 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
-  const cwd = session?.cwd ?? newSessionCwd;
+  const cwd = chatOnly ? undefined : session?.cwd ?? newSessionCwd;
+  const openFile = chatOnly ? undefined : onOpenFile;
   const projectImportBusyRef = useRef(false);
 
-  const onDrop = useCallback((files: File[]) => {
-    const { images, projectFiles } = partitionChatDroppedFiles(files);
-
-    // Images stay on the multimodal attachment path (blocked while the agent is busy).
-    if (images.length > 0 && !sessionBusy) {
-      chatInputRef?.current?.addImages(images);
-    }
-
-    // Documents/other files are copied into the project root and @mentioned so
-    // the agent can read them with its normal tools — not inlined into the prompt.
+  // Documents/other files are copied into the project root and @mentioned so
+  // the agent can read them with its normal tools — not inlined into the prompt.
+  const importProjectFiles = useCallback((projectFiles: File[]) => {
     if (projectFiles.length === 0) return;
+    if (chatOnly) {
+      addNotice({ type: "error", message: t("chat.chatOnlyImagesOnly") });
+      return;
+    }
     if (!cwd) {
       addNotice({ type: "error", message: t("chat.dropNeedsProject") });
       return;
@@ -843,7 +844,27 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         projectImportBusyRef.current = false;
       }
     })();
-  }, [addNotice, chatInputRef, cwd, onProjectFilesImported, sessionBusy, t]);
+  }, [addNotice, chatInputRef, chatOnly, cwd, onProjectFilesImported, t]);
+
+  const onDrop = useCallback((files: File[]) => {
+    const { images, projectFiles } = partitionChatDroppedFiles(files);
+
+    // Images stay on the multimodal attachment path (blocked while the agent is busy).
+    if (images.length > 0 && !sessionBusy) {
+      chatInputRef?.current?.addImages(images);
+    }
+    importProjectFiles(projectFiles);
+  }, [chatInputRef, importProjectFiles, sessionBusy]);
+
+  // The composer's "+" picker. The desktop WebView's file panel ignores the
+  // input's `accept`, so any file can come back here: split it like a drop
+  // instead of letting non-images vanish on the image-only path. Images may be
+  // attached while a run is going, as before (they are sent with the next prompt).
+  const onAttachFiles = useCallback((files: File[]) => {
+    const { images, projectFiles } = partitionChatDroppedFiles(files);
+    if (images.length > 0) chatInputRef?.current?.addImages(images);
+    importProjectFiles(projectFiles);
+  }, [chatInputRef, importProjectFiles]);
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
@@ -943,7 +964,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   }, [isEmptyNew, scrollContainerRef]);
 
   const hasStreamingContent = Boolean(streamState.streamingMessage?.content.length);
-  const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+  const messageCwd = chatOnly ? undefined : session?.cwd ?? newSessionCwd ?? undefined;
   // Keys that do not change when a sent or streamed message gets its entry id
   // on the post-run reload; keying by the id remounted the sent bubble.
   const messageKeyTrackerRef = useRef<{ sessionId: string | null; tracker: ReturnType<typeof createMessageKeyTracker> } | null>(null);
@@ -1098,6 +1119,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     <ChatInput
       ref={chatInputRef}
       onSend={handleSend}
+      onAttachFiles={onAttachFiles}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -1125,7 +1147,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       compactResult={compactResult}
       summarizationRetry={summarizationRetry}
       toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
+      onToolPresetChange={!chatOnly && (session || isNew) ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       isAutoThinkingSelection={isAutoThinkingSelection}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
@@ -1150,11 +1172,12 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       onAudioUnlock={unlockAudio}
       autoFocus={isNew}
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
-      cwd={session?.cwd ?? newSessionCwd}
-      projectPath={session?.projectRoot ?? session?.cwd ?? newSessionCwd}
-      onSelectProject={onSelectProject}
-      projectOptions={projectOptions}
-      onProjectChange={onProjectChange}
+      cwd={chatOnly ? undefined : session?.cwd ?? newSessionCwd}
+      projectPath={chatOnly ? undefined : session?.projectRoot ?? session?.cwd ?? newSessionCwd}
+      onSelectProject={chatOnly ? undefined : onSelectProject}
+      projectOptions={chatOnly ? [] : projectOptions}
+      onProjectChange={chatOnly ? undefined : onProjectChange}
+      chatOnly={chatOnly}
       onSessionStatsPanelOpen={onSessionStatsPanelOpen}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
@@ -1233,10 +1256,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               </g>
             </svg>
             <div style={{ maxWidth: 320, color: "var(--text)", fontSize: 13, fontWeight: 550, lineHeight: 1.35 }}>
-              {t("chat.dropFilesHint")}
+              {t(chatOnly ? "chat.dropImagesHint" : "chat.dropFilesHint")}
             </div>
             <div style={{ maxWidth: 360, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.4 }}>
-              {t("chat.dropFilesDetail")}
+              {t(chatOnly ? "chat.dropImagesDetail" : "chat.dropFilesDetail")}
             </div>
           </div>
         </div>
@@ -1347,13 +1370,14 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     toolResults={toolResultsMap}
                     modelNames={modelNames}
                     cwd={messageCwd}
-                    onOpenFile={onOpenFile}
+                    onOpenFile={openFile}
                     onOpenSession={onOpenSession}
                     entryId={entryIds[idx]}
                     searchBlock={entryIds[idx] === pendingSearchScroll?.entryId ? searchBlock : undefined}
                     onFork={bashRunning || isNew ? undefined : handleFork}
                     forking={forkingEntryId === entryIds[idx]}
-                    onEditContent={sessionBusy ? undefined : handleEditContent}
+                    onEditContent={handleEditContent}
+                    editDisabled={sessionBusy}
                     onCancelEdit={cancelEdit}
                     isEditing={editEntryId === entryIds[idx]}
                     showTimestamp={showTimestamp}
@@ -1495,7 +1519,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               );
             })()}
             {streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} />
+              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={openFile} onOpenSession={onOpenSession} />
             )}
 
             {agentRunning && !hasStreamingContent && (agentPhase || isCompacting) && (

@@ -9,10 +9,17 @@ import { writePrivateFileAtomicSync } from "../atomic-file";
 
 export const LEASE_STALE_MS = 90_000;
 
-interface Lease {
+export interface Lease {
   pid: number;
   startedAt: string;
   heartbeatAt: string;
+}
+
+export interface LeaseInfo extends Lease {
+  /** True when the heartbeat is inside the takeover window. */
+  fresh: boolean;
+  /** True when the OS still reports the owner process. */
+  alive: boolean;
 }
 
 export function leasePath(dir: string): string {
@@ -37,6 +44,22 @@ function readLease(path: string): Lease | null {
   } catch {
     return null;
   }
+}
+
+/** Read the current owner without trying to acquire its lease. */
+export function readLeaseInfo(
+  dir: string,
+  options: { now?: Date; alive?: (pid: number) => boolean } = {},
+): LeaseInfo | null {
+  const lease = readLease(leasePath(dir));
+  if (!lease) return null;
+  const now = options.now ?? new Date();
+  const alive = options.alive ?? isPidAlive;
+  return {
+    ...lease,
+    fresh: now.getTime() - new Date(lease.heartbeatAt).getTime() < LEASE_STALE_MS,
+    alive: alive(lease.pid),
+  };
 }
 
 /** Take the lease, or refresh it when this process already holds it. */

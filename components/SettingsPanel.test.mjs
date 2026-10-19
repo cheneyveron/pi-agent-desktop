@@ -47,7 +47,7 @@ test("keeps one settings surface per concern — no desktop tab duplicating Gene
   assert.doesNotMatch(panelSource, /id: "desktop"/);
   assert.match(panelSource, /<AppUpdatesSection onBusyChange=/);
   assert.match(panelSource, /<DesktopAppSection \/>/);
-  assert.match(panelSource, /settings-general-intro/);
+  assert.match(panelSource, /settings-general-overview/);
   assert.match(panelSource, /PRODUCT_NAME/);
 });
 

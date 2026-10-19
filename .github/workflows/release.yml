@@ -114,6 +114,37 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
+            ## Pi Agent Desktop 0.7.5
+
+            ### New
+
+            - **Remote servers can upgrade themselves.** A server running in Docker with the updater sidecar now shows **Upgrade** in Settings: it waits for running sessions, pulls the newer server image from GitHub Container Registry, recreates the container and rolls back if the new one is not healthy. The page reloads when the server is back.
+            - A new **Chats** section keeps project-less conversations separate from projects. Chats are model-only: no files, terminals, worktrees, project trust, or tools.
+            - The sidebar can switch between grouped projects and a session timeline, and long session lists load five more rows at a time.
+            - Scheduled Tasks shows which process owns the scheduler lease and lets a stale or exited owner be taken over safely.
+            - Keyboard focus, touch targets, and the error notice shelf make desktop interaction more accessible.
+            - The composer project chip and project menus use the same disambiguated project names.
+
+            ### Fixed
+
+            - Custom providers no longer appear twice in the model picker.
+            - Files picked through the composer's **+** button are attached or imported instead of being silently dropped.
+            - OAuth logins now send the installation device id, fixing providers that require it.
+            - Direct Scheduled URLs no longer lose their workspace selection while restoring a hidden chat.
+            - Mobile and narrow desktop layouts keep a visible way to close the workspace overlay.
+            - Opening the workspace panel with no file selected now shows the project file tree.
+
+            ### Other
+
+            - The signed release workflow now also publishes the server image to GHCR once the Release is published.
+            - `npm test` checks installed dependencies against the lockfile before running.
+            - Route coverage expands for chats, worktrees, skills, API keys, desktop dialogs, and terminals.
+            - A vulnerable transitive `sprintf-js` dependency is removed.
+
+            Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
             ## Pi Agent Desktop 0.7.4
 
             ### New
@@ -144,6 +175,37 @@ jobs:
             - **The backend switcher moved into Settings.** The π logo at the top-left of the sidebar is gone; open Settings › General › Desktop and use **Switch backend…** in the "Backend connection" row to pick Local or a saved remote server. The same row is available while connected to a remote server, so you can always switch back. Switching still restarts the app.
 
             Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
+            ## Pi Agent Desktop 0.7.5
+
+            ### 新增
+
+            - **远程服务端可自行升级。** 以 Docker 加 updater 边车部署的服务端，在设置里会出现**升级**按钮：等待运行中的会话结束后，从 GitHub Container Registry 拉取新的服务端镜像并重建容器；新容器不健康时自动回滚。服务恢复后页面自动刷新。
+            - 侧边栏新增独立的**对话**区域，不需要项目的会话与项目分开。对话仅使用模型，不提供文件、终端、worktree、项目信任或工具。
+            - 侧边栏可在按项目分组和会话时间线之间切换；较长的会话列表每次再加载五条。
+            - 定时任务页会显示调度租约的负责进程；租约过期或进程退出后可安全接管。
+            - 改进键盘焦点、触控目标和错误提示条，桌面端操作更易用。
+            - 输入框的项目标签与项目菜单使用相同的去重命名规则。
+
+            ### 修复
+
+            - 自定义服务商不会再在模型选择器中重复出现。
+            - 通过输入框 **+** 选择的文件会被添加为附件或导入项目，不再被静默丢弃。
+            - OAuth 登录会携带安装实例的设备 ID，修复依赖该 ID 的服务商登录。
+            - 直接打开定时任务页时，后台恢复的工作区选择不再丢失。
+            - 移动端和窄桌面布局始终有可见入口关闭工作区浮层。
+            - 没有选中文件时打开工作区面板，会显示项目文件树。
+
+            ### 其他
+
+            - 签名发布流程在 Release 发布后，也会把服务端镜像推送到 GHCR。
+            - `npm test` 会先按锁文件检查已安装依赖再运行测试。
+            - 增加对话、worktree、Skills、API key、桌面对话框和终端路由测试。
+            - 移除存在漏洞的间接依赖 `sprintf-js`。
+
+            内置组件版本：pi 1.3.0、pi-web 0.10.0。
 
             ---
 
@@ -194,7 +256,10 @@ jobs:
         run: |
           version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
           gh release upload "v$version" src-tauri/resources/component-versions.json --clobber
-          gh release edit "v$version" --draft=false --latest
+          # A prerelease is never served by the updater. Say so explicitly
+          # instead of relying on the value tauri-action used when it first
+          # created the draft (v0.7.3 ended up marked prerelease).
+          gh release edit "v$version" --draft=false --latest --prerelease=false
 
   # Only after the Release is published (manifest), so a draft never gets an image.
   image:
