@@ -114,6 +114,17 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
+            ## Pi Agent Desktop 0.7.7
+
+            ### New
+
+            - **Plugin settings in Settings › Plugins.** A plugin that declares its settings file and a JSON Schema in `package.json` (`pi.settings`) gets a form there: text, numbers, switches, choices and lists, with validation, masked secrets and "takes effect in new sessions". The first plugin to use it is pi-memhana.
+            - Settings files must stay in your home folder; files under `~/.pi` and `~/.ssh` are refused, and secrets never travel back to the page.
+
+            Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
             ## Pi Agent Desktop 0.7.6
 
             ### New
