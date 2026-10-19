@@ -5,6 +5,7 @@ import type { PluginPackageInfo, PluginSettingsField, PluginSettingsResponse } f
 import { useI18n } from "@/hooks/useI18n";
 import { shortenPath } from "@/lib/display-path";
 import { isSecretField } from "@/lib/plugin-settings-schema";
+import { AppSelect } from "./AppSelect";
 import { ConfigButton, ConfigField, ConfigSectionTitle, ConfigSwitch } from "./SettingsUi";
 import {
   defaultText,
@@ -117,10 +118,16 @@ function SettingsField({ field, draft, values, error, disabled, onText, onSecret
     }
   } else if (field.enum) {
     control = (
-      <select {...common} value={String(text ?? "")} onChange={(event) => onText(field.key, event.target.value)}>
-        {!field.required && <option value="">{t("plugins.settings.defaultChoice")}</option>}
-        {field.enum.map((option) => <option key={option} value={String(option)}>{String(option)}</option>)}
-      </select>
+      <AppSelect
+        {...common}
+        value={String(text ?? "")}
+        aria-label={label}
+        onValueChange={(next) => onText(field.key, next)}
+        options={[
+          ...(field.required ? [] : [{ value: "", label: t("plugins.settings.defaultChoice") }]),
+          ...field.enum.map((option) => ({ value: String(option), label: String(option) })),
+        ]}
+      />
     );
     if (fallback !== undefined) hint = t("plugins.settings.defaultValue", { value: fallback });
   } else if (field.type === "string[]") {

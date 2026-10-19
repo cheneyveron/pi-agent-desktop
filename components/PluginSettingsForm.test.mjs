@@ -85,7 +85,8 @@ test("renders a control for each schema property with title, help and default pl
   assert.match(html, /placeholder="http:\/\/127\.0\.0\.1:9088"/);
   assert.match(html, /placeholder="10"/);
   assert.match(html, /<input[^>]*type="number"[^>]*min="1"[^>]*max="50"/);
-  assert.match(html, /<select[^>]*>[\s\S]*<option value=""[^>]*>\(default\)<\/option>[\s\S]*<option value="deep">deep<\/option>/);
+  // enum fields use the app's own select (no browser-native popups); the empty choice shows as "(default)"
+  assert.match(html, /class="app-select-trigger[^"]*"[^>]*>[\s\S]*?\(default\)/);
   assert.match(html, /role="switch" aria-checked="true"/);
   assert.match(html, /<textarea/);
   assert.match(html, /Required/);
