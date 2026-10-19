@@ -80,11 +80,20 @@ export function extractHashQuery(textBeforeCursor: string): HashQueryMatch | nul
   return null;
 }
 
-/** File paths and quoted session names retain their selector during drill-down. */
+/**
+ * Detect a slash command token before the cursor. File paths and quoted session
+ * names retain their selector during drill-down. The "/" may follow CJK text or
+ * punctuation such as "(", but not ASCII word or URL characters, and not inside
+ * a run that already has a "/", so URLs and paths (https://x.com/a, src/foo,
+ * ./bar, 1/2) never open the command menu.
+ */
 export function extractSlashQuery(textBeforeCursor: string): { start: number; query: string } | null {
   if (extractAtQuery(textBeforeCursor) || extractHashQuery(textBeforeCursor)) return null;
   const match = /\/([^\s/@#"]*)$/.exec(textBeforeCursor);
-  return match ? { start: match.index, query: match[1].toLowerCase() } : null;
+  if (!match) return null;
+  const lead = /\S*$/.exec(textBeforeCursor.slice(0, match.index))?.[0] ?? "";
+  if (lead.includes("/") || /[A-Za-z0-9._~:%?=&+\\-]$/.test(lead)) return null;
+  return { start: match.index, query: match[1].toLowerCase() };
 }
 
 function pathDepth(p: string): number {
