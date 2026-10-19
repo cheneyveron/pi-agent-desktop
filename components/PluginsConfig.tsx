@@ -47,6 +47,7 @@ import {
   ConfigSwitch,
   ConfigTrustNotice,
 } from "./SettingsUi";
+import { PluginSettingsForm } from "./PluginSettingsForm";
 import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
 
 type PluginScope = PluginPackageInfo["scope"];
@@ -515,6 +516,17 @@ function PackageDetail({
           {shortenPath(cwd)}
         </ConfigDetailGridRow>
       </ConfigDetailGrid>
+
+      {pkg.settings?.available ? (
+        <PluginSettingsForm key={`${key}\0${pkg.installedPath ?? ""}`} pkg={pkg} cwd={cwd} />
+      ) : pkg.settings && (
+        <div className="plugin-settings">
+          <ConfigSectionTitle>{t("plugins.settings.title")}</ConfigSectionTitle>
+          <div className="plugin-settings-help">
+            {t("plugins.settings.unavailable", { reason: pkg.settings.error ?? "" })}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <ConfigSectionTitle>{t("i18n.resolvedResources")}</ConfigSectionTitle>

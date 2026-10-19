@@ -8752,3 +8752,98 @@ html.native-desktop :is(
 
 
 .app-menu [role="menuitemradio"][aria-checked="true"] { background: var(--bg-selected) !important; }
+
+/* ---- Settings › Plugins › package settings form ------------------------------
+   Generated from a package's `pi.settings` schema (components/PluginSettingsForm.tsx).
+   Inputs take their look from the `.settings-modal` control rules above; only
+   the layout and the small status texts are styled here. */
+.plugin-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.plugin-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.plugin-settings-input {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 10px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+textarea.plugin-settings-input {
+  height: auto;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  resize: vertical;
+}
+.plugin-settings-secret {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.plugin-settings-secret .plugin-settings-input {
+  flex: 1 1 200px;
+}
+.plugin-settings-secret-state {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+.plugin-settings-secret-state.is-set { color: var(--success); }
+.plugin-settings-required {
+  margin-left: 6px;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+}
+.plugin-settings-help,
+.plugin-settings-note {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.plugin-settings-help:empty { display: none; }
+.plugin-settings-error {
+  color: var(--danger);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.plugin-settings-saved { color: var(--success); }
+.plugin-settings-json {
+  margin: 0;
+  padding: 7px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+}
+.plugin-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.plugin-settings-status {
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
