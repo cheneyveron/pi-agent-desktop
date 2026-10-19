@@ -325,6 +325,14 @@ try {
       const preview = page.locator(".conversation-navigator-preview");
       await preview.waitFor();
       // Smooth scrolling updates the active turn while the jump is in flight.
+      await page.waitForFunction((turnIndex) => {
+        const container = document.querySelector(".chat-scroll-container");
+        const anchor = container?.querySelector(`[data-conversation-turn="${turnIndex}"]`);
+        if (!container || !anchor) return false;
+        const top = anchor.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 16;
+        const target = Math.max(0, Math.min(top, container.scrollHeight - container.clientHeight));
+        return Math.abs(container.scrollTop - target) < 1;
+      }, before - 1 + (direction === "ArrowUp" ? -1 : 1));
       await page.waitForFunction((expected) =>
         Number(document.querySelector(".conversation-navigator-track")?.getAttribute("aria-valuenow")) === expected,
       before + (direction === "ArrowUp" ? -1 : 1));
