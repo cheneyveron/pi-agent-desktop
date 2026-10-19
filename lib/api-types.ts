@@ -861,6 +861,69 @@ export interface PluginPackageInfo {
   counts: PluginResourceCounts;
   resources: PluginResourceInfo[];
   status: "loaded" | "installed" | "missing" | "disabled";
+  /** Present when the package declares `pi.settings` in its package.json. */
+  settings?: PluginSettingsInfo;
+}
+
+/** What a package's `pi.settings` declaration resolved to; `error` says why the form is unavailable. */
+export interface PluginSettingsInfo {
+  file: string;
+  available: boolean;
+  error?: string;
+}
+
+export type PluginSettingsFieldType = "string" | "integer" | "number" | "boolean" | "string[]" | "unsupported";
+
+/** One property of a package's settings schema, reduced to the subset the form understands. */
+export interface PluginSettingsField {
+  key: string;
+  type: PluginSettingsFieldType;
+  title?: string;
+  description?: string;
+  default?: unknown;
+  enum?: Array<string | number>;
+  minimum?: number;
+  maximum?: number;
+  format?: "password" | "uri";
+  required: boolean;
+}
+
+export interface PluginSettingsSchema {
+  title?: string;
+  description?: string;
+  /** In the schema's property order. */
+  properties: PluginSettingsField[];
+}
+
+/** What GET sends in place of a `format: "password"` value. */
+export interface PluginSettingsSecret {
+  __secret: true;
+  set: boolean;
+}
+
+export interface PluginSettingsResponse {
+  schema: PluginSettingsSchema;
+  values: Record<string, unknown>;
+  /** The absolute path the plugin reads. */
+  file: string;
+  exists: boolean;
+}
+
+export type PluginSettingsErrorCode =
+  | "required"
+  | "type"
+  | "enum"
+  | "minimum"
+  | "maximum"
+  | "format"
+  | "unknown"
+  | "readonly";
+
+export interface PluginSettingsFieldError {
+  code: PluginSettingsErrorCode;
+  message: string;
+  /** The bound a `minimum` / `maximum` error refers to. */
+  limit?: number;
 }
 
 export interface PluginsResponse {

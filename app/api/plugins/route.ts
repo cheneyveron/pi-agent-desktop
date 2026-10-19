@@ -13,6 +13,7 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-acces
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
+import { describePluginSettings } from "@/lib/plugin-settings";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -385,6 +386,7 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
       description: packageMetadata.description,
       counts,
       resources,
+      settings: describePluginSettings(pkg.installedPath),
       status: disabled ? "disabled" : resourceCount > 0 ? "loaded" : pkg.installedPath ? "installed" : "missing",
     } satisfies PluginPackageInfo;
   });
