@@ -51,16 +51,23 @@ set_tag() {
   fi
 }
 
-# healthy | unhealthy | timeout
+# healthy | unhealthy | timeout. Only a container running the requested tag
+# counts: after a failed `up` the old, healthy container must not pass for it.
 wait_healthy() {
+  want="$1"
   waited=0
   while [ "$waited" -lt "$HEALTH_TIMEOUT" ]; do
     cid="$(compose ps -q "$SERVICE" 2>/dev/null | head -n 1)"
     if [ -n "$cid" ]; then
-      state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null)"
-      case "$state" in
-        healthy) echo healthy; return ;;
-        unhealthy|exited|dead) echo unhealthy; return ;;
+      image="$(docker inspect -f '{{.Config.Image}}' "$cid" 2>/dev/null)"
+      case "$image" in
+        *":$want")
+          state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null)"
+          case "$state" in
+            healthy) echo healthy; return ;;
+            unhealthy|exited|dead) echo unhealthy; return ;;
+          esac
+          ;;
       esac
     fi
     sleep "$POLL_SECONDS"
@@ -95,8 +102,11 @@ handle_request() {
 
   write_status "$id" restarting "$version"
   set_tag "$version"
-  compose up -d --no-deps --no-build "$SERVICE" >&2
-  result="$(wait_healthy)"
+  if compose up -d --no-deps --no-build "$SERVICE" >&2; then
+    result="$(wait_healthy "$version")"
+  else
+    result="not started (compose up failed)"
+  fi
   if [ "$result" = healthy ]; then
     write_status "$id" done "$version"
     log "now running $version"
@@ -109,8 +119,11 @@ handle_request() {
     return
   fi
   set_tag "$previous"
-  compose up -d --no-deps --no-build "$SERVICE" >&2
-  write_status "$id" failed "$version" "Version $version was $result; rolled back to $previous."
+  if compose up -d --no-deps --no-build "$SERVICE" >&2; then
+    write_status "$id" failed "$version" "Version $version was $result; rolled back to $previous."
+  else
+    write_status "$id" failed "$version" "Version $version was $result and rolling back to $previous also failed."
+  fi
 }
 
 mkdir -p "$UPDATER_DIR"

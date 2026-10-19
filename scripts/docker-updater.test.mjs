@@ -10,7 +10,7 @@ const script = fileURLToPath(new URL("../deploy/docker/updater.sh", import.meta.
 const ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
 // A stand-in `docker` that records each call and answers the health probe.
-function setup(t, { health = "healthy", pullFails = false, tag = "0.7.4" } = {}) {
+function setup(t, { health = "healthy", pullFails = false, upFails = false, tag = "0.7.4" } = {}) {
   const base = mkdtempSync(join(tmpdir(), "pi-updater-"));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const bin = join(base, "bin");
@@ -18,11 +18,14 @@ function setup(t, { health = "healthy", pullFails = false, tag = "0.7.4" } = {})
   const dir = join(base, "updater");
   for (const path of [bin, project, dir]) mkdirSync(path);
   const calls = join(base, "calls.log");
+  const envFile = join(project, ".env");
   writeFileSync(join(bin, "docker"), `#!/bin/sh
 echo "tag=\${PI_AGENT_TAG:-} $*" >> ${JSON.stringify(calls)}
 case "$*" in
   *" pull "*) ${pullFails ? "exit 1" : "exit 0"} ;;
+  *" up "*) ${upFails ? "exit 1" : "exit 0"} ;;
   *" ps -q "*) echo cid123 ;;
+  *Config.Image*) echo "ghcr.io/x/y:$(sed -n 's/^PI_AGENT_TAG=//p' ${JSON.stringify(envFile)})" ;;
   inspect*) echo ${health} ;;
 esac
 exit 0
@@ -101,4 +104,13 @@ test("does not guess a rollback target when no tag is recorded", (t) => {
   const s = setup(t, { health: "unhealthy", tag: "" });
   s.run(`id=${ID}\nversion=0.7.5\n`);
   assert.match(readFileSync(join(s.dir, "status"), "utf8"), /no previous tag/);
+});
+
+test("a failed `compose up` is not mistaken for success by the old healthy container", (t) => {
+  const s = setup(t, { upFails: true });
+  s.run(`id=${ID}\nversion=0.7.5\n`);
+  const status = readFileSync(join(s.dir, "status"), "utf8");
+  assert.match(status, /phase=failed/);
+  assert.match(status, /not started/);
+  assert.match(readFileSync(join(s.project, ".env"), "utf8"), /PI_AGENT_TAG=0\.7\.4/);
 });

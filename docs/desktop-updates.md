@@ -107,7 +107,7 @@ state/updater/   (writable by the web user)
 
 `$DOCKER_CONFIG_DIR/config.json` (mode 600 is fine only if it is owned by the web user's uid, 1000) is `{"auths": {"ghcr.io": {"auth": "<base64 of user:token>"}}}`.
 
-`PI_WEB_UPDATER_DIR` on the web service is what turns the button on.
+`PI_WEB_UPDATER_DIR` on the web service is what turns the button on. If the web service has an `env_file`, mount that file into the updater at the same path, because `docker compose up` runs inside the sidecar and reads it there. A failed `up`, or a running container that is not the requested tag, counts as a failed update and is rolled back.
 
 ### What happens on Upgrade
 
