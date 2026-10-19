@@ -324,6 +324,10 @@ try {
       // The preview card is a button since #130 (click jumps to the turn).
       const preview = page.locator(".conversation-navigator-preview");
       await preview.waitFor();
+      // Smooth scrolling updates the active turn while the jump is in flight.
+      await page.waitForFunction((expected) =>
+        Number(document.querySelector(".conversation-navigator-track")?.getAttribute("aria-valuenow")) === expected,
+      before + (direction === "ArrowUp" ? -1 : 1));
       const after = Number(await navigator.getAttribute("aria-valuenow"));
       assert.equal(after, before + (direction === "ArrowUp" ? -1 : 1));
       assert.ok(after >= 1 && after <= maximum);

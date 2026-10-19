@@ -145,9 +145,10 @@ try {
       await waitOutput(`SESSION:alive:${pid}`);
 
       await page.reload();
-      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true, includeHidden: true }).waitFor({ state: "attached" });
-      // Mobile restores terminal tabs with the workspace panel closed.
+      const restoredTab = page.getByRole("tab", { name: "Terminal: workspace-a", exact: true, includeHidden: true });
+      await restoredTab.waitFor({ state: "attached" });
       if (await page.getByRole("button", { name: "Show workspace", exact: true }).isVisible()) await showPanel();
+      await restoredTab.click();
       await ready();
       await run("printf '\\nREFRESH:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`REFRESH:alive:${pid}`);

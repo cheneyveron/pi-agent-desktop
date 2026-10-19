@@ -39,6 +39,12 @@ export async function checkComposerSelectors(page) {
       await input.pressSequentially(token);
       await option.waitFor();
       await input.press("Tab");
+      // Completion restores the caret on the next animation frame.
+      // Wait before the next fill can race with that pending cursor update.
+      await page.waitForFunction(({ value, cursor }) => {
+        const input = document.querySelector(".chat-input-textarea");
+        return input?.value === value && input.selectionStart === cursor && input.selectionEnd === cursor;
+      }, { value: prefix + expected + "后文", cursor: prefix.length + expected.length });
       assert.equal(await input.inputValue(), prefix + expected + "后文", "completion preserves surrounding text");
     }
   }
