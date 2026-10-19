@@ -112,7 +112,7 @@ export function validateDraft(
       if (!missing && changed.has(field.key)) problem = validatePluginSettingsValue(field, value);
     }
     if (problem) errors[field.key] = { code: problem.code, limit: problem.limit };
-    else if (missing && field.required) errors[field.key] = { code: "required" };
+    else if (missing && field.required && field.default === undefined) errors[field.key] = { code: "required" };
   }
   return errors;
 }

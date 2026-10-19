@@ -189,7 +189,7 @@ export type PluginSettingsApplyResult =
  * The file contents after a PUT: `stored` (the whole file, unknown keys
  * included) with the request's `input` applied. Only keys in `input` are
  * checked, so a hand-edited value elsewhere never blocks a save, but every
- * `required` key must exist in the result. A key set to `null` is removed; a
+ * `required` key must exist in the result unless it has a `default`. A key set to `null` is removed; a
  * secret absent from `input` is kept. Unknown keys and read-only fields in
  * `input` are refused rather than dropped.
  */
@@ -228,6 +228,8 @@ export function applyPluginSettings(
   for (const field of schema.properties) {
     if (errors[field.key] || !field.required || field.type === "unsupported") continue;
     const value = Object.hasOwn(values, field.key) ? values[field.key] : undefined;
+    // A key that is absent is satisfied by the default the plugin applies itself.
+    if (value === undefined && field.default !== undefined) continue;
     if (value === undefined || value === "") errors[field.key] = fieldError("required", `${field.key} is required`);
   }
   return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, values };

@@ -158,10 +158,12 @@ test("field validation names the problem before and after the request", async ()
   const loaded = await requestSettings(pkg, cwd);
   const initial = helpers.draftFromValues(loaded.schema, loaded.values);
   const draft = { ...initial, fields: { ...initial.fields, url: "", limit: "99", autosave: false } };
+  // url is required but has a default, so leaving it empty is fine; without the default it is not.
   assert.deepEqual(helpers.validateDraft(loaded.schema, draft, initial, loaded.values), {
-    url: { code: "required" },
     limit: { code: "maximum", limit: 50 },
   });
+  const noDefault = { ...loaded.schema, properties: loaded.schema.properties.map((f) => (f.key === "url" ? { ...f, default: undefined } : f)) };
+  assert.deepEqual(helpers.validateDraft(noDefault, draft, initial, loaded.values).url, { code: "required" });
   const notUrl = { ...initial, fields: { ...initial.fields, url: "nope" } };
   assert.deepEqual(helpers.validateDraft(loaded.schema, notUrl, initial, loaded.values).url, { code: "format", limit: undefined });
 

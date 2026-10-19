@@ -104,7 +104,19 @@ export function expandSettingsFilePath(declared: string): string {
   if (!isPathWithinRoots(path, new Set([resolve(userHome())]))) {
     throw new PluginSettingsError("pi.settings.file must be inside your home folder");
   }
+  if (inProtectedDirectory(path, resolve(userHome()))) throw protectedDirectory();
   return path;
+}
+
+const PROTECTED_HOME_DIRS = [".pi", ".ssh"];
+
+function protectedDirectory(): PluginSettingsError {
+  return new PluginSettingsError("The settings file is in a protected directory (~/.pi or ~/.ssh)", 403);
+}
+
+/** Whether `path` is inside one of home's protected folders, pi's own config and credentials or SSH. */
+function inProtectedDirectory(path: string, home: string): boolean {
+  return isPathWithinRoots(path, new Set(PROTECTED_HOME_DIRS.map((dir) => join(home, dir))));
 }
 
 function outsideHome(): PluginSettingsError {
@@ -141,6 +153,8 @@ function realSettingsTarget(path: string): string {
     throw new PluginSettingsError("pi.settings.file is a symbolic link to nothing", 403);
   }
   if (!within(real)) throw outsideHome();
+  // The real path too: a link in home may lead into ~/.pi, and ~/.pi itself may be a link.
+  if (inProtectedDirectory(real, realHome)) throw protectedDirectory();
   if (existing === path) {
     if (!statSync(real).isFile()) throw new PluginSettingsError("pi.settings.file is not a regular file", 422);
     return real;
