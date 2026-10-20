@@ -21,6 +21,14 @@ The process-global outbox survives page reloads and idle wrapper eviction, but n
 exit. Outbox data must not enter model context before delivery. Queue tests include real wrapper
 admission and mocked run lifecycles; they do not call paid models or use user sessions.
 
+The outbox delivers the next message a few milliseconds after the previous run's `agent_settled`
+(`agent_end` → `agent_settled` → `prompt_done` → `agent_start` of the delivered message), so the
+previous run's end-of-run `loadSession` can still be in flight when the new user bubble is appended
+from `message_end`. `liveRunEpochRef` (bumped on `agent_start` and on send) makes `loadSession`
+drop such a read instead of applying it, and keeps reads from different runs out of one single-flight
+request; the delivered run's own `agent_end` reads the transcript again. Without it the queued
+message vanished from the chat until the session was reopened.
+
 Fork-owned notes moved out of `AGENTS.md` to keep it short. The upstream doc on the same topic (`docs/agents/*.md` without the `fork-` prefix) may describe the same area in other words; where they disagree, these notes describe this fork. Hard rules that must survive a merge are also listed in `AGENTS.md` under **Hard rules**.
 
 ## Branch summaries (pi's "Summarize branch?")

@@ -473,6 +473,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const sessionHookMountedRef = useRef(true);
   // In-flight session reads, keyed by session id (or force:<id> for fresh reads).
   const loadFlightsRef = useRef(new Map<string, Promise<unknown>>());
+  // Bumped whenever a run starts. A transcript read that began before the bump
+  // cannot contain what this run has already appended (a queued message the
+  // server delivers right after the previous run ended), so it must not be
+  // applied over it.
+  const liveRunEpochRef = useRef(0);
   // Latest settled view state, readable from the unmount cleanup without
   // re-subscribing it. Assigned every render like sessionPropIdRef below.
   const dataRef = useRef<SessionData | null>(null);
@@ -736,7 +741,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean }) => {
     // Single-flight: concurrent reads for the same session (mount + SSE settle +
     // reconcile) share one request unless the caller forces a fresh read.
-    const flightKey = options?.force ? `force:${sid}` : sid;
+    const runEpoch = liveRunEpochRef.current;
+    const flightKey = options?.force ? `force:${sid}` : `${runEpoch}:${sid}`;
     const inflight = options?.force ? undefined : loadFlightsRef.current.get(flightKey);
     if (inflight) return await inflight;
   const flight = (async (): Promise<unknown> => {
@@ -773,6 +779,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as SessionData;
       if (!isCurrent()) return null;
+      // A run started while this read was in flight: the read predates the user
+      // message it appended, and applying it would drop that bubble until the
+      // next reload. The run's own agent_end reads the transcript again.
+      if (!showLoading && !includeState && liveRunEpochRef.current !== runEpoch) return null;
       // Freshness check: when the disk snapshot is unchanged (same opaque
       // revision), keep any history the user already paged in instead of
       // collapsing back to the fresh 50-entry window. The state hooks then
@@ -1582,6 +1592,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       }
       case "agent_start":
+        liveRunEpochRef.current += 1;
         cancelEventStreamGrace();
         sdkAgentActiveRef.current = true;
         agentRunningRef.current = true;
@@ -1902,6 +1913,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
 
     const promptRunId = promptRunIdRef.current + 1;
+    liveRunEpochRef.current += 1;
     cancelEventStreamGrace();
     rpcPromptPendingRef.current = true;
 
