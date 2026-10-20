@@ -114,6 +114,25 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
+            ## Pi Agent Desktop 0.7.8
+
+            ### New
+
+            - **Chats can do more.** A chat now uses your installed skills and MCP servers (an MCP server you configured is trusted: its tools may write files or run commands), and you can attach text, code, and Word (.docx) files to a message. Name a file by its full path and the chat can read it; ask for a file and it is saved to your Downloads folder (never overwriting; you can require a confirmation before each save in the Chats section of Settings › General). Programs and installers are never saved.
+            - Pin, group, and archive chats from the sidebar, set a default model and reasoning level for new chats, and choose which extra tools chats may use in the **Chats** section of **Settings › General**. **Continue in a project** copies a chat into a project so it gains that project's tools.
+            - The window appears once its first screen is ready instead of showing an empty frame, and the app starts faster.
+
+            ### Fixed
+
+            - A message you queued while the agent was working no longer disappears from the conversation when it is delivered; it used to show again only after switching sessions.
+            - Opening Settings from a chat whose first message contains a double space no longer freezes the app.
+            - Files attached in one chat no longer appear in another; a path written inside an attached file no longer lets the chat read that file.
+            - After a Windows overwrite install, the app no longer keeps showing the previous version's interface.
+
+            Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
             ## Pi Agent Desktop 0.7.7
 
             ### New
@@ -203,6 +222,25 @@ jobs:
             - **The backend switcher moved into Settings.** The π logo at the top-left of the sidebar is gone; open Settings › General › Desktop and use **Switch backend…** in the "Backend connection" row to pick Local or a saved remote server. The same row is available while connected to a remote server, so you can always switch back. Switching still restarts the app.
 
             Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
+            ## Pi Agent Desktop 0.7.8
+
+            ### 新增
+
+            - **对话能力增强。** 对话现在可以使用已安装的 Skills 和 MCP 服务器（你配置的 MCP 服务器被视为可信，其工具可能写入文件或执行命令），消息可附加文本、代码和 Word（.docx）文件。写出文件的完整路径，对话就能读取它；让它生成文件，会保存到“下载”文件夹（不会覆盖已有文件；可在 设置 › 通用 的“对话”部分要求每次保存前先确认）。程序和安装包不会被保存。
+            - 侧边栏可固定、分组和归档对话；在 **设置 › 通用** 的“对话”部分可设置新对话的默认模型与推理级别，并选择对话额外可用的工具。**在项目中继续**会把对话复制到项目里，使其获得该项目的工具。
+            - 窗口在首屏就绪后才显示，不再先出现空白画面，应用启动也更快。
+
+            ### 修复
+
+            - 智能体工作期间排队发送的消息，在被投递时不再从对话中消失；此前需要切换会话才能重新看到。
+            - 当对话的第一条消息含连续空格时，点击设置会导致应用卡死，现已修复。
+            - 在一个对话中添加的附件不会再出现在另一个对话里；附件内容中写出的路径不再让对话获得读取该文件的权限。
+            - Windows 覆盖安装后，应用不再继续显示上一版本的界面。
+
+            内置组件版本：pi 1.3.0、pi-web 0.10.0。
 
             ---
 

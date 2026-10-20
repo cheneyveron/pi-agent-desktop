@@ -74,3 +74,9 @@ Merged `3b6a877..15ab42a` from `abcwyc/pi-agent-desktop/main` (1 commit, #147): 
 - **`lib/desktop-menu.ts` keeps the fork's opt-in flag.** Upstream hard-codes `NATIVE_POPUP_MENUS_ENABLED = false`; the fork keeps `NEXT_PUBLIC_NATIVE_POPUP_MENUS === "1"`, which is off for every release build too, so `.github/workflows/desktop-test-build.yml` can still produce native-popup test installers.
 - **`scripts/fork-ownership.json`**: upstream's drift numbers and new `hooks/useAgentSession.ts` entry adopted; `upstreamBaseline` stays the plain ref `6fcd7d4` so `npm run drift` resolves it, and the fork's 2026-10-09 decision-log entry was restored.
 - `components/AppShell.auto-name.test.mjs` locates the DOM session menu by `session-item-menu"` instead of the full class string, since the menu gained `app-menu`. CSS baseline is `15ab42a`.
+
+## Merge of upstream d414e9d (2026-10-20, desktop 0.7.8)
+Merged 15ab42a..d414e9d (upstream desktop 0.7.5). Adopted: Chats with skills/MCP, text and docx attachments, `save_to_downloads`, pin/group/archive chats and Continue in a project, the hidden-until-ready main window (`app_ready`, `window_painted`, reveal deadline) and faster server start, the window-title guard fix, the reworked conversation-navigator e2e.
+- **Continue in a project uses `DirectoryPicker`**, not upstream's `ProjectPicker` block (declined UI stays declined); validation goes through `validateProjectDirectory`.
+- **The macOS paint mask applies to the main window only** (`show_main_window` checks `window.label() == WINDOW_LABEL`): `end_paint_mask` restores alpha on `WINDOW_LABEL` alone, so masking the remote-backend window would leave it transparent.
+- **Kept ours**: version files, component manifest (`cheneyveron/pi-agent-desktop`), release notes, Homebrew cask; the sidebar's generate-title and full-history menu items were merged with upstream's chat actions.
