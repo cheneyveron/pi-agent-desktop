@@ -3,10 +3,10 @@ import { fileURLToPath } from "node:url";
 
 /**
  * tauri-action writes `api.github.com/repos/.../releases/assets/<id>` into
- * latest.json. The updater downloads those anonymously, and the REST API
- * allows only 60 requests an hour per IP, so a few update checks later the
- * download fails with "403 Forbidden" (v0.7.8). The public download URL is
- * served from the CDN without that limit.
+ * latest.json. The updater downloads those anonymously, so they count against
+ * the REST API's 60 requests an hour per IP (shared with everything else
+ * behind that IP) and answer "403 Forbidden" once it is used up (seen on
+ * v0.7.8). The public download URL is served from the CDN without that limit.
  */
 export function publicUpdaterManifest(manifest, assets, repository, tag) {
   const names = new Map(assets.map((asset) => [asset.apiUrl, asset.name]));
