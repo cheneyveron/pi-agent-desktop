@@ -1,4 +1,5 @@
 import { APP_PREF_KEYS, getPrefJson, setPrefJson } from "./app-prefs";
+import { CHAT_ATTACHMENT_MAX_FILES, splitMessageForComposer } from "./chat-attachments";
 import {
   MAX_ATTACHED_IMAGES,
   isBase64ImageWithinLimits,
@@ -9,9 +10,22 @@ export interface ChatDraftImage {
   mimeType: string;
 }
 
+/** A text file attached in a chat composer (see lib/chat-attachments.ts). */
+export interface ChatDraftFile {
+  id: string;
+  name: string;
+  size: number;
+  text: string;
+}
+
 export interface ChatDraft {
   value: string;
   images: ChatDraftImage[];
+  /**
+   * Attached text files. Kept for the life of the page only: a file can be 256 KB, which
+   * would not fit the localStorage budget the drafts share, so they never reach storage.
+   */
+  files?: ChatDraftFile[];
 }
 
 const drafts = new Map<string, ChatDraft>();
@@ -25,11 +39,12 @@ function cloneDraft(draft: ChatDraft): ChatDraft {
   return {
     value: draft.value,
     images: draft.images.map((image) => ({ ...image })),
+    ...(draft.files?.length ? { files: draft.files.map((file) => ({ ...file })) } : {}),
   };
 }
 
 function isEmptyDraft(draft: ChatDraft): boolean {
-  return !draft.value && draft.images.length === 0;
+  return !draft.value && draft.images.length === 0 && !draft.files?.length;
 }
 
 function imagePersistable(image: ChatDraftImage): boolean {
@@ -110,15 +125,22 @@ export function mergeRestoredSubmissionDraft(
   submittedImages: ChatDraftImage[] | undefined,
   currentText: string,
   currentImages: ChatDraftImage[],
+  submittedFiles: ChatDraftFile[] | undefined = undefined,
+  currentFiles: ChatDraftFile[] | undefined = undefined,
 ): ChatDraft {
   const images = [...(submittedImages ?? []), ...currentImages]
     .filter(isBase64ImageWithinLimits)
     .slice(0, MAX_ATTACHED_IMAGES)
     .map(({ data, mimeType }) => ({ data, mimeType }));
+  const files = [...(submittedFiles ?? []), ...(currentFiles ?? [])]
+    .filter((file, index, all) => all.findIndex((other) => other.id === file.id) === index)
+    .slice(0, CHAT_ATTACHMENT_MAX_FILES)
+    .map((file) => ({ ...file }));
 
   return {
     value: mergeRestoredSubmissionText(submittedText, currentText),
     images,
+    ...(files.length ? { files } : {}),
   };
 }
 
@@ -126,13 +148,18 @@ export function restoreDraftSubmission(
   key: string,
   text: string,
   images?: ChatDraftImage[],
+  files?: ChatDraftFile[],
 ): ChatDraft {
   const current = getDraft(key) ?? { value: "", images: [] };
+  // A submission that carried attached files comes back as attachments, not as markup.
+  const split = splitMessageForComposer(text);
   const restored = mergeRestoredSubmissionDraft(
-    text,
+    split.text,
     images,
     current.value,
     current.images,
+    [...(files ?? []), ...split.files],
+    current.files,
   );
   setDraft(key, restored);
   return restored;
@@ -154,7 +181,7 @@ export function rekeyDraft(
   if (!previous) return next;
 
   const merged = next
-    ? mergeRestoredSubmissionDraft(next.value, next.images, previous.value, previous.images)
+    ? mergeRestoredSubmissionDraft(next.value, next.images, previous.value, previous.images, next.files, previous.files)
     : previous;
   setDraft(nextKey, merged);
   return cloneDraft(merged);

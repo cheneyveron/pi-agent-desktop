@@ -27,10 +27,12 @@ if (
 }
 if (
   remote["pi-agent-desktop"]
-  && compareVersions(local["pi-agent-desktop"], remote["pi-agent-desktop"].version) < 0
+  && compareVersions(local["pi-agent-desktop"], remote["pi-agent-desktop"].version) <= 0
 ) {
+  // Equal is as wrong as older: the tag already exists, so the release job would fail
+  // with `already_exists` after the whole matrix had built.
   problems.push(
-    `pi-agent-desktop is ${local["pi-agent-desktop"]}; latest Release is ${remote["pi-agent-desktop"].version}`,
+    `pi-agent-desktop is ${local["pi-agent-desktop"]}; it must be newer than the latest Release ${remote["pi-agent-desktop"].version}`,
   );
 }
 

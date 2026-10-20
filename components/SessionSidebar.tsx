@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
@@ -42,6 +42,8 @@ import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
 import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
+import { ChatsSectionMenu } from "./ChatsSectionMenu";
+import { orderChatFamilies, toggleId } from "@/lib/chat-groups";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
 import { isScheduledRunSession } from "@/hooks/useScheduledTasks";
 import { prefetchSessionData } from "@/lib/session-data-cache";
@@ -261,11 +263,31 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
+function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
+  const stored = getPrefJson<unknown>(key);
+  return Array.isArray(stored)
+    ? new Set(stored.filter((id): id is string => typeof id === "string"))
+    : new Set();
+}
+
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onGenerateTitle, onOpenFullHistory }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
-  const [chatVisibleCount, setChatVisibleCount] = useState(MAX_VISIBLE_CHAT_SESSIONS);
+  // Same fold model as a project: folding drops the extra pages, so the next
+  // unfold starts again from the first five chats.
+  const [chatsCollapsed, setChatsCollapsed] = useState(() => getPref(APP_PREF_KEYS.collapsedChats) === "1");
+  const [chatSessionPages, setChatSessionPages] = useState(() => {
+    const stored = getPrefJson<unknown>(APP_PREF_KEYS.chatSessionPages);
+    return typeof stored === "number" && Number.isInteger(stored) && stored > 0 ? stored : 0;
+  });
+  const [pinnedChats, setPinnedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedChats));
+  const [archivedChats, setArchivedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedChats));
+  const [showArchivedChats, setShowArchivedChats] = useState(false);
+  const [chatsMenuOpen, setChatsMenuOpen] = useState(false);
+  const [chatsMenuPos, setChatsMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const chatsMenuRef = useRef<HTMLDivElement>(null);
+  const chatsMenuButtonRef = useRef<HTMLButtonElement>(null);
   // Tracked in a ref only: the version is compared against the polled value to
   // decide whether the list needs reloading, and no render reads it.
   const sessionListVersionRef = useRef<number | null>(null);
@@ -431,6 +453,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectPickerBusy, setProjectPickerBusy] = useState(false);
   const [projectPickerError, setProjectPickerError] = useState<string | null>(null);
+  // The chat whose conversation is being copied into a project (the picker is open for it).
+  const [continueChat, setContinueChat] = useState<SessionInfo | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
@@ -553,6 +577,26 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [collapsedProjects]);
 
   useEffect(() => {
+    if (chatsCollapsed) setPref(APP_PREF_KEYS.collapsedChats, "1");
+    else removePref(APP_PREF_KEYS.collapsedChats);
+  }, [chatsCollapsed]);
+
+  useEffect(() => {
+    if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
+    else setPrefJson(APP_PREF_KEYS.pinnedChats, [...pinnedChats]);
+  }, [pinnedChats]);
+
+  useEffect(() => {
+    if (archivedChats.size === 0) removePref(APP_PREF_KEYS.archivedChats);
+    else setPrefJson(APP_PREF_KEYS.archivedChats, [...archivedChats]);
+  }, [archivedChats]);
+
+  useEffect(() => {
+    if (chatSessionPages === 0) removePref(APP_PREF_KEYS.chatSessionPages);
+    else setPrefJson(APP_PREF_KEYS.chatSessionPages, chatSessionPages);
+  }, [chatSessionPages]);
+
+  useEffect(() => {
     if (Object.keys(projectSessionPages).length === 0) removePref(APP_PREF_KEYS.expandedProjects);
     else setPrefJson(APP_PREF_KEYS.expandedProjects, projectSessionPages);
   }, [projectSessionPages]);
@@ -655,6 +699,33 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       window.removeEventListener("resize", closeOnViewportChange);
     };
   }, [projectViewMenuOpen, projectViewMenuPos]);
+
+  useEffect(() => {
+    if (!chatsMenuOpen || !chatsMenuPos) return;
+    const close = () => {
+      setChatsMenuOpen(false);
+      setChatsMenuPos(null);
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (chatsMenuRef.current?.contains(target)) return;
+      if (chatsMenuButtonRef.current?.contains(target)) return;
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isImeComposing(event)) close();
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [chatsMenuOpen, chatsMenuPos]);
 
   useEffect(() => {
     onRunningSessionIdsChange?.(runningSessionIds);
@@ -1036,6 +1107,35 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onSelectSession(s, false, entryId, blockIndex);
   }, [onSelectSession, setSessionUnread]);
 
+  const continueChatInProject = useCallback(async (chat: SessionInfo, cwd: string) => {
+    setContinueChat(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(chat.id)}/continue-in-project`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      const data = await res.json().catch(() => ({})) as { sessionId?: string; path?: string | null; cwd?: string; error?: string };
+      if (!res.ok || !data.sessionId) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const now = new Date().toISOString();
+      activateProject(cwd);
+      handleSelectSessionFromList({
+        ...chat,
+        id: data.sessionId,
+        path: data.path ?? "",
+        cwd: data.cwd ?? cwd,
+        workspaceKind: "project",
+        projectRoot: projectRootFor(cwd) ?? cwd,
+        created: now,
+        modified: now,
+        parentSessionId: chat.id,
+      });
+      void loadSessions(false, true);
+    } catch (e) {
+      appNotify.error({ message: t("sidebar.continueInProjectFailed", { error: e instanceof Error ? e.message : String(e) }) });
+    }
+  }, [activateProject, handleSelectSessionFromList, loadSessions, projectRootFor, t]);
+
   const handleNewSession = useCallback((cwdOverride?: string, workspaceKindOverride?: SessionWorkspaceKind) => {
     const cwd = cwdOverride ?? selectedCwd ?? chatWorkspaceCwd;
     if (!cwd) return;
@@ -1187,7 +1287,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const projectSessions = filteredSessions.filter(
     (session) => session.workspaceKind !== "chat" && !isChatCwd(session.cwd),
   );
-  const chatFamilies = listSessionFamilies(chatSessions);
+  const allChatFamilies = listSessionFamilies(chatSessions);
+  // Pinned first, then by recency. Archived chats leave the list unless a search is looking for them.
+  const orderedChatFamilies = orderChatFamilies(allChatFamilies, pinnedChats);
+  const chatFamilies = trimmedSessionQuery
+    ? orderedChatFamilies
+    : orderedChatFamilies.filter((family) => !archivedChats.has(family.root.id));
+  const archivedChatFamilies = trimmedSessionQuery
+    ? []
+    : orderedChatFamilies.filter((family) => archivedChats.has(family.root.id));
   const sessionFamilies = listSessionFamilies(projectSessions);
   const allProjects = groupByProject(projectSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
@@ -1214,9 +1322,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const selectedProjectRoot = selectedProjectObject?.kind === "project"
     ? selectedProjectObject.root
     : null;
+  // A search always lists every match, folded or not.
+  const chatsFolded = !trimmedSessionQuery && chatsCollapsed;
   let visibleChatFamilies = trimmedSessionQuery
     ? chatFamilies
-    : chatFamilies.slice(0, chatVisibleCount);
+    : chatFamilies.slice(0, MAX_VISIBLE_CHAT_SESSIONS * (chatSessionPages + 1));
   if (!trimmedSessionQuery && selectedSessionId) {
     const selectedFamily = chatFamilies.find((family) => (
       family.root.id === selectedSessionId
@@ -1227,6 +1337,47 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }
   const hiddenChatFamilyCount = chatFamilies.length - visibleChatFamilies.length;
+  const chatRunningCount = chatFamilies.filter((family) => (
+    [family.root, ...family.subagents].some((session) => runningSessionIds.has(session.id))
+  )).length;
+  const chatUnreadCount = chatFamilies.filter((family) => (
+    [family.root, ...family.subagents].some((session) => unreadSessionIds.has(session.id))
+  )).length;
+  const setChatsFolded = (folded: boolean) => {
+    setChatsCollapsed(folded);
+    if (folded) setChatSessionPages(0);
+  };
+
+  const renderChatFamily = (family: (typeof chatFamilies)[number]) => {
+    const [node] = buildSessionTree([family.root, ...family.subagents]);
+    if (!node) return null;
+    const id = family.root.id;
+    return (
+      <SessionFamilyItem
+        node={node}
+        familySessions={[family.root, ...family.subagents]}
+        selectedSessionId={selectedSessionId}
+        runningSessionIds={runningSessionIds}
+        unreadSessionIds={unreadSessionIds}
+        onSelectSession={handleSelectSessionFromList}
+        onUnreadChange={setSessionUnread}
+        onRenamed={loadSessions}
+        onGenerateTitle={onGenerateTitle}
+        onOpenFullHistory={onOpenFullHistory}
+        onContinueInProject={setContinueChat}
+        chatActions={{
+          pinned: pinnedChats.has(id),
+          archived: archivedChats.has(id),
+          onTogglePin: () => setPinnedChats((current) => toggleId(current, id)),
+          onToggleArchive: () => setArchivedChats((current) => toggleId(current, id)),
+        }}
+        onSessionDeleted={(deletedId) => {
+          onSessionDeleted?.(deletedId);
+          loadSessions();
+        }}
+      />
+    );
+  };
 
   const renderProjectGroup = (group: ReturnType<typeof groupByProject>[number]) => {
     const isCollapsed = !trimmedSessionQuery && collapsedProjects.has(group.projectRoot);
@@ -1470,6 +1621,59 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     closeProjectViewMenu();
   };
 
+  const closeChatsMenu = () => {
+    setChatsMenuOpen(false);
+    setChatsMenuPos(null);
+  };
+
+  const openChatsDomMenu = (anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect();
+    const width = 216;
+    const estimatedHeight = 96;
+    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    const top = rect.bottom + 4 + estimatedHeight > window.innerHeight - 8
+      ? Math.max(8, rect.top - estimatedHeight - 4)
+      : rect.bottom + 4;
+    setChatsMenuPos({ top, left });
+    setChatsMenuOpen(true);
+  };
+
+  const toggleChatsMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (chatsMenuOpen && chatsMenuPos) {
+      closeChatsMenu();
+      return;
+    }
+    if (chatsMenuOpen) return;
+    closeProjectViewMenu();
+    const anchor = event.currentTarget;
+    if (!canUseNativeMenu()) {
+      openChatsDomMenu(anchor);
+      return;
+    }
+    const entries: NativeMenuEntry[] = [
+      {
+        label: t("sidebar.collapseChats"),
+        disabled: chatsCollapsed,
+        onSelect: () => setChatsFolded(true),
+      },
+      {
+        label: t("sidebar.expandChats"),
+        disabled: !chatsCollapsed,
+        onSelect: () => setChatsFolded(false),
+      },
+    ];
+    setChatsMenuOpen(true);
+    setChatsMenuPos(null);
+    void showNativeMenu(entries, menuPointBelow(anchor, "right")).then((shown) => {
+      if (shown) {
+        setChatsMenuOpen(false);
+        return;
+      }
+      openChatsDomMenu(anchor);
+    });
+  };
+
   const openProjectViewDomMenu = (anchor: HTMLElement) => {
     const rect = anchor.getBoundingClientRect();
     const width = 216;
@@ -1489,6 +1693,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       return;
     }
     if (projectViewMenuOpen) return;
+    closeChatsMenu();
     setProjectMenu(null);
     setProjectMenuPos(null);
     const anchor = event.currentTarget;
@@ -1646,46 +1851,75 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         aria-label={`${t("sidebar.chats")} / ${t("sidebar.projects")}`}
         onScroll={handleListScroll}
       >
-        <div className="sidebar-project-tree-header sidebar-chats-header">
-          <span className="sidebar-project-tree-title">{t("sidebar.chats")}</span>
+        <div className={`sidebar-project-tree-header sidebar-chats-header${chatsMenuOpen ? " is-menu-open" : ""}`}>
           <button
             type="button"
-            className="sidebar-chats-add"
-            onClick={() => handleNewSession(chatWorkspaceCwd ?? undefined, "chat")}
-            disabled={!chatWorkspaceCwd}
-            title={t("sidebar.newChatTitle")}
-            aria-label={t("sidebar.newChatTitle")}
+            className="sidebar-chats-title"
+            data-sidebar-tree-row
+            aria-expanded={!chatsFolded}
+            title={t(chatsFolded ? "sidebar.expandChats" : "sidebar.collapseChats")}
+            onClick={() => setChatsFolded(!chatsCollapsed)}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            <span className="sidebar-project-tree-title">{t("sidebar.chats")}</span>
+            {/* A folded section hides its rows, so the count and any running or
+                unread chips stay readable on the header, like a folded project. */}
+            {chatsFolded && chatFamilies.length > 0 && (
+              <span className="sidebar-project-tree-count" title={t("sidebar.sessionCount", { count: chatFamilies.length })}>
+                ({chatFamilies.length})
+              </span>
+            )}
+            {chatsFolded && (
+              <span className="sidebar-project-tree-meta">
+                {chatRunningCount > 0 && (
+                  <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: chatRunningCount })}>
+                    {chatRunningCount}
+                  </span>
+                )}
+                {chatUnreadCount > 0 && (
+                  <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: chatUnreadCount })}>
+                    {chatUnreadCount}
+                  </span>
+                )}
+              </span>
+            )}
           </button>
+          <div className="sidebar-project-tree-tools">
+            <button
+              ref={chatsMenuButtonRef}
+              type="button"
+              className={`sidebar-project-tree-menu${chatsMenuOpen ? " is-open" : ""}`}
+              title={t("sidebar.chatsMenu")}
+              aria-label={t("sidebar.chatsMenu")}
+              aria-haspopup="menu"
+              aria-expanded={chatsMenuOpen}
+              onClick={toggleChatsMenu}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="sidebar-project-tree-add"
+              onClick={() => handleNewSession(chatWorkspaceCwd ?? undefined, "chat")}
+              disabled={!chatWorkspaceCwd}
+              title={t("sidebar.newChatTitle")}
+              aria-label={t("sidebar.newChatTitle")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
         </div>
+        {!chatsFolded && (
         <div className="sidebar-project-tree-children sidebar-chats-list">
-          {visibleChatFamilies.map((family) => {
-            const [node] = buildSessionTree([family.root, ...family.subagents]);
-            if (!node) return null;
-            return (
-              <SessionFamilyItem
-                key={family.root.id}
-                node={node}
-                familySessions={[family.root, ...family.subagents]}
-                selectedSessionId={selectedSessionId}
-                runningSessionIds={runningSessionIds}
-                unreadSessionIds={unreadSessionIds}
-                onUnreadChange={setSessionUnread}
-                onSelectSession={handleSelectSessionFromList}
-                onRenamed={loadSessions}
-                onSessionDeleted={(id) => {
-                  onSessionDeleted?.(id);
-                  loadSessions();
-                }}
-                onGenerateTitle={onGenerateTitle}
-                onOpenFullHistory={onOpenFullHistory}
-              />
-            );
-          })}
+          {visibleChatFamilies.map((family) => (
+            <Fragment key={family.root.id}>{renderChatFamily(family)}</Fragment>
+          ))}
           {!loading && !error && chatFamilies.length === 0 && (
             <div className="sidebar-chats-empty">
               {trimmedSessionQuery ? t("sidebar.noMatchingSessions") : t("sidebar.noChats")}
@@ -1695,14 +1929,32 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             <button
               type="button"
               className="sidebar-project-tree-show-more"
-              onClick={() => setChatVisibleCount((count) => count + MAX_VISIBLE_CHAT_SESSIONS)}
+              onClick={() => setChatSessionPages((pages) => pages + 1)}
             >
               {t("sidebar.showMoreSessions", {
                 count: Math.min(MAX_VISIBLE_CHAT_SESSIONS, hiddenChatFamilyCount),
               })}
             </button>
           )}
+          {archivedChatFamilies.length > 0 && (
+            <button
+              type="button"
+              className="sidebar-project-tree-show-more sidebar-chats-archived-toggle"
+              aria-expanded={showArchivedChats}
+              onClick={() => setShowArchivedChats((open) => !open)}
+            >
+              {t(showArchivedChats ? "sidebar.hideArchivedChats" : "sidebar.showArchivedChats", {
+                count: archivedChatFamilies.length,
+              })}
+            </button>
+          )}
+          {showArchivedChats && archivedChatFamilies.map((family) => (
+            <div key={family.root.id} className="sidebar-chats-archived-row">
+              {renderChatFamily(family)}
+            </div>
+          ))}
         </div>
+        )}
 
         <div className={`sidebar-project-tree-header${projectViewMenuOpen ? " is-menu-open" : ""}`}>
           <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
@@ -1782,6 +2034,23 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           : activeProjects.map((group) => renderProjectGroup(group))}
       </div>
       </SessionSearch>
+      {chatsMenuOpen && chatsMenuPos && (
+        <ChatsSectionMenu
+          menuRef={chatsMenuRef}
+          pos={chatsMenuPos}
+          onClose={closeChatsMenu}
+          canCollapse={!chatsCollapsed}
+          canExpand={chatsCollapsed}
+          onCollapse={() => {
+            setChatsFolded(true);
+            closeChatsMenu();
+          }}
+          onExpand={() => {
+            setChatsFolded(false);
+            closeChatsMenu();
+          }}
+        />
+      )}
       {projectViewMenuOpen && projectViewMenuPos && (
         <ProjectViewMenu
           menuRef={projectViewMenuRef}
@@ -1840,6 +2109,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onCreateWorktree={() => void worktreeActions.create(projectMenu.root)}
         />
       )}
+      {continueChat && (
+        <DirectoryPicker
+          initialPath={(!selectedCwdIsChat && selectedCwd) || (homeDir || undefined)}
+          busy={projectPickerBusy}
+          error={projectPickerError}
+          onCancel={() => { setContinueChat(null); setProjectPickerError(null); }}
+          onSelect={async (path) => {
+            setProjectPickerBusy(true);
+            setProjectPickerError(null);
+            try {
+              await continueChatInProject(continueChat, await validateProjectDirectory(path));
+            } catch (error) {
+              setProjectPickerError(error instanceof Error ? error.message : String(error));
+            } finally {
+              setProjectPickerBusy(false);
+            }
+          }}
+        />
+      )}
       {projectPickerOpen && (
         <DirectoryPicker
           initialPath={(!selectedCwdIsChat && selectedCwd) || (homeDir || undefined)}
@@ -1876,6 +2164,8 @@ function SessionFamilyItem({
   onSessionDeleted,
   onGenerateTitle,
   onOpenFullHistory,
+  onContinueInProject,
+  chatActions,
   familySessions,
   subtitle,
 }: {
@@ -1891,6 +2181,10 @@ function SessionFamilyItem({
   onSessionDeleted?: (id: string) => void;
   onGenerateTitle?: (sessionId: string) => Promise<unknown>;
   onOpenFullHistory?: (sessionId: string) => void;
+  /** Chats only: copy the conversation into a project. */
+  onContinueInProject?: (session: SessionInfo) => void;
+  /** Chats only: pin and archive, which the row menu offers beside the other actions. */
+  chatActions?: ChatRowActions;
   /** Cross-project context, shown by the chronological sidebar view. */
   subtitle?: string;
 }) {
@@ -1921,6 +2215,8 @@ function SessionFamilyItem({
           onDeleted={(id) => onSessionDeleted?.(id)}
           onGenerateTitle={onGenerateTitle}
           onOpenFullHistory={onOpenFullHistory}
+          onContinueInProject={depth === 0 ? onContinueInProject : undefined}
+          chatActions={depth === 0 ? chatActions : undefined}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -2060,6 +2356,13 @@ function showProjectActivity(
   );
 }
 
+interface ChatRowActions {
+  pinned: boolean;
+  archived: boolean;
+  onTogglePin: () => void;
+  onToggleArchive: () => void;
+}
+
 function SessionItem({
   session,
   isSelected,
@@ -2071,6 +2374,8 @@ function SessionItem({
   onDeleted,
   onGenerateTitle,
   onOpenFullHistory,
+  onContinueInProject,
+  chatActions,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
@@ -2087,6 +2392,8 @@ function SessionItem({
   onDeleted?: (id: string) => void;
   onGenerateTitle?: (sessionId: string) => Promise<unknown>;
   onOpenFullHistory?: (sessionId: string) => void;
+  onContinueInProject?: (session: SessionInfo) => void;
+  chatActions?: ChatRowActions;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -2233,6 +2540,15 @@ function SessionItem({
         ? [{ label: generateTitleLabel, disabled: naming, onSelect: () => { void generateTitle(); } }]
         : []),
       { label: t("sidebar.copySessionId"), onSelect: copySessionId },
+      ...(chatActions
+        ? [{ label: t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat"), onSelect: chatActions.onTogglePin }]
+        : []),
+      ...(onContinueInProject
+        ? [{ label: t("sidebar.continueInProject"), onSelect: () => onContinueInProject(session) }]
+        : []),
+      ...(chatActions
+        ? [{ label: t(chatActions.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat"), onSelect: chatActions.onToggleArchive }]
+        : []),
       ...(onOpenFullHistory ? [{ label: t("history.full"), onSelect: openFullHistory }] : []),
       { label: t("sidebar.delete"), onSelect: beginDeleteConfirmation },
       { kind: "separator" },
@@ -2247,7 +2563,7 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [beginDeleteConfirmation, copySessionId, generateTitle, generateTitleLabel, isUnread, naming, onGenerateTitle, onOpenFullHistory, onUnreadChange, openFullHistory, locale, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
+  }, [beginDeleteConfirmation, copySessionId, generateTitle, generateTitleLabel, isUnread, naming, onGenerateTitle, onOpenFullHistory, onUnreadChange, openFullHistory, chatActions, onContinueInProject, locale, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
 
   const openSessionMenu = useCallback((point: NativeMenuPoint) => {
     const openDomMenu = () => {
@@ -2255,6 +2571,8 @@ function SessionItem({
         + (onGenerateTitle ? 31 : 0)
         + 31 // copy session id
         + (onOpenFullHistory ? 31 : 0)
+        + (onContinueInProject ? 30 : 0)
+        + (chatActions ? 60 : 0)
         + ((session.compactionCount ?? 0) > 0 ? 18 : 0)
         + (session.worktreeBranch ? 18 : 0);
       setMenuPos({
@@ -2270,7 +2588,7 @@ function SessionItem({
     } else {
       openDomMenu();
     }
-  }, [onGenerateTitle, onOpenFullHistory, session.compactionCount, session.worktreeBranch, showNativeSessionMenu]);
+  }, [chatActions, onContinueInProject, onGenerateTitle, onOpenFullHistory, session.compactionCount, session.worktreeBranch, showNativeSessionMenu]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -2488,6 +2806,11 @@ function SessionItem({
           >
             {title}
           </span>
+          {chatActions?.pinned && (
+            <svg className="session-item-pin" aria-label={t("sidebar.unpinChat")} width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+            </svg>
+          )}
           {subtitle && (
             <span className="session-item-project" title={subtitle}>
               {subtitle}
@@ -2642,6 +2965,61 @@ function SessionItem({
                 </svg>
                 {t("sidebar.copySessionId")}
               </button>
+              {chatActions && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); chatActions.onTogglePin(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+                  </svg>
+                  {t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat")}
+                </button>
+              )}
+              {onContinueInProject && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); onContinueInProject(session); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+                  </svg>
+                  {t("sidebar.continueInProject")}
+                </button>
+              )}
+              {chatActions && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); chatActions.onToggleArchive(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <rect x="3" y="4" width="18" height="4" rx="1" />
+                    <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+                  </svg>
+                  {t(chatActions.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat")}
+                </button>
+              )}
               {onOpenFullHistory && (
                 <button
                   role="menuitem"

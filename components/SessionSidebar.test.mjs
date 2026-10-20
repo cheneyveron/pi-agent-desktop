@@ -138,18 +138,18 @@ test("Chats sit beside Projects and never enter project grouping", () => {
     source,
     /const chatSessions = filteredSessions[\s\S]*?session\.workspaceKind === "chat" \|\| isChatCwd\(session\.cwd\)[\s\S]*?const projectSessions = filteredSessions\.filter\(/,
   );
-  assert.match(source, /const chatFamilies = listSessionFamilies\(chatSessions\)/);
+  assert.match(source, /const allChatFamilies = listSessionFamilies\(chatSessions\)/);
   assert.match(source, /const sessionFamilies = listSessionFamilies\(projectSessions\)/);
   assert.match(source, /groupByProject\(projectSessions,/);
   assert.match(source, /getRecentProjects\(allSessions\)/);
-  assert.match(source, /<div className="sidebar-project-tree-header sidebar-chats-header">/);
+  assert.match(source, /sidebar-project-tree-header sidebar-chats-header/);
   assert.match(source, /handleNewSession\(chatWorkspaceCwd \?\? undefined, "chat"\)/);
 });
 
 test("Chats show five families at a time even when there are no projects", () => {
   assert.match(source, /const MAX_VISIBLE_CHAT_SESSIONS = 5/);
-  assert.match(source, /: chatFamilies\.slice\(0, chatVisibleCount\)/);
-  assert.match(source, /setChatVisibleCount\(\(count\) => count \+ MAX_VISIBLE_CHAT_SESSIONS\)/);
+  assert.match(source, /: chatFamilies\.slice\(0, MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\)\)/);
+  assert.match(source, /setChatSessionPages\(\(pages\) => pages \+ 1\)/);
   assert.match(source, /!loading && !error && chatFamilies\.length === 0/);
   assert.match(source, /sidebar-chats-empty/);
   // The Chats section renders before the Projects empty state, so it remains
@@ -158,6 +158,58 @@ test("Chats show five families at a time even when there are no projects", () =>
     source,
     /sidebar-chats-header[\s\S]*?\{allProjects\.length === 0 \? \(/,
   );
+});
+
+test("Chats fold like a project and unfold back to the first five", () => {
+  // Folding drops the extra pages so the next unfold starts at five again.
+  assert.match(source, /const setChatsFolded = \(folded: boolean\) => \{\s*setChatsCollapsed\(folded\);\s*if \(folded\) setChatSessionPages\(0\);/);
+  // A search lists every match regardless of the fold.
+  assert.match(source, /const chatsFolded = !trimmedSessionQuery && chatsCollapsed/);
+  assert.match(source, /\{!chatsFolded && \(\s*<div className="sidebar-project-tree-children sidebar-chats-list">/);
+  // The fold and the page count survive a reload.
+  assert.match(source, /APP_PREF_KEYS\.collapsedChats/);
+  assert.match(source, /APP_PREF_KEYS\.chatSessionPages/);
+});
+
+test("the Chats header shows its menu and add buttons only on hover, like Projects", () => {
+  const header = source.slice(
+    source.indexOf("sidebar-project-tree-header sidebar-chats-header"),
+    source.indexOf("{!chatsFolded && ("),
+  );
+  // Same hover-revealed tools container the Projects header uses.
+  assert.match(header, /className="sidebar-project-tree-tools"/);
+  assert.match(header, /sidebar-project-tree-menu/);
+  assert.match(header, /sidebar-project-tree-add/);
+  assert.match(header, /handleNewSession\(chatWorkspaceCwd \?\? undefined, "chat"\)/);
+  assert.doesNotMatch(source, /sidebar-chats-add/);
+});
+
+test("chats can be pinned and archived, ordered by recency with no date groups", () => {
+  // Pinned first, then recency; archived chats leave the list unless a search is running.
+  assert.match(source, /orderChatFamilies\(allChatFamilies, pinnedChats\)/);
+  assert.match(source, /trimmedSessionQuery\s*\? orderedChatFamilies\s*: orderedChatFamilies\.filter\(\(family\) => !archivedChats\.has\(family\.root\.id\)\)/);
+  // Rows already show their own relative time, so the list has no Today / This week headings.
+  assert.doesNotMatch(source, /sidebar-chats-group-label|chatsToday|CHAT_GROUP_LABEL_KEYS/);
+  // The +5 paging still runs over the whole order.
+  assert.match(source, /: chatFamilies\.slice\(0, MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\)\)/);
+  // Archived chats stay reachable and recoverable.
+  assert.match(source, /sidebar\.showArchivedChats/);
+  assert.match(source, /APP_PREF_KEYS\.pinnedChats/);
+  assert.match(source, /APP_PREF_KEYS\.archivedChats/);
+  // Row menu: only chat rows (depth 0) get the actions, in both the native and DOM menus.
+  assert.match(source, /chatActions=\{depth === 0 \? chatActions : undefined\}/);
+  assert.match(source, /t\(chatActions\.pinned \? "sidebar\.unpinChat" : "sidebar\.pinChat"\)/);
+  assert.match(source, /t\(chatActions\.archived \? "sidebar\.unarchiveChat" : "sidebar\.archiveChat"\)/);
+});
+
+test("a chat's row menu can continue it in a project", () => {
+  // Chats only: project rows and subagent children are never given the callback.
+  assert.match(source, /onContinueInProject=\{setContinueChat\}/);
+  assert.match(source, /onContinueInProject=\{depth === 0 \? onContinueInProject : undefined\}/);
+  assert.match(source, /t\("sidebar\.continueInProject"\)/);
+  assert.match(source, /\/continue-in-project`/);
+  // The picker reuses the project picker and never offers the chat workspace itself.
+  assert.match(source, /\{continueChat && \(/);
 });
 
 test("a chat cwd skips worktree lookup and stays out of project pickers", () => {

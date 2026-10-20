@@ -1,17 +1,19 @@
 use std::env;
 
 use tauri::{
-    webview::NewWindowResponse, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    webview::NewWindowResponse, Manager, Theme, Url, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
 };
 
 #[cfg(target_os = "macos")]
 use super::window_appkit::{self, set_title_keeping_traffic_lights};
+use crate::logging::{desktop_log, since_process_start_ms};
 use crate::native_prefs::{
     is_inline_frame_document, read_stored_theme, same_origin, theme_bootstrap_script,
 };
 #[cfg(not(target_os = "macos"))]
 use crate::native_prefs::{is_wayland, theme_background_color};
-use crate::shell::{open_external, WINDOW_LABEL};
+use crate::shell::{open_external, schedule_reveal_after_page_load, WINDOW_LABEL};
 
 /// Where the macOS traffic lights go, in logical points from the window's
 /// top-left corner: X is the close button's left edge, CENTRE_Y the buttons'
@@ -49,6 +51,10 @@ pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<Webvi
         .inner_size(1440.0, 900.0)
         .min_inner_size(900.0, 600.0)
         .resizable(true)
+        // Built hidden and shown once the first screen is ready (see
+        // `app_ready` in shell/mod.rs), so the user never sees an empty
+        // webview while Next.js loads.
+        .visible(false)
         // Pi Agent already handles browser drag/drop for image attachments.
         .disable_drag_drop_handler()
         .initialization_script(crate::backend::LOGO_SCRIPT)
@@ -62,6 +68,21 @@ pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<Webvi
                 open_external(url);
                 false
             }
+        })
+        .on_page_load(|webview, payload| {
+            let phase = match payload.event() {
+                tauri::webview::PageLoadEvent::Started => "started",
+                tauri::webview::PageLoadEvent::Finished => {
+                    // Pages that never report readiness (the login page) are
+                    // shown shortly after their load event instead.
+                    schedule_reveal_after_page_load(webview.app_handle());
+                    "finished"
+                }
+            };
+            desktop_log(
+                webview.app_handle(),
+                &format!("page load {phase} (+{}ms)", since_process_start_ms()),
+            );
         })
         .on_new_window(|url, _features| {
             open_external(&url);
@@ -126,6 +147,10 @@ pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<Webvi
     }
 
     let window = builder.build()?;
+    desktop_log(
+        app,
+        &format!("window built, hidden (+{}ms)", since_process_start_ms()),
+    );
 
     #[cfg(target_os = "macos")]
     {

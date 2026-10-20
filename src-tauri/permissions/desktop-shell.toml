@@ -44,6 +44,16 @@ description = "Allows the UI to show and focus the main window."
 commands.allow = ["show_main_window_cmd"]
 
 [[permission]]
+identifier = "allow-app-ready"
+description = "Allows the UI to report that its first screen is ready, which shows the hidden main window."
+commands.allow = ["app_ready"]
+
+[[permission]]
+identifier = "allow-window-painted"
+description = "Allows the UI to report that it painted after the window came back from hidden."
+commands.allow = ["window_painted"]
+
+[[permission]]
 identifier = "allow-set-ui-theme"
 description = "Allows the UI to persist light/dark theme for the next cold start."
 commands.allow = ["set_ui_theme"]

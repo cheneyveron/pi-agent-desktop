@@ -42,6 +42,7 @@ import { DesktopAppSection } from "./desktop";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
+import { ChatsSettingsSection } from "./ChatsSettingsSection";
 
 interface Props {
   cwd: string | null;
@@ -339,6 +340,7 @@ function GeneralSettings({
               </div>
             </div>
           </section>
+          <ChatsSettingsSection />
         </div>
 
         <div className="settings-general-col">

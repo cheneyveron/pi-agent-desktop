@@ -4,12 +4,28 @@ use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
     thread,
+    time::Instant,
 };
 
 use tauri::{AppHandle, Manager};
 
 const DESKTOP_LOG_MAX_BYTES: u64 = 256 * 1024;
 static DESKTOP_LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
+static PROCESS_START: OnceLock<Instant> = OnceLock::new();
+
+/// Records the moment `run()` began, the zero point of the `+Nms` startup
+/// timings in `desktop.log`. Later calls keep the first value.
+pub fn mark_process_start() {
+    let _ = PROCESS_START.set(Instant::now());
+}
+
+/// Milliseconds since `mark_process_start`, or 0 when it was never called.
+pub fn since_process_start_ms() -> u128 {
+    PROCESS_START
+        .get()
+        .map(|start| start.elapsed().as_millis())
+        .unwrap_or(0)
+}
 
 /// Formats epoch milliseconds as `YYYY-MM-DDTHH:MM:SS.mmmZ` (UTC) without a
 /// date-time dependency (Howard Hinnant's civil-from-days algorithm).

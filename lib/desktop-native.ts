@@ -389,6 +389,26 @@ export async function showMainWindowNative(): Promise<void> {
   await invoke("show_main_window_cmd");
 }
 
+let desktopReadyReported = false;
+
+/**
+ * Tells the shell the first screen is on the page, which shows the main window
+ * (it is built hidden so the user never sees an empty webview). Reports once
+ * per page load; the shell shows the window by itself shortly after the page
+ * load event even if this never arrives.
+ */
+export async function reportDesktopReadyNative(source: string): Promise<void> {
+  if (desktopReadyReported || !isTauriDesktop()) return;
+  desktopReadyReported = true;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const sincePageStart = Math.round(performance.now());
+    await invoke("app_ready", { reason: `${source}, page +${sincePageStart}ms` });
+  } catch {
+    // The shell's own fallback shows the window.
+  }
+}
+
 /** Relaunch the desktop shell and its packaged local server. */
 export async function relaunchAppNative(): Promise<void> {
   if (!isTauriDesktop()) return;

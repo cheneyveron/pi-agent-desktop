@@ -202,6 +202,8 @@ test("nothing reintroduces a literal homedir() into an fs call", async () => {
     "lib/enabled-models-runtime.ts",
     "lib/linked-directory.ts",
     "app/api/skills/route.ts",
+    "lib/chat-workspace-policy.ts",
+    "lib/chat-file-access.ts",
   ];
 
   for (const file of guarded) {

@@ -24,6 +24,21 @@ for (const stream of [process.stdout, process.stderr]) {
   };
 }
 
+// Reuse V8's compiled code across launches. The server loads a few hundred
+// modules (Next, the pi SDK) and compiling them is most of its cold-start time;
+// with the cache a relaunch skips that. Needs Node 22.1+, and a cache that
+// cannot be created or read only costs the speed-up.
+try {
+  const cacheDir = process.env.PI_DESKTOP_COMPILE_CACHE_DIR;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const nodeModule = require("node:module");
+  if (cacheDir && typeof nodeModule.enableCompileCache === "function") {
+    nodeModule.enableCompileCache(cacheDir);
+  }
+} catch (cacheError) {
+  console.error("[Pi Agent] compile cache unavailable:", cacheError);
+}
+
 const expectedParentPid = Number.parseInt(process.env.PI_WEB_PARENT_PID ?? "", 10);
 
 // A normal App quit is handled by the Rust shell. This small watchdog also
@@ -123,6 +138,41 @@ try {
 } catch (cleanupError) {
   // Cleanup must never keep the server from starting.
   console.error("[Pi Agent] stale-dependency cleanup failed:", cleanupError);
+}
+
+// #149 self-heal: the packaged build ships no `route-cache`, but at runtime
+// Next promotes the build's prerendered page (`server/app/index.html`) into
+// `server/route-cache/` and from then on reads that copy first. The path holds
+// a route hash only — no build id — so after an overwrite install (which adds
+// files and never deletes any) the previous version's page keeps being served
+// while the version number and the new `app/index.html` are already current.
+// Tie the cache to the build: when BUILD_ID differs from the one recorded next
+// to it (or nothing was recorded yet, as on installs that predate this check),
+// drop the cache and record the new id. The marker is written only after the
+// delete succeeded, so a failure is retried on the next start.
+try {
+  const nextDir = path.join(__dirname, ".next-desktop");
+  const buildIdPath = path.join(nextDir, "BUILD_ID");
+  if (fs.existsSync(buildIdPath)) {
+    const buildId = fs.readFileSync(buildIdPath, "utf8").trim();
+    const markerPath = path.join(nextDir, ".route-cache-build-id");
+    let recorded = null;
+    try {
+      recorded = fs.readFileSync(markerPath, "utf8").trim();
+    } catch {
+      // No marker yet.
+    }
+    if (buildId && recorded !== buildId) {
+      fs.rmSync(path.join(nextDir, "server", "route-cache"), { recursive: true, force: true });
+      fs.writeFileSync(markerPath, buildId);
+      console.error(
+        `[Pi Agent] cleared route cache for build ${buildId} (previous: ${recorded ?? "none"}; see issue #149)`,
+      );
+    }
+  }
+} catch (cacheError) {
+  // Cleanup must never keep the server from starting.
+  console.error("[Pi Agent] route-cache cleanup failed:", cacheError);
 }
 
 // The standalone Next.js entrypoint is CommonJS.

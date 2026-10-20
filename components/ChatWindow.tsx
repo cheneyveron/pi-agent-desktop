@@ -10,6 +10,7 @@ import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantB
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
+import { useReportDesktopReady } from "./desktop";
 import { MarkdownBody } from "./MarkdownBody";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
@@ -28,6 +29,7 @@ import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { useArtifactPublisher } from "@/hooks/useArtifactPublisher";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
+import { formatAttachmentSize } from "@/lib/chat-attachments";
 import type { ToolEntry } from "@/lib/tool-presets";
 import type { SettingsSection } from "@/lib/settings-navigation";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -327,6 +329,9 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  // The desktop window stays hidden until the conversation it opens on is
+  // loaded (or its load failed and the error is what the user will see).
+  useReportDesktopReady(!loading, "chat");
   const [quotedSelection, setQuotedSelection] = useState<{
     text: string;
     top: number;
@@ -802,7 +807,18 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const importProjectFiles = useCallback((projectFiles: File[]) => {
     if (projectFiles.length === 0) return;
     if (chatOnly) {
-      addNotice({ type: "error", message: t("chat.chatOnlyImagesOnly") });
+      // A chat has no project to copy into: text files ride inside the message.
+      void (async () => {
+        const rejected = await chatInputRef?.current?.addTextFiles(projectFiles) ?? [];
+        if (rejected.length === 0) return;
+        const detail = rejected.slice(0, 3).map((item) => {
+          const limit = item.reason === "too-many"
+            ? String(item.limit)
+            : "limit" in item ? formatAttachmentSize(item.limit) : "";
+          return `${item.name}: ${t(`chat.attachReason.${item.reason}`, { limit })}`;
+        }).join("; ");
+        addNotice({ type: "error", message: t("chat.attachRejected", { detail }) });
+      })();
       return;
     }
     if (!cwd) {
@@ -1028,6 +1044,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
         targetTop,
         contentEnd,
         container.clientHeight,
+        composerOverlaySpacerRef.current?.getBoundingClientRect().height ?? 0,
       );
 
       const isInitialMeasurement = !promptAnchorAdjustmentDoneRef.current;

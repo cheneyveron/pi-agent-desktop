@@ -205,3 +205,101 @@ unsafe fn inset_traffic_lights(ns_window: usize) {
         let _: () = msg_send![button, setFrameOrigin: frame.origin];
     }
 }
+
+// Showing a window that was hidden (closed to the Dock, or built hidden at
+// launch) used to flash an empty rectangle: the webview is transparent over the
+// sidebar vibrancy material, and WebKit repaints a window that was ordered out
+// only after it is on screen again. The window is therefore brought back at
+// alpha 0, lets WebKit paint, and turns opaque once the page reports two
+// animation frames (`window_painted`) or `PAINT_MASK_MAX` runs out.
+
+#[cfg(target_os = "macos")]
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    thread,
+    time::{Duration, Instant},
+};
+
+#[cfg(target_os = "macos")]
+use tauri::{AppHandle, Manager};
+
+#[cfg(target_os = "macos")]
+use crate::logging::desktop_log;
+
+#[cfg(target_os = "macos")]
+const PAINT_MASK_MAX: Duration = Duration::from_millis(300);
+
+#[cfg(target_os = "macos")]
+static PAINT_PENDING: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static PAINT_MASK_STARTED: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Two frames after the window is visible again: the first lets WebKit attach
+/// its layers, the second means they were presented.
+#[cfg(target_os = "macos")]
+const PAINT_PROBE_SCRIPT: &str = r#"(function(){try{var done=function(){window.__TAURI_INTERNALS__.invoke("window_painted")};requestAnimationFrame(function(){requestAnimationFrame(done)})}catch(e){}})();"#;
+
+#[cfg(target_os = "macos")]
+fn set_window_alpha(window: &WebviewWindow, alpha: f64) {
+    let Ok(ns_window) = window.ns_window() else {
+        return;
+    };
+    let ns_window = ns_window as usize;
+    let _ = window.run_on_main_thread(move || unsafe {
+        use objc2::{msg_send, runtime::AnyObject};
+        let window = ns_window as *mut AnyObject;
+        if !window.is_null() {
+            let _: () = msg_send![window, setAlphaValue: alpha];
+        }
+    });
+}
+
+/// `show()` for a window that is currently hidden, without the empty flash.
+/// Returns false when the window is already visible, so the caller shows it
+/// the plain way.
+#[cfg(target_os = "macos")]
+pub fn show_hidden_window_masked(app: &AppHandle, window: &WebviewWindow) -> bool {
+    if window.is_visible().unwrap_or(true) {
+        return false;
+    }
+    if let Ok(mut started) = PAINT_MASK_STARTED.lock() {
+        *started = Some(Instant::now());
+    }
+    PAINT_PENDING.store(true, Ordering::SeqCst);
+    set_window_alpha(window, 0.0);
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    refresh_traffic_lights(window);
+    let _ = window.eval(PAINT_PROBE_SCRIPT);
+
+    let app = app.clone();
+    let _ = thread::Builder::new()
+        .name("paint-mask".into())
+        .spawn(move || {
+            thread::sleep(PAINT_MASK_MAX);
+            end_paint_mask(&app, "timed out");
+        });
+    true
+}
+
+/// The page painted (or the wait ran out): make the window opaque. Only the
+/// first caller after a masked show does anything.
+#[cfg(target_os = "macos")]
+pub fn end_paint_mask(app: &AppHandle, how: &str) {
+    if !PAINT_PENDING.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(window) = app.get_webview_window(super::WINDOW_LABEL) {
+        set_window_alpha(&window, 1.0);
+    }
+    let waited = PAINT_MASK_STARTED
+        .lock()
+        .ok()
+        .and_then(|started| started.map(|at| at.elapsed().as_millis()))
+        .unwrap_or(0);
+    desktop_log(app, &format!("window shown after {waited}ms ({how})"));
+}

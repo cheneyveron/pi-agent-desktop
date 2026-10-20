@@ -332,18 +332,6 @@
 .sidebar-project-context-menu button:hover {
   background: var(--bg-hover);
 }
-.settings-entry-menu {
-  width: 184px;
-}
-.settings-entry-menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.settings-entry-menu button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 .sidebar-project-context-menu-back {
   color: var(--text-muted) !important;
 }
@@ -2324,27 +2312,32 @@ html.dark .sidebar-view-switcher-thumb {
   margin-top: 2px;
 }
 
-.sidebar-chats-add {
+/* The section title doubles as the fold toggle, like a project row. */
+.sidebar-chats-title {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
   padding: 0;
   border: 0;
-  border-radius: 5px;
   background: transparent;
-  color: var(--text-dim);
+  box-shadow: none;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
 }
 
-.sidebar-chats-add:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text);
+.sidebar-chats-title .sidebar-project-tree-title {
+  flex: 0 1 auto;
 }
 
-.sidebar-chats-add:disabled {
+.sidebar-chats-title:hover .sidebar-project-tree-title {
+  color: var(--text-muted);
+}
+
+.sidebar-project-tree-add:disabled {
   cursor: default;
   opacity: 0.4;
 }
@@ -3450,11 +3443,15 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 
 /* One menu surface for settings, topbar actions and composer selectors. */
 :root {
-  --menu-radius: 14px;
-  --menu-inset: 6px;
-  --menu-row-radius: 8px;
+  /* Choice geometry: Settings' inset/radius, Config's separation. */
+  --choice-inset: 8px;
+  --choice-row-gap: 4px;
+  --choice-row-radius: 5px;
+  --menu-radius: calc(var(--choice-row-radius) + var(--choice-inset) + 1px);
+  --menu-inset: var(--choice-inset);
+  --menu-row-radius: var(--choice-row-radius);
   --menu-row-height: 34px;
-  --menu-row-gap: 4px;
+  --menu-row-gap: var(--choice-row-gap);
   --menu-focus-ring: var(--text);
 }
 
@@ -3467,6 +3464,13 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   color: var(--text);
   box-shadow: var(--shadow-popover) !important;
   backdrop-filter: none;
+}
+
+/* A single padded surface owns the inset; scroll wrappers add none. */
+.app-menu-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
 }
 
 .app-menu :is(button[role="menuitem"], button[role="menuitemcheckbox"], button[role="menuitemradio"], button[role="option"]) {
@@ -3493,6 +3497,69 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 
 .app-menu .app-option-row[data-selected] {
   background: var(--bg-selected) !important;
+}
+
+.app-menu .app-option-row:not([data-selected]):hover {
+  background: var(--bg-hover) !important;
+}
+
+/* Match the Settings navigation pill; focus/hover never imply selection. */
+:root { --menu-selection-color: #0078d4; }
+@supports (color: AccentColor) {
+  :root { --menu-selection-color: AccentColor; }
+}
+.app-menu :is(
+  .app-option-row[data-selected],
+  .app-select-option[data-state="checked"],
+  [role="menuitemradio"][aria-checked="true"],
+  [role="menuitemcheckbox"][aria-checked="true"],
+  .app-menu-option[aria-selected="true"],
+  .composer-menu-row[data-active="true"],
+  button[aria-current="true"]
+) {
+  position: relative;
+  background: var(--bg-selected) !important;
+}
+.app-menu :is(
+  .app-option-row[data-selected],
+  .app-select-option[data-state="checked"],
+  [role="menuitemradio"][aria-checked="true"],
+  [role="menuitemcheckbox"][aria-checked="true"],
+  .app-menu-option[aria-selected="true"],
+  .composer-menu-row[data-active="true"],
+  button[aria-current="true"]
+)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--menu-selection-color);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.app-menu .app-default-star {
+  width: 32px !important;
+  height: 32px !important;
+  right: 2px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-muted);
+}
+.app-menu .app-default-star:hover,
+.app-menu .app-default-star.is-default { color: var(--menu-selection-color); }
+.app-menu .app-default-star:focus:not(:focus-visible) { outline: none; }
+.app-menu .app-default-star:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .app-menu .app-default-star { width: 44px !important; height: 44px !important; }
+  .app-menu .app-option-row:has(.app-default-star) > [role="option"] { padding-right: 50px !important; }
 }
 
 .app-menu .app-option-row > button[role="option"] {
@@ -3597,7 +3664,6 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 .app-select-option[data-highlighted] { background: var(--bg-hover); }
 .app-select-option:focus-visible { outline: 2px solid var(--menu-focus-ring); }
 .app-select-option[data-disabled] { opacity: 0.45; pointer-events: none; }
-.app-select-check { display: inline-flex; flex: 0 0 14px; }
 .app-combobox-menu { position: fixed; z-index: 2400; overflow-y: auto; overscroll-behavior: contain; }
 .app-menu-option {
   display: flex;
@@ -4445,10 +4511,10 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   :root[data-platform="linux"] .settings-section-tabs {
     grid-area: 2 / 1;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--choice-row-gap);
     height: auto;
     margin: 0;
-    padding: 4px 8px 12px;
+    padding: var(--choice-inset);
     overflow-x: hidden;
     overflow-y: auto;
   }
@@ -4460,7 +4526,7 @@ html:not(.dark) .session-item.is-selected .session-item-time {
     gap: 12px;
     width: auto;
     padding: 0 12px;
-    border-radius: 5px;
+    border-radius: var(--choice-row-radius);
     font-size: 13px;
     transition:
       color 120ms ease,
@@ -8630,6 +8696,157 @@ html.native-desktop :is(
   font-variant-numeric: tabular-nums;
 }
 
+
+/* Chat attachments: text files chosen in the composer, and the chips a sent message shows. */
+.composer-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 4px 2px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+
+.composer-file-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-file-chip-size {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+.composer-file-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.composer-file-chip-remove:hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.message-attached-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.message-attached-file {
+  min-width: 0;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+}
+
+.message-attached-file-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-attached-file-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attached-file-size {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+.message-attached-file-body {
+  max-height: 260px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-top: var(--hairline) solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
+/* Chats: the pin mark and archived rows. */
+.session-item-pin {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+.sidebar-chats-archived-toggle {
+  margin-top: 2px;
+}
+
+.sidebar-chats-archived-row {
+  opacity: 0.62;
+}
+
+
+/* Settings › General › Chats: stacked label + control rows. */
+.settings-chats-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  font-size: var(--fs-small);
+}
+
+.settings-chats-control {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-chats-instructions textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.settings-chats-hint {
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
 /* Preserve the fork composer geometry after upstream layout and Send changes. */
 .native-primary-button.composer-send-button {
   flex: 0 0 var(--composer-send-size);
@@ -8922,4 +9139,62 @@ textarea.plugin-settings-input {
 ::highlight(file-find-current) {
   background-color: rgba(249, 115, 22, 0.62);
   color: inherit;
+}
+
+/* A file a chat saved to Downloads (save_to_downloads). */
+.saved-file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 10px 8px;
+  padding: 8px 10px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}
+
+.saved-file-card-text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.saved-file-card-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-file-card-path {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-file-card-error {
+  color: var(--danger);
+  font-size: var(--fs-small);
+}
+
+.saved-file-card-reveal {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.saved-file-card-reveal:hover {
+  background: var(--bg-hover);
 }

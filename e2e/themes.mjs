@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { openSettingsSection } from "./settings-navigation.mjs";
 
 const base = process.env.E2E_BASE_URL || "http://127.0.0.1:30141";
 const artifacts = fileURLToPath(new URL("../test-results/themes/", import.meta.url));
-const themes = ["light", "dark", "mist", "rose", "pine", "auto"];
-const labels = ["Light", "Dark", "Mist", "Rose", "Pine", "System"];
+const themes = ["light", "dark", "auto"];
+const labels = ["Light", "Dark", "System"];
 await mkdir(artifacts, { recursive: true });
 const browser = await chromium.launch();
 
@@ -64,21 +65,19 @@ try {
       if (width <= 640) await sidebar.waitFor();
       if (await sidebar.isVisible()) {
         await sidebar.click();
-        // The mobile sidebar slides in; the Settings menu anchors to the button's
-        // position at click time, so wait until the drawer has stopped moving.
+        // Wait until the mobile sidebar has finished sliding in.
         await page.waitForFunction(() => {
           const left = document.querySelector(".session-sidebar")?.getBoundingClientRect().left;
           return left !== undefined && left >= 0;
         });
         await page.waitForTimeout(300);
       }
-      await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("menuitem", { name: "General", exact: true }).click();
+      await openSettingsSection(page, "General");
     };
     const expectTheme = async (theme) => {
       await page.waitForFunction((value) => document.documentElement.dataset.theme === value, theme);
-      assert.equal(await page.locator("html").evaluate((root) => root.classList.contains("dark")), theme === "dark" || theme === "pine");
-      assert.equal(await page.locator("html").evaluate((root) => getComputedStyle(root).colorScheme), theme === "dark" || theme === "pine" ? "dark" : "light");
+      assert.equal(await page.locator("html").evaluate((root) => root.classList.contains("dark")), theme === "dark");
+      assert.equal(await page.locator("html").evaluate((root) => getComputedStyle(root).colorScheme), theme === "dark" ? "dark" : "light");
     };
     await openSettings();
     for (const [index, theme] of themes.entries()) {
@@ -108,7 +107,6 @@ try {
         const text = label.getBoundingClientRect();
         return option.scrollWidth <= option.clientWidth && text.right <= box.right && text.bottom <= box.bottom;
       })), true, `Theme labels must fit at ${width}px`);
-      assert.equal(await page.locator(".settings-theme-options .theme-icon").evaluateAll((icons) => icons.flatMap((icon) => icon.getAnimations({ subtree: true })).length), 0, "Reduced motion disables icon animations");
       await page.screenshot({ path: `${artifacts}/${theme}-${width}.png`, animations: "disabled" });
       await page.reload();
       await expectTheme(theme === "auto" ? "light" : theme);
@@ -117,9 +115,13 @@ try {
     }
     await page.emulateMedia({ colorScheme: "dark" });
     await expectTheme("dark");
-    await page.getByRole("radio", { name: "Pine", exact: true }).locator("..").click();
+    // An explicit choice holds while the system scheme moves underneath it.
+    await page.getByRole("radio", { name: "Light", exact: true }).locator("..").click();
+    await expectTheme("light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectTheme("light");
     await page.emulateMedia({ colorScheme: "light" });
-    await expectTheme("pine");
+    await expectTheme("light");
     const light = page.getByRole("radio", { name: "Light", exact: true });
     await light.focus();
     await light.press("ArrowRight");
@@ -128,34 +130,32 @@ try {
     await page.keyboard.press("Escape");
     await page.reload();
     await expectTheme("dark");
-    if (width === 1440) {
-      for (const key of ["bg", "bg-panel", "bg-hover", "bg-selected", "border", "text", "text-muted", "text-dim", "user-bg", "tool-bg"]) {
-        const token = await page.locator("html").evaluate((root, key) => getComputedStyle(root).getPropertyValue(`--${key}`).trim(), key);
-        // Apple's system grays have a faint cool tint; overlays are not surfaces.
-        if (!token.startsWith("#")) continue;
-        const channels = parseColor(token).slice(0, 3);
-        assert.ok(Math.max(...channels) - Math.min(...channels) <= 4, `Dark ${key} (${token}) must stay near neutral gray`);
-      }
+    // The tinted palettes were removed: a saved one falls back to the system scheme.
+    for (const removed of ["mist", "rose", "pine"]) {
+      await page.evaluate((value) => localStorage.setItem("pi-theme", value), removed);
+      await page.reload();
+      await expectTheme("light");
     }
-    await openSettings();
+    // The fork has no topbar theme/language menus (declined upstream UI); the
+    // Settings radios above are the only theme control.
     if (width === 1440) {
-      await page.emulateMedia({ reducedMotion: "no-preference" });
-      for (const [theme, label, part, animation] of [
-        ["mist", "Mist", ".theme-icon-mist-high", "theme-mist-drift"],
-        ["rose", "Rose", ".theme-icon-petals", "theme-rose-unfold"],
-        ["pine", "Pine", ".theme-icon-canopy", "theme-pine-rise"],
-      ]) {
-        await page.getByRole("radio", { name: label, exact: true }).locator("..").click();
-        await expectTheme(theme);
-        assert.equal(await page.locator(part).evaluate((element) => getComputedStyle(element).animationName), animation);
-        await page.waitForFunction(() => !document.getAnimations().some((animation) => animation.playState === "running"));
-        await page.reload();
-        await expectTheme(theme);
-        await openSettings();
+      await openSettings();
+      await page.getByRole("radio", { name: "Dark", exact: true }).locator("..").click();
+      await expectTheme("dark");
+      await page.reload();
+      await expectTheme("dark");
+      for (const key of ["bg", "bg-panel", "bg-hover", "bg-selected", "border", "text", "text-muted", "text-dim", "user-bg", "tool-bg"]) {
+        const hex = await page.locator("html").evaluate((root, token) => getComputedStyle(root).getPropertyValue(`--${token}`).trim(), key);
+        // The fork's dark palette follows Apple's system grays (#1c1c1e is faintly
+        // cool), so require "no visible tint" rather than exactly equal channels.
+        // Translucent tokens (rgba) are overlays, not surfaces; skip them.
+        if (!hex.startsWith("#")) continue;
+        const channels = (hex.length === 4 ? hex.slice(1).match(/./g).map((c) => c + c) : hex.slice(1).match(/../g)).map((c) => parseInt(c, 16));
+        assert.ok(Math.max(...channels) - Math.min(...channels) <= 4, `Dark ${key} (${hex}) must stay near neutral gray`);
       }
     }
     assert.deepEqual(errors, []);
-    console.log(`PASS ${width}px: palettes, contrast, persistence, system preference, keyboard navigation, animation`);
+    console.log(`PASS ${width}px: palettes, contrast, persistence, system preference, keyboard navigation`);
     await context.close();
   }
 } finally {

@@ -14,6 +14,7 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getTopbarBoundary, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile, offersBuiltinSlashCommandWhileStreaming, submitsSlashCommandOnEnter} = await jiti.import("./ChatInput.tsx");
 
 const { isBareMcpCommand } = await jiti.import("@/lib/mcp-command.ts");
+const { composeMessageWithAttachedFiles } = await jiti.import("@/lib/chat-attachments.ts");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -576,6 +577,7 @@ test("locks built-in command submission until it settles", async () => {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
   }).outputText).runInNewContext({
     attachedImages: [],
+    attachedFilesRef: { current: [] }, composeMessageWithAttachedFiles,
     attachedImagesRef: { current: [] },
     builtinCommandPendingRef: { current: false },
     canClearBuiltinCommandInput,
@@ -655,6 +657,7 @@ test("while a run streams, a bare /mcp opens Settings or is queued as before", a
     const calls = { builtin: [], prompts: [], cleared: 0 };
     const sendQueued = chatInputCallback("sendQueued", {
       value,
+      attachedFilesRef: { current: [] }, composeMessageWithAttachedFiles,
       attachedImages: images,
       onAudioUnlock() {},
       clearInput() { calls.cleared += 1; },
@@ -690,6 +693,7 @@ test("handleSend lets a handled /mcp through while streaming and sends an unowne
     const calls = { builtin: [], sent: [] };
     const handleSend = chatInputCallback("handleSend", {
       value,
+      attachedFilesRef: { current: [] }, composeMessageWithAttachedFiles,
       attachedImages: [],
       onAudioUnlock() {},
       isStreaming,
@@ -935,6 +939,7 @@ test("handleSend sends exactly once and routes builtin commands through the pend
     let builtinCalls = 0;
     const handler = script.runInNewContext({
       value, attachedImages, isStreaming: false, workspaceUnavailable,
+      attachedFilesRef: { current: [] }, composeMessageWithAttachedFiles,
       onAudioUnlock() {},
       runBuiltinCommand: async () => {
         builtinCalls += 1;
@@ -998,7 +1003,7 @@ test("chat-only composer keeps shell, file and session mentions out of the input
 
   assert.match(html, /accept="image\/\*"/);
   assert.match(html, /aria-label="Attach image"/);
-  assert.match(html, /Chat only · \/ commands · images/);
+  assert.match(html, /Chat · \/ commands · images &amp; text files/);
   assert.doesNotMatch(html, /@ files/);
   assert.doesNotMatch(html, /# sessions/);
   assert.doesNotMatch(html, />Shell</);
@@ -1020,7 +1025,7 @@ test("only the chat composer offers saving a default model or reasoning level", 
   assert.doesNotMatch(agentsConfigSource, /onSetDefault/);
 });
 
-test("selector rows keep the default star and the floating save button in one gutter", async () => {
+test("selector rows expose a plain default star separate from the selected option", async () => {
   const { SelectorRow } = await jiti.import("./SelectorRow.tsx");
   const star = (isDefault) => ({ isDefault, saveLabel: "Save as default", defaultLabel: "Default", onSave: () => {} });
   const row = (props) => renderToStaticMarkup(React.createElement(SelectorRow, {
@@ -1032,9 +1037,9 @@ test("selector rows keep the default star and the floating save button in one gu
   const savable = row({ star: star(false) });
   assert.match(savable, /role="option"/);
   assert.match(savable, /aria-label="Save as default"/);
-  // Hidden until hover or focus, but kept out of the row's text by the gutter.
-  assert.match(savable, /opacity:0/);
-  assert.match(savable, /tabindex="-1"/);
+  // The unfilled star stays available to pointer, keyboard and touch input.
+  assert.match(savable, /class="app-default-star"/);
+  assert.doesNotMatch(savable, /opacity:0|tabindex="-1"|box-shadow/);
   assert.match(savable, /padding:7px 36px 7px 12px/);
   assert.doesNotMatch(savable, /aria-label="Default"/);
 
@@ -1052,5 +1057,7 @@ test("selector rows keep the default star and the floating save button in one gu
 
   const active = row({ active: true });
   assert.match(active, /aria-selected="true"/);
+  assert.match(active, /data-selected="true"/);
+  assert.doesNotMatch(active, /polyline/);
   assert.doesNotMatch(active, /border-left/);
 });

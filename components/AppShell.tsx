@@ -27,7 +27,7 @@ const TerminalPanel = dynamic(() => import("./TerminalPanel").then((m) => m.Term
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel } from "./SettingsPanel";
-import { SettingsEntryMenu, useSettingsEntryMenu } from "./SettingsEntryMenu";
+import { keepDocumentTitle } from "@/lib/document-title";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
@@ -53,7 +53,7 @@ import {
 } from "@/lib/workspace-state";
 import { useDesktopWorkspaceTabs } from "@/hooks/useDesktopWorkspaceTabs";
 import { useWorkspaceAvailability } from "@/hooks/useWorkspaceAvailability";
-import { WindowControls, useDesktopChrome, useWindowDrag } from "./desktop";
+import { WindowControls, useDesktopChrome, useReportDesktopReady, useWindowDrag } from "./desktop";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
@@ -267,8 +267,6 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   useNativeContextMenu();
-  const settingsEntryMenu = useSettingsEntryMenu(setSettingsSection);
-  const { settingsMenuOpen, settingsMenuButtonRef, closeSettingsMenu, toggleSettingsMenu } = settingsEntryMenu;
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
   const topMoreRef = useRef<HTMLDivElement>(null);
@@ -1203,33 +1201,30 @@ export function AppShell() {
       return;
     }
     if (payload === "settings-general" || payload === "settings-models") {
-      closeSettingsMenu();
       setActiveTopPanel(null);
       setTopMoreOpen(false);
       setSettingsSection(payload === "settings-general" ? "general" : "models");
     }
-  }, [activeCwd, chatWorkspaceCwd, closeSettingsMenu, handleNewSession, isChatWorkspaceActive]);
+  }, [activeCwd, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
 
   const openSettingsAtLastSection = useCallback(() => {
-    closeSettingsMenu();
     setActiveTopPanel(null);
     setTopMoreOpen(false);
     // A project-only section without a project falls back to General (SettingsPanel re-checks).
     setSettingsSection(getLastSettingsSection(
       isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
     ));
-  }, [activeCwd, closeSettingsMenu, isChatWorkspaceActive, newSessionCwd, selectedSession]);
+  }, [activeCwd, isChatWorkspaceActive, newSessionCwd, selectedSession]);
 
   const toggleShortcutHelp = useCallback(() => {
     setShortcutHelpOpen((open) => {
       if (!open) {
-        closeSettingsMenu();
         setActiveTopPanel(null);
         setTopMoreOpen(false);
       }
       return !open;
     });
-  }, [closeSettingsMenu]);
+  }, []);
 
   // The native macOS menu is the only reliable route when the webview has no
   // focused element. Route its custom items back through the same app state.
@@ -1706,6 +1701,9 @@ export function AppShell() {
     : selectedSession?.cwd ?? effectiveNewSessionCwd;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
+  // No chat to wait for: the placeholder is the final first screen. (A restored
+  // chat reports from ChatWindow once its history has loaded.)
+  useReportDesktopReady(showPlaceholder, "placeholder");
 
   useDesktopWorkspaceTabs({
     desktopMode,
@@ -1838,29 +1836,19 @@ export function AppShell() {
       ? `${activeCwdName} - ${PRODUCT_NAME}`
       : PRODUCT_NAME;
 
-  useEffect(() => {
-    const syncWindowTitle = () => {
-      if (document.title !== windowTitle) document.title = windowTitle;
-    };
-
-    syncWindowTitle();
-    const observer = new MutationObserver(syncWindowTitle);
-    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
-  }, [windowTitle]);
+  useEffect(() => keepDocumentTitle(document, windowTitle), [windowTitle]);
 
   // Settings + collapse controls at the sidebar's own top-right (Claude Desktop
   // style). When the sidebar is closed, the topbar shows a reopen button.
   const sidebarHeaderControls = (
     <>
       <button
-        ref={settingsMenuButtonRef}
+        type="button"
         className="sidebar-chrome-button"
-        onClick={(event) => toggleSettingsMenu(event, Boolean(projectTrustCwd))}
+        onClick={openSettingsAtLastSection}
         title={translate("common.settings")}
         aria-label={translate("common.settings")}
-        aria-haspopup="menu"
-        aria-expanded={settingsMenuOpen}
+        aria-haspopup="dialog"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
@@ -3241,7 +3229,6 @@ export function AppShell() {
         onProjectTrustChanged={handleProjectTrustChanged}
       />
     )}
-    <SettingsEntryMenu menu={settingsEntryMenu} hasProject={Boolean(projectTrustCwd)} onSelectSection={setSettingsSection} />
     {/* After Settings, so it opens above it (z-index 1100 over 1000) when Settings › MCP asks for it. */}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog

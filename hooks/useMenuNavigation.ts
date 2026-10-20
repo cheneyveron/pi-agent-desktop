@@ -35,6 +35,22 @@ export function useMenuNavigation(
           : index < 0 ? (event.key === "ArrowUp" ? rows.length - 1 : 0)
           : (index + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
         rows[next]?.focus({ preventScroll: true });
+      } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        // A row can carry a "save as default" star beside it. It is not one of the rows, so
+        // Right reaches it and Left comes back; Enter then saves, as a click would.
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) return;
+        const row = active.parentElement;
+        if (event.key === "ArrowRight" && active.matches('[role="option"]')) {
+          const star = row?.querySelector<HTMLButtonElement>("button.app-default-star:not(:disabled)");
+          if (star) {
+            event.preventDefault();
+            star.focus({ preventScroll: true });
+          }
+        } else if (event.key === "ArrowLeft" && active.matches("button.app-default-star")) {
+          event.preventDefault();
+          row?.querySelector<HTMLButtonElement>('[role="option"]')?.focus({ preventScroll: true });
+        }
       } else if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();

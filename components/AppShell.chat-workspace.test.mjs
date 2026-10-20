@@ -19,6 +19,9 @@ test("project-only chrome never receives the hidden chat cwd", () => {
   assert.match(source, /defaultCwd=\{isChatWorkspaceActive \? null : selectedSession\?\.cwd \?\? newSessionCwd \?\? activeCwd\}/);
   assert.match(source, /const windowTitle = isChatWorkspaceActive\s*\?\s*`\$\{topBarTitle\} - \$\{PRODUCT_NAME\}`/);
   assert.match(source, /const showFilePanelToggle = !isChatWorkspaceActive &&/);
+  // A chat is titled by its first message; the title guard must compare what document.title reads back.
+  assert.match(source, /useEffect\(\(\) => keepDocumentTitle\(document, windowTitle\), \[windowTitle\]\)/);
+  assert.doesNotMatch(source, /document\.title !== windowTitle/);
   assert.match(source, /<ChatWindow[\s\S]*?workspaceKind=\{activeWorkspaceKind\}/);
 });
 

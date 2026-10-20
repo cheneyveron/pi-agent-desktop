@@ -22,26 +22,24 @@ mod logging;
 mod native_prefs;
 mod shell;
 
-use logging::{desktop_log, install_panic_hook};
+use logging::{desktop_log, install_panic_hook, mark_process_start, since_process_start_ms};
 use native_prefs::{
     clear_app_cache, reconcile_webview_cache_for_version, set_ui_theme, write_last_version,
 };
 #[cfg(feature = "custom-protocol")]
 use native_prefs::{read_last_server_port, write_last_server_port};
+#[cfg(target_os = "macos")]
+use shell::build_macos_app_menu;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use shell::build_platform_tray;
 use shell::popup::{show_popup_menu, PopupMenuSelection, POPUP_ID_PREFIX};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-use shell::show_main_window;
-#[cfg(target_os = "linux")]
-use shell::build_linux_tray;
-#[cfg(target_os = "macos")]
-use shell::build_macos_app_menu;
 use shell::{
-    build_window, launched_at_login, open_external, quit_app, quit_application, set_close_quits,
-    show_main_window_cmd, CloseQuits, DesktopApiToken, DesktopServer, AUTOSTART_ARG,
-    WINDOW_LABEL,
+    app_ready, build_window, launched_at_login, open_external, quit_app, quit_application,
+    schedule_reveal_deadline, set_close_quits, show_main_window_cmd, window_painted, CloseQuits,
+    DesktopApiToken, DesktopServer, AUTOSTART_ARG, WINDOW_LABEL,
 };
+#[cfg(target_os = "linux")]
+use shell::{build_linux_tray, show_main_window};
 
 const DESKTOP_API_TOKEN_ENV: &str = "PI_DESKTOP_API_TOKEN";
 const DESKTOP_INSTANCE_ID_ENV: &str = "PI_DESKTOP_INSTANCE_ID";
@@ -54,6 +52,16 @@ const DEV_SERVER_URL: &str = "http://127.0.0.1:30141";
 const DESKTOP_SERVER_PORT: u16 = 38471;
 #[cfg(feature = "custom-protocol")]
 const SERVER_START_TIMEOUT: Duration = Duration::from_secs(30);
+/// How often startup checks whether the server answers. The probe is a local
+/// socket round trip, so a short interval costs nothing and trims up to this
+/// much off every launch.
+#[cfg(feature = "custom-protocol")]
+const SERVER_START_POLL_INTERVAL: Duration = Duration::from_millis(25);
+/// Env var read by `desktop/server-launcher.cjs`: where Node keeps its compiled
+/// code cache. Deliberately not `NODE_COMPILE_CACHE`, which every node process
+/// the agent starts (tools, scripts) would inherit.
+#[cfg(feature = "custom-protocol")]
+const COMPILE_CACHE_DIR_ENV: &str = "PI_DESKTOP_COMPILE_CACHE_DIR";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -571,7 +579,7 @@ fn wait_for_server(
             }
             return Ok(());
         }
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(SERVER_START_POLL_INTERVAL);
     }
 
     Err(io::Error::new(
@@ -627,6 +635,9 @@ fn start_packaged_server(
 
     let port = choose_port(app)?;
     let mut command = Command::new(&node_path);
+    if let Ok(cache_dir) = app.path().app_cache_dir() {
+        command.env(COMPILE_CACHE_DIR_ENV, cache_dir.join("node-compile-cache"));
+    }
     command
         .arg(&server_script)
         .current_dir(&server_dir)
@@ -970,6 +981,7 @@ fn spawn_focus_monitor(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    mark_process_start();
     install_panic_hook();
 
     // Become the single instance (Linux). If another live instance owns the
@@ -1069,6 +1081,8 @@ pub fn run() {
             set_close_quits,
             quit_app,
             show_main_window_cmd,
+            app_ready,
+            window_painted,
             set_ui_theme,
             clear_app_cache
         ])
@@ -1114,6 +1128,13 @@ pub fn run() {
                     match started {
                         Ok((url, server)) => {
                             desktop_log(app.handle(), &format!("server ready at {url}"));
+                            desktop_log(
+                                app.handle(),
+                                &format!(
+                                    "startup timing: server ready (+{}ms)",
+                                    since_process_start_ms()
+                                ),
+                            );
                             app.manage(server);
                             #[cfg(feature = "custom-protocol")]
                             if let Some(port) = url.port() {
@@ -1124,6 +1145,8 @@ pub fn run() {
                                 );
                             }
                             build_window(app.handle(), url)?;
+                            // Safety net: whatever the page does, the hidden window appears.
+                            schedule_reveal_deadline(app.handle());
                         }
                         Err(error) => {
                             eprintln!("Local backend failed to start: {error}");
@@ -1196,7 +1219,7 @@ pub fn run() {
             has_visible_windows,
             ..
         } if !has_visible_windows => {
-            show_main_window(app_handle);
+            shell::show_main_window(app_handle);
         }
         _ => {}
     });

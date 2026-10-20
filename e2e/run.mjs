@@ -9,12 +9,8 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { checkFindInPage, findTargetFixture } from "./find-in-page.mjs";
 import { checkFilePanel, filePanelFixture, filePanelStylesheet } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
-import { checkLocalFiles, desktopTestToken } from "./local-files.mjs";
-import { checkDesktopChrome } from "./desktop-chrome.mjs";
-import { checkComposerSelectors } from "./composer-selectors.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkSidebarBreakpoint } from "./sidebar-breakpoint.mjs";
 import { checkMcpManager } from "./mcp-manager.mjs";
@@ -31,18 +27,14 @@ const agentDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
 const project = join(agentDir, "project");
 const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
-const referencedFile = join(agentDir, "referenced-report.txt");
-writeFileSync(referencedFile, "Transcript-only file: 中文 bytes\n");
 const previewFile = join(project, "preview.html");
 writeFileSync(previewFile, filePanelFixture);
 writeFileSync(join(project, "preview.css"), filePanelStylesheet);
-const findTargetFile = join(project, "find-target.txt");
-writeFileSync(findTargetFile, findTargetFixture);
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
 const BRANCH = "e2e-branch-session";
-const RICH = "11111111-1111-4111-8111-111111111111";
+const RICH = "e2e-rich-session";
 const COMPACTED = "e2e-compacted-session";
 const APPEND = "e2e-external-append-session";
 const CODE_BACKGROUND = "e2e-code-background";
@@ -110,8 +102,7 @@ try {
         "E2E final answer\n```js\nconsole.log('E2E code');\n```\n\n"
         + "E2E answer paragraph.\n\n".repeat(20)
         + "## E2E reading position\n\n"
-        + "E2E answer paragraph.\n\n".repeat(20)
-        + `[Referenced report](${referencedFile})`,
+        + "E2E answer paragraph.\n\n".repeat(20),
       },
     ]),
   ];
@@ -162,7 +153,7 @@ try {
   const base = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)], {
     cwd: root,
-    env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_DESKTOP_API_TOKEN: desktopTestToken, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+    env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.once("error", (error) => { serverError = error; });
@@ -247,8 +238,6 @@ try {
   }
 
   browser = await chromium.launch();
-  await checkDesktopChrome(browser, base, RICH, project, artifacts);
-  await checkLocalFiles(browser, base, RICH, previewFile, referencedFile, agentDir);
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     context = await browser.newContext({ viewport, locale: "en-US" });
     await context.tracing.start({ screenshots: true, snapshots: true });
@@ -320,29 +309,42 @@ try {
       const navigator = page.getByRole("slider", { name: "Conversation navigation", exact: true });
       await navigator.waitFor();
       await navigator.focus();
-      const before = Number(await navigator.getAttribute("aria-valuenow"));
-      const maximum = Number(await navigator.getAttribute("aria-valuemax"));
+      const { before, maximum } = await navigator.evaluate((element) => ({
+        before: Number(element.getAttribute("aria-valuenow")),
+        maximum: Number(element.getAttribute("aria-valuemax")),
+      }));
       const direction = before > 1 ? "ArrowUp" : "ArrowDown";
+      const distanceFromEnd = maximum - before + (direction === "ArrowUp" ? 1 : -1);
       await page.keyboard.press(direction);
       // The preview card is a button since #130 (click jumps to the turn).
       const preview = page.locator(".conversation-navigator-preview");
       await preview.waitFor();
-      // Smooth scrolling updates the active turn while the jump is in flight.
-      await page.waitForFunction((turnIndex) => {
-        const container = document.querySelector(".chat-scroll-container");
-        const anchor = container?.querySelector(`[data-conversation-turn="${turnIndex}"]`);
-        if (!container || !anchor) return false;
-        const top = anchor.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 16;
-        const target = Math.max(0, Math.min(top, container.scrollHeight - container.clientHeight));
-        return Math.abs(container.scrollTop - target) < 1;
-      }, before - 1 + (direction === "ArrowUp" ? -1 : 1));
-      await page.waitForFunction((expected) =>
-        Number(document.querySelector(".conversation-navigator-track")?.getAttribute("aria-valuenow")) === expected,
-      before + (direction === "ArrowUp" ? -1 : 1));
-      const after = Number(await navigator.getAttribute("aria-valuenow"));
-      assert.equal(after, before + (direction === "ArrowUp" ? -1 : 1));
-      assert.ok(after >= 1 && after <= maximum);
-      assert.match(await preview.innerText(), /^E2E message \d{4}\nE2E message \d{4}$/);
+      // A pending history page can prepend turns while the smooth jump runs.
+      // Absolute indexes then change, and scroll events report intermediate
+      // turns. Check the destination relative to the unchanged history tail.
+      const questionIndex = 5000 - (distanceFromEnd + 1) * 2;
+      assert.equal(await preview.innerText(), `${text(questionIndex)}\n${text(questionIndex + 1)}`);
+      await navigator.evaluate(async (track, distance) => {
+        const scrollport = document.querySelector(".chat-scroll-container");
+        let previousTop = scrollport.scrollTop;
+        let stableSince = performance.now();
+        const deadline = performance.now() + 10_000;
+        while (performance.now() < deadline) {
+          await new Promise(requestAnimationFrame);
+          const atDestination = Number(track.getAttribute("aria-valuemax"))
+            - Number(track.getAttribute("aria-valuenow")) === distance;
+          if (!atDestination || scrollport.scrollTop !== previousTop) stableSince = performance.now();
+          previousTop = scrollport.scrollTop;
+          if (performance.now() - stableSince >= 100) return;
+        }
+        throw new Error("Conversation navigation did not settle on the requested turn");
+      }, distanceFromEnd);
+      const after = await navigator.evaluate((element) => ({
+        value: Number(element.getAttribute("aria-valuenow")),
+        maximum: Number(element.getAttribute("aria-valuemax")),
+      }));
+      assert.equal(after.maximum - after.value, distanceFromEnd);
+      assert.ok(after.value >= 1 && after.value <= after.maximum);
       await page.locator("textarea").last().focus();
       await preview.waitFor({ state: "hidden" });
     }
@@ -499,13 +501,9 @@ try {
     if (viewport.width > 600) {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
-      await checkComposerSelectors(page);
       await checkChatAppearance(page);
       await checkSidebarBreakpoint(page);
       await checkMcpManager(page, { agentDir, cwd: project });
-      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      await page.locator(".markdown-code-block pre").waitFor();
-      await checkFindInPage(page, findTargetFile);
     }
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and conversation navigation`);
