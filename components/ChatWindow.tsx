@@ -17,6 +17,9 @@ import { ExtensionWidgets } from "./ExtensionWidgets";
 import { ExtensionStatusLine, formatExtensionStatusLine } from "./ExtensionStatusLine";
 import { AnsiText } from "./AnsiText";
 import { useI18n } from "@/hooks/useI18n";
+import { useFindShortcut } from "@/hooks/useFindShortcut";
+import { supportsDomFind } from "@/lib/dom-find";
+import { FindBar } from "./FindBar";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { phaseLabel } from "@/lib/chat-phase-label";
 import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
@@ -935,6 +938,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const composerOverlayRef = useRef<HTMLDivElement | null>(null);
   const composerOverlaySpacerRef = useRef<HTMLDivElement | null>(null);
   const chatContentRegionRef = useRef<HTMLDivElement | null>(null);
+  // Ctrl/Cmd+F searches the loaded messages when the pointer is over the chat.
+  const chatFind = useFindShortcut("chat", scrollContainerRef, !isEmptyNew && !loading && supportsDomFind());
   useLayoutEffect(() => {
     const composer = composerOverlayRef.current;
     const spacer = composerOverlaySpacerRef.current;
@@ -1284,7 +1289,15 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       </div>
 
       {/* Composer overlays the scrollport; trailing spacer clears the last lines. */}
-      <div ref={chatContentRegionRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div ref={chatContentRegionRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-find-zone="chat">
+        <FindBar
+          className="find-bar--chat"
+          rootRef={scrollContainerRef}
+          open={chatFind.open}
+          focusToken={chatFind.focusToken}
+          seed={chatFind.seed}
+          onClose={chatFind.close}
+        />
         {extensionDialog && (
           <ExtensionDialog key={extensionDialog.id} request={extensionDialog} waitingCount={waitingExtensionDialogCount} onRespond={respondToExtensionUi} />
         )}
@@ -1294,6 +1307,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
         {!isEmptyNew && <>
         <div
           ref={scrollContainerRef}
+          tabIndex={-1}
           // The message list is the one place long output has to be dragged through,
           // so it shows its scrollbar instead of hiding it behind the minimap (#788).
           // The track is always there (its thumb only shows while scrolling), so
@@ -1302,6 +1316,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
           // composer's axis.
           className="chat-scroll-container scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"
           style={{
+            outline: "none",
             paddingLeft: scrollbarGutter > 0 ? scrollbarGutter : undefined,
             visibility: pendingScrollRestore && !loading ? "hidden" : undefined,
           }}

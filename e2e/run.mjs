@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { checkFindInPage, findTargetFixture } from "./find-in-page.mjs";
 import { checkFilePanel, filePanelFixture, filePanelStylesheet } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkLocalFiles, desktopTestToken } from "./local-files.mjs";
@@ -35,6 +36,8 @@ writeFileSync(referencedFile, "Transcript-only file: 中文 bytes\n");
 const previewFile = join(project, "preview.html");
 writeFileSync(previewFile, filePanelFixture);
 writeFileSync(join(project, "preview.css"), filePanelStylesheet);
+const findTargetFile = join(project, "find-target.txt");
+writeFileSync(findTargetFile, findTargetFixture);
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
@@ -500,6 +503,9 @@ try {
       await checkChatAppearance(page);
       await checkSidebarBreakpoint(page);
       await checkMcpManager(page, { agentDir, cwd: project });
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkFindInPage(page, findTargetFile);
     }
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and conversation navigation`);

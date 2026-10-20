@@ -8847,3 +8847,79 @@ textarea.plugin-settings-input {
   font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
+
+/* Find bar (Ctrl/Cmd+F) for the open file and the chat — pinned under the file toolbar / top of the messages, matches via the CSS Custom Highlight API. */
+.find-bar {
+  position: absolute;
+  top: 40px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 28px);
+  padding: 4px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-control), 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+.find-bar--chat {
+  top: 10px;
+  right: 22px;
+}
+
+.find-bar-input {
+  width: 168px;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.find-bar-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.find-bar-count {
+  min-width: 44px;
+  padding: 0 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.find-bar-count[data-empty="true"] {
+  color: #f87171;
+}
+
+.find-bar-case-glyph {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.find-bar .file-viewer-icon-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+::highlight(file-find) {
+  background-color: rgba(250, 204, 21, 0.38);
+  color: inherit;
+}
+
+::highlight(file-find-current) {
+  background-color: rgba(249, 115, 22, 0.62);
+  color: inherit;
+}

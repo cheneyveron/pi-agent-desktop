@@ -22,6 +22,9 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { FrontmatterCard } from "./FrontmatterCard";
+import { FindBar } from "./FindBar";
+import { useFindShortcut } from "@/hooks/useFindShortcut";
+import { supportsDomFind } from "@/lib/dom-find";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { getTurnFilePatch, subscribeTurnFilePatches } from "@/lib/turn-file-patches";
@@ -1458,6 +1461,16 @@ function TextFileViewer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [displayMode, mentionLineRange, onMentionLines]);
 
+  // Ctrl/Cmd+F searches the rendered file while the right panel is showing it.
+  // The embedded HTML preview is a separate document the highlights cannot reach,
+  // so it keeps the platform's own behaviour. `watchEnabled` is the panel-open flag.
+  const findAvailable = watchEnabled
+    && !loading
+    && !(error && !isDeletedDiff)
+    && !(isHtml && effectiveDisplayMode === "preview")
+    && supportsDomFind();
+  const find = useFindShortcut("file", contentRef, findAvailable);
+
   useEffect(() => {
     if (!scrollRestorePendingRef.current || loading) return;
     if (error && !isDeletedDiff) return;
@@ -1673,15 +1686,24 @@ function TextFileViewer({
         </div>
       )}
 
+      <FindBar
+        rootRef={contentRef}
+        open={find.open}
+        focusToken={find.focusToken}
+        seed={find.seed}
+        onClose={find.close}
+      />
+
       {/* Content area */}
       <div
         ref={contentRef}
         className="file-viewer-content"
+        tabIndex={-1}
         onScroll={(event) => {
           viewerStateRef.current.scrollTop = event.currentTarget.scrollTop;
           viewerStateRef.current.scrollLeft = event.currentTarget.scrollLeft;
         }}
-        style={{ flex: 1, overflow: "auto", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
+        style={{ flex: 1, overflow: "auto", outline: "none", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >
         {effectiveDisplayMode === "diff" && hasGitDiff ? (
           <DiffView patch={diffPatch!} />
