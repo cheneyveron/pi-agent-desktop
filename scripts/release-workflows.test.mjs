@@ -341,3 +341,20 @@ test("the image Dockerfile builds the web server and carries the repository labe
   assert.match(dockerfile, /org\.opencontainers\.image\.source="https:\/\/github\.com\/cheneyveron\/pi-agent-desktop"/);
   assert.match(dockerfile, /^USER node$/m);
 });
+
+test("the release notes describe only the version being released", async () => {
+  const release = await readFile(join(root, ".github", "workflows", "release.yml"), "utf8");
+  const version = JSON.parse(await readFile(join(root, "src-tauri", "pi-agent-desktop-package.json"), "utf8")).version;
+  const body = release.slice(release.indexOf("releaseBody: |"), release.indexOf("releaseDraft:"));
+  const headings = [...body.matchAll(/^\s*## Pi Agent Desktop (\S+)/gm)].map((match) => match[1]);
+  assert.ok(headings.length > 0);
+  assert.deepEqual([...new Set(headings)], [version], "replace the notes on each release, do not prepend to them");
+});
+
+test("the updater manifest is rewritten to public download URLs before publishing", async () => {
+  const release = await readFile(join(root, ".github", "workflows", "release.yml"), "utf8");
+  assert.ok(
+    release.indexOf("scripts/public-updater-urls.mjs") < release.indexOf("gh release edit"),
+    "latest.json must be fixed before the draft is published",
+  );
+});

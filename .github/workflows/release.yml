@@ -133,98 +133,6 @@ jobs:
 
             ---
 
-            ## Pi Agent Desktop 0.7.7
-
-            ### New
-
-            - **Plugin settings in Settings › Plugins.** A plugin that declares its settings file and a JSON Schema in `package.json` (`pi.settings`) gets a form there: text, numbers, switches, choices and lists, with validation, masked secrets and "takes effect in new sessions". The first plugin to use it is pi-memhana.
-            - Settings files must stay in your home folder; files under `~/.pi` and `~/.ssh` are refused, and secrets never travel back to the page.
-
-            Bundled components: pi 1.3.0, pi-web 0.10.0.
-
-            ---
-
-            ## Pi Agent Desktop 0.7.6
-
-            ### New
-
-            - **One Send/Stop button.** The separate Steer and Follow-up controls are replaced by a single round button. While the agent is running, an empty box stops it; a typed message waits in an editable outbox above the composer, where it can be sent now, edited or deleted.
-            - Menus, dropdowns and option pickers across Settings, projects, sessions and scheduled tasks share one themed menu style in light and dark mode.
-
-            ### Fixed
-
-            - Pasting a URL or typing a file path no longer opens the `/` command menu. `/` still opens it at the start of a line, after a space, or right after Chinese text.
-            - Session read/unread actions are translated in every language.
-            - A server self-update that fails to start the new container now rolls back instead of reporting success.
-
-            Bundled components: pi 1.3.0, pi-web 0.10.0.
-
-            ---
-
-            ## Pi Agent Desktop 0.7.5
-
-            ### New
-
-            - **Remote servers can upgrade themselves.** A server running in Docker with the updater sidecar now shows **Upgrade** in Settings: it waits for running sessions, pulls the newer server image from GitHub Container Registry, recreates the container and rolls back if the new one is not healthy. The page reloads when the server is back.
-            - A new **Chats** section keeps project-less conversations separate from projects. Chats are model-only: no files, terminals, worktrees, project trust, or tools.
-            - The sidebar can switch between grouped projects and a session timeline, and long session lists load five more rows at a time.
-            - Scheduled Tasks shows which process owns the scheduler lease and lets a stale or exited owner be taken over safely.
-            - Keyboard focus, touch targets, and the error notice shelf make desktop interaction more accessible.
-            - The composer project chip and project menus use the same disambiguated project names.
-
-            ### Fixed
-
-            - Custom providers no longer appear twice in the model picker.
-            - Files picked through the composer's **+** button are attached or imported instead of being silently dropped.
-            - OAuth logins now send the installation device id, fixing providers that require it.
-            - Direct Scheduled URLs no longer lose their workspace selection while restoring a hidden chat.
-            - Mobile and narrow desktop layouts keep a visible way to close the workspace overlay.
-            - Opening the workspace panel with no file selected now shows the project file tree.
-
-            ### Other
-
-            - The signed release workflow now also publishes the server image to GHCR once the Release is published.
-            - `npm test` checks installed dependencies against the lockfile before running.
-            - Route coverage expands for chats, worktrees, skills, API keys, desktop dialogs, and terminals.
-            - A vulnerable transitive `sprintf-js` dependency is removed.
-
-            Bundled components: pi 1.3.0, pi-web 0.10.0.
-
-            ---
-
-            ## Pi Agent Desktop 0.7.4
-
-            ### New
-
-            - **Manage worktrees from a project's "…" menu.** Create, switch and remove worktrees without leaving the sidebar.
-            - The `@` menu and session mentions, the session automation controls and the project chip in the composer now live in their own components, which keeps them stable across upstream updates.
-
-            ### Fixed
-
-            - The server refuses to listen on a LAN address without authentication, and the terminal authorizes its working directory before touching it.
-            - Installing a skill rejects package names that look like command-line options.
-            - Copying a file out of the app to a chosen location works from the browser too, and is restricted to files you can already open.
-            - The connection banner now checks that the server answered like pi-web, and "Retry" reloads the page in a browser.
-
-            ### Other
-
-            - Merged upstream pi-web changes; fork-specific translations moved to a separate layer so upstream message files stay unmodified.
-            - Security: `mammoth` now uses `argparse` 2.x.
-
-            Bundled components: pi 1.3.0, pi-web 0.10.0.
-
-            ---
-
-            ## Pi Agent Desktop 0.7.3
-
-            ### Changed
-
-            - **The backend switcher moved into Settings.** The π logo at the top-left of the sidebar is gone; open Settings › General › Desktop and use **Switch backend…** in the "Backend connection" row to pick Local or a saved remote server. The same row is available while connected to a remote server, so you can always switch back. Switching still restarts the app.
-
-            Bundled components: pi 1.3.0, pi-web 0.10.0.
-
-            ---
-
             ## Pi Agent Desktop 0.7.8
 
             ### 新增
@@ -239,80 +147,6 @@ jobs:
             - 当对话的第一条消息含连续空格时，点击设置会导致应用卡死，现已修复。
             - 在一个对话中添加的附件不会再出现在另一个对话里；附件内容中写出的路径不再让对话获得读取该文件的权限。
             - Windows 覆盖安装后，应用不再继续显示上一版本的界面。
-
-            内置组件版本：pi 1.3.0、pi-web 0.10.0。
-
-            ---
-
-            ## Pi Agent Desktop 0.7.6
-
-            ### 新增
-
-            - **合并为一个发送/停止按钮。** 原来分开的“引导”和“追加”控件改为一个圆形按钮。智能体运行时，输入框为空则停止运行；输入内容后会进入输入框上方可编辑的待发送列表，可以立即发送、编辑或删除。
-            - 设置、项目、会话和定时任务中的菜单、下拉框与选项选择器，在浅色和深色主题下统一使用同一种菜单样式。
-
-            ### 修复
-
-            - 粘贴网址或输入文件路径时，不再弹出 `/` 命令菜单。在行首、空格后或紧跟中文输入 `/` 时仍会弹出。
-            - 会话的已读/未读操作在所有语言下都有翻译。
-            - 服务端自升级时如果新容器启动失败，会自动回滚，不再误报成功。
-
-            内置组件版本：pi 1.3.0、pi-web 0.10.0。
-
-            ---
-
-            ## Pi Agent Desktop 0.7.5
-
-            ### 新增
-
-            - **远程服务端可自行升级。** 以 Docker 加 updater 边车部署的服务端，在设置里会出现**升级**按钮：等待运行中的会话结束后，从 GitHub Container Registry 拉取新的服务端镜像并重建容器；新容器不健康时自动回滚。服务恢复后页面自动刷新。
-            - 侧边栏新增独立的**对话**区域，不需要项目的会话与项目分开。对话仅使用模型，不提供文件、终端、worktree、项目信任或工具。
-            - 侧边栏可在按项目分组和会话时间线之间切换；较长的会话列表每次再加载五条。
-            - 定时任务页会显示调度租约的负责进程；租约过期或进程退出后可安全接管。
-            - 改进键盘焦点、触控目标和错误提示条，桌面端操作更易用。
-            - 输入框的项目标签与项目菜单使用相同的去重命名规则。
-
-            ### 修复
-
-            - 自定义服务商不会再在模型选择器中重复出现。
-            - 通过输入框 **+** 选择的文件会被添加为附件或导入项目，不再被静默丢弃。
-            - OAuth 登录会携带安装实例的设备 ID，修复依赖该 ID 的服务商登录。
-            - 直接打开定时任务页时，后台恢复的工作区选择不再丢失。
-            - 移动端和窄桌面布局始终有可见入口关闭工作区浮层。
-            - 没有选中文件时打开工作区面板，会显示项目文件树。
-
-            ### 其他
-
-            - 签名发布流程在 Release 发布后，也会把服务端镜像推送到 GHCR。
-            - `npm test` 会先按锁文件检查已安装依赖再运行测试。
-            - 增加对话、worktree、Skills、API key、桌面对话框和终端路由测试。
-            - 移除存在漏洞的间接依赖 `sprintf-js`。
-
-            内置组件版本：pi 1.3.0、pi-web 0.10.0。
-
-            ---
-
-            ## Pi Agent Desktop 0.7.2
-
-            ### 新增
-
-            - **在对话中管理定时任务。** 助手新增 `scheduled_tasks` 工具，可列出、创建、修改、暂停、恢复、运行和删除任务；`/schedule` 可直接执行常用操作：`/schedule`、`/schedule run|pause|resume|delete <任务>`，或用 `/schedule new <做什么、何时做>` 用自然语言描述一个任务。这样创建的任务默认使用“默认”工具集，并在可写入前请你确认；由定时任务自己运行的会话不能修改任务。
-            - 设置窗口跟随各平台的偏好设置风格：macOS 为居中工具栏，Windows 和 Linux 为左侧导航栏。⌘, / Ctrl+, 可打开设置。
-            - 重新设计输入框：圆形发送按钮，附件按钮移入输入卡片，推理强度与工具预设合并为一个选项。引导（steer）和 bash 模式重新有可见提示，手动压缩移入齿轮菜单。
-            - 设置 › 模型会显示服务商的 `modelOverrides`，受影响的模型带**覆盖**标记。未填写的上限字段显示“未设置”，不再用占位数字冒充上限。
-            - 模型设置中说明了如何启用 xhigh/max 思考级别。
-
-            ### 修复
-
-            - 在有历史记录的对话中发送消息后，回复开头下方不再出现整屏空白：聊天现在在底部跟随回复，不再把你的消息固定在顶部。
-            - macOS 红绿灯按钮重新与顶栏对齐，并使用 macOS 26 新样式。
-            - Windows 和 Linux 上，侧边栏按钮和面板开关与顶栏对齐。
-            - 对话导航器可以重新跳转到对应轮次，点击预览卡片也会跳转。
-
-            ### 其他
-
-            - 内置 pi SDK 升级到 1.3.0。
-            - README 说明了 macOS Gatekeeper 拦截首次启动时如何打开应用。
 
             内置组件版本：pi 1.3.0、pi-web 0.10.0。
           releaseDraft: true
@@ -332,6 +166,20 @@ jobs:
       - name: Read the release version
         id: version
         run: echo "version=$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # tauri-action points latest.json at api.github.com asset URLs, which
+      # anonymous clients may fetch only 60 times an hour per IP; the updater
+      # then fails with "403 Forbidden". Use the public download URLs.
+      - name: Point updater downloads at public release URLs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          dir="$(mktemp -d)"
+          gh release download "v$version" --pattern latest.json --dir "$dir"
+          gh release view "v$version" --json assets > "$dir/assets.json"
+          node scripts/public-updater-urls.mjs "$dir/latest.json" "$dir/assets.json" "$GITHUB_REPOSITORY" "v$version"
+          gh release upload "v$version" "$dir/latest.json" --clobber
 
       - name: Upload component manifest to the release
         env:

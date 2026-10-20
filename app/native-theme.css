@@ -1129,6 +1129,10 @@ html.dark {
 /* Named palettes keep upstream's core colors. Derive the desktop surfaces
    from those same tokens so the sidebar, sheets and composer stay in palette. */
 html:is([data-theme="mist"], [data-theme="rose"], [data-theme="pine"]) {
+  /* .app-main-column re-points --bg at this. Without it the chat column, the
+     composer fade and the control shelf resolve to no color at all, and text
+     scrolls visibly underneath the composer. */
+  --workbench-bg: var(--bg);
   --separator: color-mix(in srgb, var(--border) 55%, transparent);
   --surface: color-mix(in srgb, var(--bg) 35%, white);
   --surface-muted: color-mix(in srgb, var(--surface) 64%, transparent);
