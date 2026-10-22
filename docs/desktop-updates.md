@@ -42,6 +42,41 @@ verification. The key is never printed by the workflow.
 
 Never commit the private key or its password. The public key is embedded at compile time only in release builds. Local builds deliberately do not register the updater plugin.
 
+### macOS Developer ID signing and notarization
+
+macOS builds are signed with a **Developer ID Application** certificate of
+Solidtensor Inc. and notarized, so a downloaded app opens without the user
+approving it in System Settings. Only the Account Holder can create that
+certificate (the App Store Connect API answers 403), so it is made by hand at
+developer.apple.com › Certificates › **Developer ID Application** (G2 Sub-CA)
+from the CSR in `/ssd/appdata/secrets/pi-agent-desktop/apple/`; the private key
+next to it never leaves the secrets directory. The downloaded `.cer` goes to the
+same folder as `developer-id-application.cer`, and is exported with the key and
+its intermediate CA as a password-protected `.p12`.
+
+Repository Actions secrets (never commit any of them; this repository is public):
+
+- `APPLE_CERTIFICATE`: Base64 of the `.p12` (certificate, private key, Developer ID intermediate);
+- `APPLE_CERTIFICATE_PASSWORD`: the `.p12` password;
+- `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY`: key id, issuer id and `.p8` contents of an App Store Connect team API key, used by `notarytool`.
+
+The release workflow imports the certificate into a temporary keychain and
+derives `APPLE_SIGNING_IDENTITY` from it. `desktop:prepare` then signs what
+Tauri leaves alone under `Contents/Resources` — every Mach-O in the staged
+server tree (node-pty's `pty.node` and `spawn-helper`, …) and `Pi Agent
+Server.app`, whose Node runtime gets `desktop/server-helper.entitlements` (JIT,
+unsigned executable memory, no library validation for user-installed native
+addons) — with the hardened runtime and a secure timestamp
+(`scripts/macos-codesign.mjs`). Notarization rejects the whole app if any one of
+them is unsigned. Tauri signs and notarizes the app and staples the ticket; the
+workflow then notarizes and staples the DMG, checks both with `spctl`, and
+replaces the draft's DMG with the stapled one. A missing secret fails the macOS
+build instead of falling back to an ad-hoc signature.
+
+The first Developer ID release changes the app's code-signing requirement, so
+macOS asks once more for folder access granted to earlier ad-hoc builds. Later
+updates keep the same requirement and keep their grants.
+
 ## Publishing
 
 Merging upstream changes includes publishing updated desktop installers by default, unless the user requests a code-only merge. Delivery ends after the published installers are verified; updating the local deployment requires a separate explicit request.
@@ -77,7 +112,7 @@ or its 90-minute timeout does not stop the remote build; rerun to resume monitor
 
 Start **Publish signed desktop release** manually after the release changes reach `main`. It verifies that the bundled `pi` and `pi-web` versions match their latest stable Releases or the documented versions in `scripts/release-component-pins.json`, then sequentially creates Apple Silicon (`aarch64`) DMG/updater artifacts, a Linux x64 `.deb`, and a Windows x64 NSIS `-setup.exe`/updater archive. Intel Mac (`x86_64-apple-darwin`) artifacts are not built. The Release stays in draft until all platforms and the component manifest are present; only then is `v<pi-agent-desktop version>` published as the latest Release.
 
-The workflow currently uses ad-hoc macOS application signing, Tauri updater signatures, and the native Linux package format. Before distributing outside a controlled environment, configure an Apple Developer ID certificate/notarization and a Windows Authenticode certificate. Without Authenticode, Windows may show a SmartScreen warning even though updater verification remains cryptographically signed.
+The workflow uses Developer ID signing and notarization on macOS (see above), Tauri updater signatures, and the native Linux package format. Windows has no Authenticode certificate yet. Without Authenticode, Windows may show a SmartScreen warning even though updater verification remains cryptographically signed.
 
 ## Remote server self-update (Docker)
 

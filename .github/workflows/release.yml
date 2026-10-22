@@ -20,11 +20,9 @@ jobs:
           - runner: macos-26
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
-            apple_signing_identity: "-"
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             args: --target x86_64-unknown-linux-gnu --bundles deb
-            apple_signing_identity: ""
           # Restored after the file-tracer fix in eacaca3/7f2a1c0: a literal
           # homedir() reaching an fs call made @vercel/nft glob the whole
           # Windows profile at build time, which failed on its junction loops.
@@ -33,7 +31,6 @@ jobs:
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             args: --target x86_64-pc-windows-msvc --bundles nsis
-            apple_signing_identity: ""
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out pi-agent-desktop
@@ -47,6 +44,46 @@ jobs:
         run: |
           test -n "$UPDATER_PRIVATE_KEY"
           test -n "$UPDATER_PUBLIC_KEY"
+
+      # Developer ID signing and notarization, so a downloaded app opens without
+      # macOS asking the user to approve it in System Settings. The identity is
+      # read from the imported certificate (APPLE_SIGNING_IDENTITY for both
+      # desktop:prepare and Tauri); the notary key goes to a file Tauri reads.
+      - name: Import Developer ID certificate and notary key
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_API_KEY APPLE_API_ISSUER APPLE_API_PRIVATE_KEY; do
+            test -n "${!name}" || { echo "::error::Missing Actions secret $name"; exit 1; }
+          done
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"$/\1/p' | head -n 1)"
+          test -n "$identity" || { echo "::error::APPLE_CERTIFICATE holds no valid Developer ID Application identity"; exit 1; }
+          key_path="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+          {
+            echo "APPLE_SIGNING_IDENTITY=$identity"
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$key_path"
+            echo "SIGNING_KEYCHAIN=$keychain"
+          } >> "$GITHUB_ENV"
+          echo "Signing as: $identity"
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -102,6 +139,9 @@ jobs:
         if: runner.os == 'Windows' || runner.os == 'Linux'
         run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib --target ${{ matrix.target }}
 
+      # On macOS, APPLE_SIGNING_IDENTITY and APPLE_API_* come from the import
+      # step: Tauri signs with the imported keychain, notarizes the app and
+      # staples the ticket before packing the DMG and updater archive.
       - name: Build, sign, and upload updater artifacts
         uses: tauri-apps/tauri-action@v1
         env:
@@ -109,7 +149,6 @@ jobs:
           PI_AGENT_DESKTOP_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
         with:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
@@ -141,6 +180,49 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # Tauri signs the DMG but notarizes only the app inside it. Notarize and
+      # staple the DMG as well, check both with Gatekeeper the way a downloaded
+      # copy is checked, then replace the draft's DMG with the stapled one.
+      - name: Notarize the DMG and check Gatekeeper
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          app="$(find "$bundle/macos" -maxdepth 1 -name '*.app' | head -n 1)"
+          dmg="$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' | head -n 1)"
+          test -n "$app" && test -n "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+
+          result="$(xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" --wait --timeout 45m --output-format json)"
+          echo "$result"
+          status="$(node -p 'JSON.parse(process.argv[1]).status' "$result")"
+          if [ "$status" != "Accepted" ]; then
+            id="$(node -p 'JSON.parse(process.argv[1]).id' "$result")"
+            xcrun notarytool log "$id" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" || true
+            echo "::error::DMG notarization finished with status $status"
+            exit 1
+          fi
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
+
+          version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          name="$(gh release view "v$version" --json assets --jq '.assets[].name | select(endswith(".dmg"))' | head -n 1)"
+          test -n "$name"
+          cp "$dmg" "$RUNNER_TEMP/$name"
+          gh release upload "v$version" "$RUNNER_TEMP/$name" --clobber
+
+      - name: Remove signing keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi
+          rm -f "${APPLE_API_KEY_PATH:-/nonexistent}"
 
   manifest:
     needs: build

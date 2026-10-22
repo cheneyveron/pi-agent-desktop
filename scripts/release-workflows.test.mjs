@@ -189,6 +189,38 @@ test("release workflow publishes Apple Silicon, Linux x64, and Windows x64 insta
   assert.match(workflow, /gh release edit "v\$version" --draft=false --latest --prerelease=false/);
 });
 
+test("macOS releases are Developer ID signed and notarized, never ad-hoc", async () => {
+  const workflow = await readText(join(root, ".github", "workflows", "release.yml"), "utf8");
+  const buildJob = workflow.slice(workflow.indexOf("  build:"), workflow.indexOf("\n  manifest:"));
+
+  // Ad-hoc ("-") builds make every user approve the app in System Settings.
+  assert.doesNotMatch(workflow, /apple_signing_identity|APPLE_SIGNING_IDENTITY: "-"/);
+  for (const secret of ["APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_PRIVATE_KEY"]) {
+    assert.match(buildJob, new RegExp(`${secret}: \\$\\{\\{ secrets\\.${secret} \\}\\}`), secret);
+  }
+  // The certificate is imported once, before desktop:prepare signs the Node
+  // helper and native modules, and Tauri reuses that keychain.
+  const order = ["Import Developer ID certificate", "npm run desktop:prepare", "tauri-apps/tauri-action", "Notarize the DMG", "Remove signing keychain"];
+  const positions = order.map((marker) => buildJob.indexOf(marker));
+  assert.ok(positions.every((at) => at >= 0), "a macOS signing step is missing");
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions, "macOS signing steps are out of order");
+  const tauriStep = buildJob.slice(buildJob.indexOf("tauri-apps/tauri-action"));
+  assert.doesNotMatch(tauriStep.slice(0, tauriStep.indexOf("with:")), /APPLE_CERTIFICATE/);
+  assert.match(buildJob, /status" != "Accepted"/);
+  assert.match(buildJob, /spctl --assess --type execute/);
+  assert.match(buildJob, /xcrun stapler staple "\$dmg"/);
+});
+
+test("desktop:prepare signs the bundled Node helper with its entitlements", async () => {
+  const prepare = await readText(join(root, "scripts", "prepare-desktop.mjs"), "utf8");
+  assert.match(prepare, /wantsDeveloperIdSigning\(signingIdentity\)/);
+  assert.match(prepare, /server-helper\.entitlements/);
+  const entitlements = await readText(join(root, "desktop", "server-helper.entitlements"), "utf8");
+  for (const key of ["allow-jit", "allow-unsigned-executable-memory", "disable-library-validation"]) {
+    assert.match(entitlements, new RegExp(`com\\.apple\\.security\\.cs\\.${key}</key>\\s*<true/>`), key);
+  }
+});
+
 test("nothing reintroduces a literal homedir() into an fs call", async () => {
   // This is what broke the Windows build for every release: @vercel/nft folds
   // homedir() at build time and globs the whole user profile, which dies on the

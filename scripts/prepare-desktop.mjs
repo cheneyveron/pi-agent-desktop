@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { desktopTargetTriple } from "./desktop-platform.mjs";
+import { signDesktopResources, wantsDeveloperIdSigning } from "./macos-codesign.mjs";
 import { piPackageDirNames } from "./pi-packages.mjs";
 import { dedupeNestedPackages, externalPackageSpecifiers, findNestedPiScopePackages, stageCompletePackage, stageResolvedClosure } from "./stage-package.mjs";
 
@@ -296,3 +297,16 @@ const { binaryPath: nodeBinary, triple } = await bundleNodeRuntime();
 
 console.log(`Desktop server staged at ${serverResourcesDir}`);
 console.log(`Node runtime staged at ${nodeBinary} (${triple})`);
+
+// A Developer ID build must also sign the Node helper and native modules: Tauri
+// leaves Resources unsigned and notarization rejects any unsigned Mach-O.
+const signingIdentity = process.env.APPLE_SIGNING_IDENTITY;
+if (wantsDeveloperIdSigning(signingIdentity)) {
+  const signed = await signDesktopResources({
+    identity: signingIdentity,
+    serverDir: serverResourcesDir,
+    helperApp: serverHelperDir,
+    helperEntitlements: join(rootDir, "desktop", "server-helper.entitlements"),
+  });
+  console.log(`Signed ${signed.length} native module(s) and the Node helper with "${signingIdentity}"`);
+}
