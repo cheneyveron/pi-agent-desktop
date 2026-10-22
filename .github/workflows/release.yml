@@ -153,27 +153,23 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.9
+            ## Pi Agent Desktop 0.7.10
 
-            ### Fixed
+            ### Changed
 
-            - The Mist, Rose and Pine themes no longer leave the chat column, composer fade and control shelf without a background, so text no longer scrolls visibly underneath the composer.
-            - The theme names in Settings › Appearance show in English instead of falling back to Chinese.
-            - In-app updates no longer fail with "403 Forbidden": the update manifest now points at public download URLs, which are not subject to the anonymous API limit of 60 requests an hour per IP.
-            - Release notes now describe only the version being released.
+            - The macOS app is now signed with a Developer ID certificate and notarized by Apple, so a downloaded copy opens directly instead of having to be approved in System Settings first.
+            - Because the signature changes with this version, macOS may ask once more for access to folders such as Desktop, Documents or Downloads. Later updates keep the permission.
 
             Bundled components: pi 1.3.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.9
+            ## Pi Agent Desktop 0.7.10
 
-            ### 修复
+            ### 变更
 
-            - Mist、Rose、Pine 主题下，聊天栏、输入框渐隐层和控制栏不再没有背景，文字也不再从输入框下方透出。
-            - 设置 › 外观 中的主题名称在英文界面下正常显示英文，不再回退为中文。
-            - 应用内更新不再因 “403 Forbidden” 失败：更新清单改为指向公开下载地址，不再受同一 IP 下每小时 60 次匿名 API 请求的限制。
-            - 发布说明现在只描述本次发布的版本。
+            - macOS 版现在使用 Developer ID 证书签名并经过 Apple 公证，下载后可以直接打开，不再需要先到“系统设置”里手动允许。
+            - 由于本版本更换了签名，macOS 可能会再询问一次对桌面、文稿、下载等文件夹的访问权限；之后的更新会保留该授权。
 
             内置组件版本：pi 1.3.0、pi-web 0.10.0。
           releaseDraft: true
