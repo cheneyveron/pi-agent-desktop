@@ -5,11 +5,11 @@
 #     PI_AGENT_TAG=0.7.4
 #     PROJECT_DIR=/ssd/appdata/pi-agent-desktop
 #     DOCKER_GID=988
-#     DOCKER_CONFIG_DIR=/ssd/appdata/secrets/pi-agent-desktop/ghcr
-# DOCKER_CONFIG_DIR holds a config.json with read access to the (private) GHCR
-# package, readable by uid 1000:
+# The package is public, so no registry credential is needed. If you make it
+# private, set DOCKER_CONFIG_DIR in .env to a directory holding a config.json
 #     {"auths": {"ghcr.io": {"auth": "<base64 of user:token>"}}}
-# The token is a classic PAT with only read:packages.
+# (token: a classic PAT with only read:packages, file readable by uid 1000) and
+# enable the two commented lines in the updater service below.
 # If the web service uses env_file, mount the same file into the updater at the
 # same path (see the commented line below): `docker compose up` reads it there.
 # The sidecar rewrites the tag line when the server upgrades itself from Settings.
@@ -59,12 +59,12 @@ services:
     entrypoint: ["sh", "/updater/updater.sh"]
     environment:
       UPDATER_DIR: /var/lib/pi-updater
-      DOCKER_CONFIG: /docker-config
+      # DOCKER_CONFIG: /docker-config
       PROJECT_DIR: ${PROJECT_DIR:?set PROJECT_DIR in .env}
     working_dir: ${PROJECT_DIR}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${DOCKER_CONFIG_DIR:?set DOCKER_CONFIG_DIR in .env}:/docker-config:ro
+      # - ${DOCKER_CONFIG_DIR:?set DOCKER_CONFIG_DIR in .env}:/docker-config:ro
       - ${PROJECT_DIR}:${PROJECT_DIR}
       - ./state/updater:/var/lib/pi-updater
       - ./updater.sh:/updater/updater.sh:ro

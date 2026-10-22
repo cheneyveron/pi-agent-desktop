@@ -128,19 +128,17 @@ Settings ─POST /api/updates/install─▶ web ──request file──▶ upda
 
 `.github/workflows/docker-image.yml` builds the repository `Dockerfile` for `linux/amd64` and pushes `ghcr.io/cheneyveron/pi-agent-desktop:<version>` and `:latest` with the workflow's `GITHUB_TOKEN`. The signed release workflow calls it as its last job, after `manifest` has published the Release, so a draft never gets an image and a failed image build does not un-publish the release. Run it by hand (Actions › Publish server image, input `0.7.5`) to publish or republish an existing version.
 
-The package stays **private** (GHCR's default for a new package). Publishing needs nothing extra, because `GITHUB_TOKEN` can write packages of this repository. Pulling does: whoever pulls needs a classic PAT with `read:packages` (fine-grained tokens cannot read packages, and the repository's workflow PAT lacks that scope). The updater sidecar takes its credentials from a `config.json` mounted read-only (below); for manual pulls on the host run `docker login ghcr.io` with the same token.
+The package is **public**: this repository is a fork of a public one, which GitHub does not let you make private, and the image holds only this repository's source (configuration and secrets come from mounted volumes and environment). Publishing needs nothing extra, because `GITHUB_TOKEN` can write packages of this repository, and pulling needs no credentials. If the package is ever made private, pulls need a classic PAT with only `read:packages`; see the commented lines in the reference compose file.
 
 ### Deploying
 
 [deploy/docker/compose.yaml](../deploy/docker/compose.yaml) is the reference project: the `web` service, plus an `updater` sidecar running [deploy/docker/updater.sh](../deploy/docker/updater.sh) in `docker:cli`. Put these beside it in the project directory:
 
 ```
-.env          PI_AGENT_TAG=0.7.4   PROJECT_DIR=<absolute path of this directory>   DOCKER_GID=<stat -c %g /var/run/docker.sock>   DOCKER_CONFIG_DIR=<dir holding config.json>
+.env          PI_AGENT_TAG=0.7.4   PROJECT_DIR=<absolute path of this directory>   DOCKER_GID=<stat -c %g /var/run/docker.sock>
 updater.sh
 state/updater/   (writable by the web user)
 ```
-
-`$DOCKER_CONFIG_DIR/config.json` (mode 600 is fine only if it is owned by the web user's uid, 1000) is `{"auths": {"ghcr.io": {"auth": "<base64 of user:token>"}}}`.
 
 `PI_WEB_UPDATER_DIR` on the web service is what turns the button on. If the web service has an `env_file`, mount that file into the updater at the same path, because `docker compose up` runs inside the sidecar and reads it there. A failed `up`, or a running container that is not the requested tag, counts as a failed update and is rolled back.
 
@@ -157,5 +155,5 @@ state/updater/   (writable by the web user)
 
 - The web container never gets the Docker socket. Only the sidecar has it; it runs one fixed script, has no network and no published port, runs as the web user with the docker group added, and accepts nothing but a validated `x.y.z` tag from the shared directory.
 - Anyone who can reach the server's update endpoint can trigger an update to the newest stable release. Keep the web password or an access proxy in front of a remote server.
-- Images are pulled from the fixed `ghcr.io/cheneyveron/pi-agent-desktop` repository named in the compose file, not from the request. The sidecar holds a read-only registry token; keep it `read:packages` only.
+- Images are pulled from the fixed `ghcr.io/cheneyveron/pi-agent-desktop` repository named in the compose file, not from the request. The sidecar holds no registry credential while the package is public; if you add one, keep it `read:packages` only.
 - Rollback is the previous image tag, which stays on the host; keep `PI_AGENT_TAG` concrete, never `latest`.
