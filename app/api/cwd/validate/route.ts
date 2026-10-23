@@ -6,7 +6,7 @@ import { allowFileRoot } from "@/lib/file-access";
 import { directoryPermissionMessage, isPermissionError } from "@/lib/directory-browser";
 import { projectIdentityKey } from "@/lib/project-identity";
 import { resolveProject } from "@/lib/worktree";
-import { ensureChatWorkspace, isChatWorkspacePath } from "@/lib/chat-workspace";
+import { ensureChatCwd, ensureChatWorkspace, isChatRootPath, isChatWorkspacePath } from "@/lib/chat-workspace";
 
 function normalizeCwd(cwd: string): string {
   if (cwd === "~") return userHome();
@@ -27,7 +27,10 @@ export async function POST(req: Request) {
 
     const normalizedCwd = normalizeCwd(cwd);
     if (isChatWorkspacePath(normalizedCwd)) {
-      const chatCwd = await ensureChatWorkspace();
+      const chatRoot = await ensureChatWorkspace();
+      // A chat's own folder (or the legacy shared cwd) stays what it is; only the root is "new chat".
+      const chatCwd = isChatRootPath(normalizedCwd) ? chatRoot : normalizedCwd;
+      await ensureChatCwd(chatCwd);
       allowFileRoot(chatCwd);
       return NextResponse.json({
         success: true,

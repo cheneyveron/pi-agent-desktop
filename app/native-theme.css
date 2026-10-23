@@ -1057,8 +1057,8 @@
      release.yml), which this stack otherwise has no CJK fallback for once it
      falls past the macOS/Windows-only names above it. */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
-    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", "Noto Sans SC",
-    sans-serif;
+    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", system-ui,
+    "Noto Sans SC", sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
     "PingFang SC", "Segoe UI Variable Display", "Segoe UI", "Noto Sans SC",
     sans-serif;
@@ -1959,8 +1959,14 @@ a:focus-visible {
 }
 
 :root {
-  --font-mono: ui-monospace, "SFMono-Regular", var(--font-noto-mono),
-    "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
+  /* Native monospace first. The bundled Noto Sans Mono is only a last-resort
+     Latin fallback: WebView2 (Chromium) has no `ui-monospace`, so listing it
+     before Cascadia/Consolas made it win on Windows. The CJK names keep
+     Chinese in code on a proportional-CJK face instead of the browser default
+     (SimSun on Windows). */
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code",
+    "JetBrains Mono", "Fira Code", Consolas, var(--font-noto-mono),
+    "PingFang SC", "Microsoft YaHei", "Noto Sans SC", monospace;
 }
 
 pre, code {
@@ -5119,7 +5125,8 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 .markdown-body p { margin: 0 0 10px; }
 .markdown-body p:last-child { margin-bottom: 0; }
-.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :first-child,
+.markdown-body > .streamdown-animated > :first-child { margin-top: 0; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 {
   font-weight: 600;
   margin: 18px 0 8px;
@@ -9201,4 +9208,52 @@ textarea.plugin-settings-input {
 
 .saved-file-card-reveal:hover {
   background: var(--bg-hover);
+}
+
+/* Chat folder and computer access: the switch in the composer's run menu, and the checkbox in
+   the chat confirmation dialog (which borrows the trust dialog's frame). */
+.chat-access-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.12s;
+}
+
+.chat-access-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--bg);
+  transition: transform 0.12s;
+}
+
+.chat-access-switch[data-on] {
+  background: var(--accent);
+}
+
+.chat-access-switch[data-on]::after {
+  transform: translateX(11px);
+}
+
+.chat-confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.project-trust-button.is-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }

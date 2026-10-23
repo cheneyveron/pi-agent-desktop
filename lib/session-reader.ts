@@ -12,10 +12,11 @@ import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
 import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
 import { projectToolResultDetails, slimToolResultMessage } from "./tool-result-details";
+import { openSlimSessionManager } from "./session-slim-load";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
 import { listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
-import { isChatWorkspacePath } from "./chat-workspace";
+import { isChatFolderPath, isChatWorkspacePath } from "./chat-workspace";
 
 export { getAgentDir };
 
@@ -167,6 +168,7 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
       return {
         ...session,
         workspaceKind: "chat" as const,
+        ...(isChatFolderPath(session.cwd) ? { chatFolder: true } : {}),
         projectRoot: undefined,
         projectKey: undefined,
         branch: undefined,
@@ -577,7 +579,7 @@ export function openSessionManager(
     return cached.sm as SessionManager;
   }
 
-  const sm = SessionManager.open(filePath, undefined);
+  const sm = openSlimSessionManager(filePath) ?? SessionManager.open(filePath, undefined);
   // Cached managers are read-only views, and nothing reads a cached entry's
   // tool-result details beyond what the UI renders, so drop the rest before
   // the entry is retained. Extension payloads (browser DOM outlines) can be

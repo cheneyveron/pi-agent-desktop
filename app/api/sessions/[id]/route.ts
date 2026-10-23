@@ -25,6 +25,9 @@ import type { SessionEntry } from "@/lib/types";
 import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
 import { jsonResponse } from "@/lib/json-response";
+import { isChatFolderPath } from "@/lib/chat-workspace";
+import { samePath } from "@/lib/paths";
+import { moveFolderToTrash } from "@/lib/trash";
 
 export async function GET(
   req: Request,
@@ -211,11 +214,14 @@ export async function PATCH(
 }
 
 // DELETE /api/sessions/[id]
+// ?chatFolder=trash also moves a chat's own folder to the Trash, unless another session
+// (a fork shares its parent's folder) still lives there.
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const trashChatFolder = new URL(req.url).searchParams.get("chatFolder") === "trash";
   try {
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
@@ -224,8 +230,11 @@ export async function DELETE(
 
     // Read only the bounded header before deleting.
     let parentSessionPath: string | undefined;
+    let sessionCwd: string | undefined;
     try {
-      parentSessionPath = readSessionHeader(filePath)?.parentSession;
+      const header = readSessionHeader(filePath);
+      parentSessionPath = header?.parentSession;
+      sessionCwd = header?.cwd;
     } catch (error) {
       // Empty runtime sessions have a cached path before their first disk write.
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -370,7 +379,17 @@ export async function DELETE(
       invalidateSessionManagerCache(deletedPath);
     }
     invalidateSessionListCache();
-    return NextResponse.json({ ok: true });
+    let folderTrashed = false;
+    if (trashChatFolder && sessionCwd && isChatFolderPath(sessionCwd) && existsSync(sessionCwd)) {
+      const stillUsed = sessions.some((session) => (
+        !deletedSessionIds.has(session.id) && session.cwd && samePath(session.cwd, sessionCwd)
+      ));
+      if (!stillUsed) {
+        await moveFolderToTrash(sessionCwd);
+        folderTrashed = true;
+      }
+    }
+    return NextResponse.json({ ok: true, folderTrashed });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

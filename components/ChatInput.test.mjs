@@ -1012,7 +1012,10 @@ test("chat-only composer keeps shell, file and session mentions out of the input
   assert.match(source, /const bashMode = !chatOnly && attachedImages\.length === 0/);
   assert.match(source, /if \(chatOnly \|\| !cwd\) \{\s*setAtQuery\(null\)/);
   assert.match(source, /useSessionMentionPalette\(\{ cwd: chatOnly \? null : cwd/);
-  assert.match(source, /\{chatOnly && \([\s\S]*?t\("chat\.chatOnlyDescription"\)/);
+  // The chat's rows (what it can do, its folder, the computer switch) come from ChatAccessRows.
+  assert.match(source, /\{chatOnly && \([\s\S]*?<ChatAccessRows[\s\S]*?access=\{chatAccess\}/);
+  const rows = readFileSync(new URL("./ChatAccessRows.tsx", import.meta.url), "utf8");
+  assert.match(rows, /t\("chat\.chatOnlyDescription"\)/);
 });
 
 test("only the chat composer offers saving a default model or reasoning level", () => {

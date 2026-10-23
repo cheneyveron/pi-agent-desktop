@@ -2,26 +2,36 @@
 
 Chats are a first-class sidebar section beside Projects, but not a second
 session system. They reuse the existing `SessionInfo`, JSONL, SSE, fork, search,
-running-state, and persistence paths. The only new backing concept is a hidden
-cwd that Pi requires for every session.
+running-state, and persistence paths. What is new is that **every chat owns a folder**
+(its cwd), so a chat can keep the files it makes, while a stricter policy keeps it away from
+a shell and from the rest of the computer until the user says otherwise.
 
 ## Workspace identity
 
-- `lib/chat-workspace.ts` owns `~/.pi/agent/chat-workspace` (derived from
-  `getAgentDir()`), lazy directory creation, and exact-path recognition through
-  `samePath()`.
-- `GET /api/chat-workspace` creates and returns that cwd. `GET /api/sessions`
-  also returns it as `chatWorkspaceCwd`, so the sidebar and shell can share one
-  server-owned answer.
-- `attachSessionProjectInfo()` in `lib/session-reader.ts` sets
-  `workspaceKind: "chat"` and removes `projectRoot`, `projectKey`, `branch`, and
-  `isWorktree`. Project sessions receive `workspaceKind: "project"`.
-- `POST /api/cwd/validate` recognizes the hidden cwd and returns the same
-  server identity instead of treating it as a project.
+- `lib/chat-workspace.ts` owns `~/.pi/agent/chats` (derived from `getAgentDir()`), the
+  **chat root**. The root is not a chat's cwd: it is what a brand-new chat is *requested*
+  with. `startRpcSession()` swaps it for `createChatFolder()`
+  (`~/.pi/agent/chats/YYYYMMDD-HHMMSS-xxxxxxxx`, private, unique) before the session exists,
+  so the browser never builds a chat's path.
+- `isChatWorkspacePath()` is true for the root, for a direct child of the root
+  (`isChatFolderPath()`, a chat that owns a folder) and for the **legacy** shared cwd
+  `~/.pi/agent/chat-workspace` (`isLegacyChatWorkspacePath()`, chats made before folders).
+  Legacy chats keep their original policy (below); they are never migrated.
+- `ensureChatCwd()` recreates a chat's folder (or the legacy cwd) when an existing chat
+  starts; `pruneEmptyChatFolders()` (hourly, from `GET /api/sessions`) removes folders that
+  stayed empty for a day and that no session points at: composers that prepared a chat to
+  load its commands and never sent anything.
+- `GET /api/chat-workspace` creates and returns the root. `GET /api/sessions` also returns it
+  as `chatWorkspaceCwd`, so the sidebar and shell share one server-owned answer for "new chat".
+- `attachSessionProjectInfo()` in `lib/session-reader.ts` sets `workspaceKind: "chat"`
+  (plus `chatFolder: true` for a chat with its own folder) and removes `projectRoot`,
+  `projectKey`, `branch`, and `isWorktree`. Project sessions receive `workspaceKind: "project"`.
+- `POST /api/cwd/validate` recognizes the root, a chat folder and the legacy cwd and returns
+  the same server identity instead of treating them as a project.
 
-The browser must never construct or compare the hidden path by string
-derivation. It uses `workspaceKind`, the `/api/chat-workspace` answer, or the
-`chatWorkspaceCwd` returned by `/api/sessions`.
+The browser must never construct or compare a chat path by string derivation. It uses
+`workspaceKind`, `chatFolder`, the `/api/chat-workspace` answer, or the `chatWorkspaceCwd`
+returned by `/api/sessions`.
 
 ## UI boundaries
 
@@ -70,11 +80,12 @@ panel is a client component and must not import the server module.
 ## Session policy
 
 `lib/session-policy.ts` derives one `SessionPolicy` per session when it starts
-(`chat`, `chat-only` or `project`; capabilities: files and shell, loads extensions, tool
-presets, exact prompt). The wrapper holds it and `isChatOnly()` / `isChatWorkspace()` read
-from it. The browser never computes it: it reads the server-classified `workspaceKind`.
-A chat sends Pi's structured prompt with a chat preamble, so its transcript matches what is
-sent; only a `chat-only` project session still sends an exact prompt.
+(`chat`, `chat-unlocked`, `chat-only` or `project`; capabilities: files and shell, loads
+extensions, tool presets, exact prompt). The wrapper holds it and `isChatOnly()` /
+`isChatWorkspace()` (limited chat) / `isChatUnlocked()` / `isChat()` read from it. The
+browser never computes it: it reads the server-classified `workspaceKind`. A chat sends Pi's
+structured prompt with a chat preamble, so its transcript matches what is sent; only a
+`chat-only` project session still sends an exact prompt.
 
 ## Server-enforced policy
 
@@ -82,84 +93,117 @@ Client checks are affordances only; the server enforces the policy
 (`lib/chat-workspace-policy.ts`).
 
 A chat loads extensions, skills, prompt templates and the codemode / tool-search /
-MCP built-ins like a project session, but the chat's own file and shell access is limited
-to two narrow, user-bound ways (below). MCP tools are the exception by decision: a server
-the user configured is trusted like an extension, so its tools are not limited to
-read-only (`createReadOnlyMcpPolicyExtension` is not loaded in a chat), and the chat prompt
-and the composer hint say that they may write files or run commands:
+MCP built-ins like a project session. What it never gets of its own is a shell or the
+user's filesystem:
 
-- Default tools (`CHAT_DEFAULT_TOOL_NAMES`): `read` (confined), `codemode`, `tool_search`,
-  `save_to_downloads`, the read-only web tools (`web_search`, `fetch_content`,
-  `source_check`, `get_search_content`) and every MCP tool, plus the names the user lists
-  in Settings › Chats › "Extra tools allowed in chats" (`isChatToolAllowed`; stored as
+- **A chat with a folder** (every chat made since folders) keeps `read`, `write`, `edit`,
+  `grep`, `find` and `ls`, **all confined to its folder** (`chatFolderToolBlockReason`):
+  relative paths start there, the target is judged after `realpath` of its deepest existing
+  ancestor (so `..`, `~`, absolute paths and symlinks inside the folder that lead out are
+  refused, and a new file is judged by where it would land), and a `find` pattern or `grep`
+  glob that is absolute, starts with `~` or climbs with `..` is refused. `read` additionally
+  opens skill files and a file the **user named by full path in their own message**
+  (read-only, below). `bash` and `powershell` are always blocked.
+- **A legacy chat** (no folder) keeps its old loadout: `read` for skills and named files,
+  `save_to_downloads` as its one write, every other coding tool blocked.
+- **MCP tools run only when their server marks them read-only** (`readOnlyHint: true`);
+  the chat's `tool_call` guard blocks the rest, nested codemode calls included. A tool the
+  user lists in Settings › Chats › "Extra tools allowed in chats" bypasses that check (the
+  user named it). This replaces the earlier "MCP may write" decision, which made "no shell"
+  meaningless for anyone with a filesystem or shell MCP server.
+- Default tools (`CHAT_FOLDER_DEFAULT_TOOL_NAMES` / `CHAT_DEFAULT_TOOL_NAMES`): the file
+  tools above (or `read` + `save_to_downloads`), `codemode`, `tool_search`, the read-only web
+  tools (`web_search`, `fetch_content`, `source_check`, `get_search_content`), read-only MCP
+  tools, plus the names the user lists in Settings › Chats (`isChatToolAllowed`; stored as
   `chats.allowedTools`, validated by name, read on every run and call, and never lifting a
   blocked coding tool). Every other tool an installed extension registers (file readers,
   computer or browser control, sub-agents) stays off until the user adds it: the
   `before_agent_start` handler narrows `selectedTools` on every run, startup, reload and
-  tree navigation filter the active set, and a `tool_call` guard blocks the rest, nested
-  codemode calls included. `bash`, `powershell`, `edit`, `write`, `grep`, `find` and `ls`
-  are always blocked.
-- `read` opens skill files (a loaded skill's folder, or a single-file skill, after
-  `realpath`, so `..` and symlinks cannot leave it), a file the chat saved, and a file the
-  **user named by full path in their own message** (below).
+  tree navigation filter the active set, and a `tool_call` guard blocks the rest.
 - Extensions that register a delegation tool (`Agent`, ...) are not loaded, because a
   sub-agent would carry the file access a chat is denied.
-- `POST /api/agent/new` ignores any requested tool preset for the hidden cwd, and
+- `POST /api/agent/new` ignores any requested tool preset for a chat, and
   `startRpcSession()` re-detects the workspace from the session file, so an old chat
   with a stale `pi-web:tool-selection` entry gets the same policy. No selection is
   recorded for a chat.
 - Context files (global, ancestor, project) never load: `noContextFiles`.
-- The prompt is Pi's structured prompt with a custom preamble
-  (`CHAT_WORKSPACE_PROMPT`) plus `date` and `artifacts` sections; `cwd` is replaced
-  by `(none)`. It is no longer an exact empty prompt, so the transcript matches what
-  is sent.
+- The prompt is Pi's structured prompt with a custom preamble (`chatWorkspacePrompt`) plus
+  `date` and `artifacts` sections. For a chat with a folder `cwd` names the folder, so
+  relative paths in tool calls are anchored there; the legacy cwd is replaced by `(none)`.
 - `get_tools` lists the chat's tools (blocked coding tools hidden), `get_commands`
   returns the real commands (skills, prompt templates, extension commands),
-  `set_tools` and `bash` are rejected with a message pointing the user to a project.
+  `set_tools` is rejected for every chat and `bash` for a limited one.
 
 `chatOnly` and `chatWorkspace` are different flags. `chatOnly` means a project
 session with an empty tool allow-list (exact context-file prompt, nothing loaded);
-`chatWorkspace` means the hidden non-project workspace above.
+`chatWorkspace` means a limited non-project chat.
 
-## Files on this computer: reading what the user names, saving to Downloads
+### Letting one chat use the computer
 
-`lib/chat-file-access.ts`, `lib/chat-downloads-tool.ts`. Both act on the machine that runs
-Pi, so they are off (and the prompt says so) when `PI_WEB_HOSTNAME` is a non-loopback
-address (`isNetworkExposedServer`).
+`lib/chat-unlock.ts` records the choice as a session entry (`pi-web:chat-unlock`, newest
+wins), so it outlives the process and is per chat. `POST /api/sessions/[id]/chat-access
+{ unlocked }` (`setRpcChatUnlock`) appends it, shuts the wrapper down and starts it again;
+the client then re-attaches like after a tool-preset change (`handleChatAccessRebuilt`).
 
-- **Reading.** `ChatFileGrants` collects the paths in the user's own messages
+- An unlocked chat (`chat-unlocked` policy) keeps the chat prompt, `date`/`instructions`
+  sections, its folder as cwd and `noContextFiles`, but the workspace extension registers no
+  tool guard and does not narrow the tools: it has pi's default tools including `bash`, the
+  whole filesystem, and MCP tools that may write (the prompt says so).
+- Only a chat **with a folder** whose session file exists can be unlocked (pi writes a
+  session out once it has an assistant message; an entry added earlier would be lost in the
+  restart) and never while it runs. A server open to other machines (`isNetworkExposedServer`)
+  never honours it: the switch is hidden, the POST fails and `startRpcSession()` ignores a
+  stored unlock.
+- The switch lives in the composer's run menu (`ChatAccessRows`), with a confirmation
+  (`ChatConfirmDialog`) in both directions; locking again goes back to the folder-confined
+  loadout.
+
+## Files on this computer: the chat folder, naming a path
+
+`lib/chat-file-access.ts`. Reading a named path acts on the machine that runs Pi, so it is
+off (and the prompt says so) when `PI_WEB_HOSTNAME` is a non-loopback address
+(`isNetworkExposedServer`). The chat's own folder is not affected by that.
+
+- **The chat's folder.** Everything a chat creates lives in its folder; the user finds it
+  from the composer's run menu ("Show chat folder", `POST /api/chat-folder/reveal`, which
+  looks the folder up from the session, loopback only; the desktop shell uses
+  `revealItemInDirNative`). There is no in-app file panel for chats yet: the right panel,
+  file tree and terminals stay project-only (`AppShell.chat-workspace.test.mjs`).
+- **Reading a named path.** `ChatFileGrants` collects the paths in the user's own messages
   (`extractUserNamedPaths`: absolute, `~/`, `file://`, Windows drive paths; bare, or quoted
   when they contain spaces) from `before_agent_start` events of type `user` and, once per
   reopened chat, from the transcript's user messages. Tool results, web pages and the
   model's own text never grant anything, and neither does an attached file: its
   `<attached_file>` block is cut out (`splitAttachedFiles`) before the scan, because its text
-  is someone else's. Composer attachments live in the draft (`ChatDraft.files`, memory only,
-  never in localStorage), so they stay with the chat they were attached in. A grant is a candidate: at read time it must
-  resolve (through `realpath`) to the requested existing regular file. Credentials and keys
-  are never readable even when named (`isSensitivePath`: `~/.ssh`, `~/.aws`, `~/.gnupg`,
-  `.netrc`/`.npmrc`, Pi's own `*.json` settings and keys).
-- **Writing.** `save_to_downloads(filename, content, encoding?)` is the only write a chat
-  has. A bare file name (no folder, no `..`, no hidden files, no program or installer
-  extensions), written into the Downloads folder (`XDG_DOWNLOAD_DIR`, else
-  `~/Downloads`) without ever replacing a file (`name (1).ext`), up to 8 MB, mode 0644. The
-  result's details (`path`, `name`, `size`) render as a `SavedFileCard` with "Show in
-  folder" (`revealItemInDirNative` on the desktop, `POST /api/chat-downloads/reveal`
-  elsewhere, loopback only and Downloads only). "Ask before a chat saves a file" in
-  Settings › Chats (`chats.confirmSave`) makes each save go through the extension UI's
-  confirm dialog.
+  is someone else's. A grant is a candidate: at read time it must resolve (through
+  `realpath`) to the requested existing regular file. Credentials and keys are never
+  readable even when named (`isSensitivePath`: `~/.ssh`, `~/.aws`, `~/.gnupg`,
+  `.netrc`/`.npmrc`, Pi's own `*.json` settings and keys). A named path is read-only; writes
+  stay in the folder.
+- **Legacy chats only: `save_to_downloads`.** (`lib/chat-downloads-tool.ts`) a bare file name
+  written into Downloads without replacing anything, up to 8 MB; its result renders as a
+  `SavedFileCard` (kept so old transcripts still show the card) with "Show in folder"
+  (`POST /api/chat-downloads/reveal`). "Ask before an older chat saves a file" in
+  Settings › Chats (`chats.confirmSave`) still applies there. A chat with a folder does not
+  get this tool.
 
 ## Text attachments
 
-A chat has no project to copy files into, so a picked or dropped text file
-(`lib/chat-attachments.ts`: text/code/data extensions, 256 KB each, 512 KB and five files
-per message, UTF-8 without NUL) becomes a chip in the composer and travels inside the
-message as an `<attached_file name="...">` block appended after the typed text.
-`MessageView` renders those blocks as expandable chips (`AttachedFileList`),
-`attachmentAwareTitle()` keeps them out of session titles, and the session scanner
-uses it for `firstMessage`. Images keep their own path. A Word `.docx` is read as plain
-text by `POST /api/chat-attachments/extract` (mammoth, body-only, 10 MB in, the same 256 KB
-of text out, nothing written to disk) and then attached like any text file. PDF and other
-Office files are rejected with a message; a PDF needs a parser dependency.
+A picked or dropped text file (`lib/chat-attachments.ts`: text/code/data extensions, 256 KB
+each, 512 KB and five files per message, UTF-8 without NUL) becomes a chip in the composer
+and travels inside the message as an `<attached_file name="...">` block appended after the
+typed text, so the model always has it. `MessageView` renders those blocks as expandable
+chips (`AttachedFileList`), `attachmentAwareTitle()` keeps them out of session titles, and
+the session scanner uses it for `firstMessage`. Images keep their own path. A Word `.docx`
+is read as plain text by `POST /api/chat-attachments/extract` (mammoth, body-only, 10 MB in,
+the same 256 KB of text out) and then attached like any text file. PDF and other Office
+files are rejected with a message; a PDF needs a parser dependency.
+
+A chat with a folder also keeps a copy of each text attachment in
+`<folder>/attachments/` (`lib/chat-attachment-files.ts`, called from the `prompt` command of
+the wrapper): a file with the same name and content is not saved twice, a taken name gets
+` (1)`, a name that is hidden, has a path or a program extension is made safe. The copy never
+fails a send. Only text reaches the folder; binary files are not attachable yet.
 
 ## Continue in a project
 
@@ -167,18 +211,29 @@ Office files are rejected with a message; a PDF needs a parser dependency.
 chats only) copies the chat with `SessionManager.forkFrom()` into a new session in the
 chosen project and leaves the chat alone. The copy drops the chat's system messages
 (they declare the chat's tool loadout, which pi would restore) and records a cleared
-tool selection, so the project session builds its own prompt and default tools. A chat
-that is still running is refused.
+tool selection, so the project session builds its own prompt and default tools. The files
+the chat made stay in its folder; the response carries `chatFolder` and the sidebar shows
+where they are. A chat that is still running is refused.
+
+## Deleting and forking
+
+Deleting a chat that owns a folder asks in a dialog ("Also move the chat's folder to the
+Trash", on by default): `DELETE /api/sessions/[id]?chatFolder=trash`. The folder goes to the
+system Trash (`lib/trash.ts`: `~/.Trash` on macOS, the XDG Trash on Linux, an app-owned
+`chats-trash` elsewhere) and only when no other session still uses it. A fork of a chat
+shares its parent's folder, so deleting one of them keeps the folder. Archiving keeps it.
 
 ## Tests
 
-- `lib/chat-workspace.test.mjs` covers path ownership and private directory
-  creation.
+- `lib/chat-workspace.test.mjs` covers path ownership (root, folder, legacy), folder
+  creation, `ensureChatCwd` and pruning. `lib/chat-unlock.test.mjs`, `lib/trash.test.mjs`
+  and `lib/chat-attachment-files.test.mjs` cover the unlock entry, the Trash move and the
+  attachment copies.
 - `lib/chat-groups.test.mjs`, `lib/chat-settings.test.mjs` and `lib/session-policy.test.mjs`
   cover pin ordering, the settings block and the policy derivation.
 - `lib/chat-workspace-policy.test.mjs` pins the server-side policy and exercises the
-  skill-confined `read`, the tool allow-list, the date section and the delegation
-  filter. `lib/chat-attachments.test.mjs` covers the text-attachment round trip.
+  folder-confined file tools, the read-only MCP gate, the unlocked chat, the tool
+  allow-list, the date section and the delegation filter. `lib/chat-attachments.test.mjs` covers the text-attachment round trip.
 - `components/AppShell.chat-workspace.test.mjs` pins server-provided
   classification and project-workbench suppression.
 - `components/SessionSidebar.test.mjs` and the session-search tests pin the

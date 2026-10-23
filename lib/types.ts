@@ -392,6 +392,8 @@ export interface SessionInfo {
   /** Server-classified workspace identity. Chats use the hidden Pi workspace
    *  and are excluded from projects, worktrees, and project trust. */
   workspaceKind?: SessionWorkspaceKind;
+  /** A chat that owns a folder of its own (set by the server; a legacy chat has none). */
+  chatFolder?: boolean;
   name?: string;
   created: string;
   modified: string;

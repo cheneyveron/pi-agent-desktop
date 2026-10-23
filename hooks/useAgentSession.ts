@@ -2687,6 +2687,33 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [cancelEventStreamGrace, chatWorkspace, clearSlashCommands, closeEvents, loadTools, maintainEventsConnected, setToolPresetState, syncLiveModel]);
 
+  // The server rebuilt this chat's session (the user let it use the computer, or took that back):
+  // drop the old stream and what hung off it, then pick the new session up like a tool change does.
+  const handleChatAccessRebuilt = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    cancelEventStreamGrace();
+    closeEvents();
+    setExtensionDialogs([]);
+    setExtensionCustomUis([]);
+    if (sessionPropIdRef.current === sid) maintainEventsConnected(sid);
+    clearSlashCommands();
+    setExtensionStatuses([]);
+    setExtensionWidgets([]);
+    try {
+      const [state] = await Promise.all([
+        sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" }),
+        loadTools(sid),
+      ]);
+      if (sessionHookMountedRef.current && sessionIdRef.current === sid) {
+        setSystemPrompt(state.systemPrompt ?? "");
+        syncLiveModel(state);
+      }
+    } catch (e) {
+      console.error("Failed to refresh the chat after a change:", e);
+    }
+  }, [cancelEventStreamGrace, clearSlashCommands, closeEvents, loadTools, maintainEventsConnected, syncLiveModel]);
+
   const scrollToMessage = useCallback((element: HTMLElement, viewportOffset = 16) => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -3062,7 +3089,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Present only while a history edit is pending.
     cancelEdit: editEntryId ? cancelEdit : undefined,
     setNoticePaused: setPausedNoticeId,
-    handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
+    handleToolPresetChange, handleChatAccessRebuilt, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
     scrollToBottom, scrollUserMsgToTop, scrollToMessage,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash, summarizationRetry, automation, handleSetAutomation,

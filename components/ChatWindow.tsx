@@ -43,6 +43,8 @@ import {
 } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
 import { isImeComposing } from "@/lib/ime";
+import { useChatAccess } from "@/hooks/useChatAccess";
+import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 
 interface Props {
@@ -318,7 +320,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollUserMsgToTop,
+    handleToolPresetChange, handleChatAccessRebuilt, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollUserMsgToTop,
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
   } = useAgentSession({
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd: wrappedOnAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
@@ -329,6 +331,16 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  // A chat's folder and whether it may use the computer; the server owns both.
+  const chatAccess = useChatAccess(session?.id, chatOnly && Boolean(session) && !isNew, handleChatAccessRebuilt);
+  const [chatUnlockDialog, setChatUnlockDialog] = useState<"unlock" | "lock" | null>(null);
+  const handleToggleChatUnlocked = useCallback((nextUnlocked: boolean) => {
+    if (sessionBusy) {
+      addNotice({ type: "error", message: t("chat.chatUnlockBusy") });
+      return;
+    }
+    setChatUnlockDialog(nextUnlocked ? "unlock" : "lock");
+  }, [addNotice, sessionBusy, t]);
   // The desktop window stays hidden until the conversation it opens on is
   // loaded (or its load failed and the error is what the user will see).
   useReportDesktopReady(!loading, "chat");
@@ -1201,6 +1213,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       projectOptions={chatOnly ? [] : projectOptions}
       onProjectChange={chatOnly ? undefined : onProjectChange}
       chatOnly={chatOnly}
+      chatAccess={chatAccess}
+      onToggleChatUnlocked={handleToggleChatUnlocked}
       onSessionStatsPanelOpen={onSessionStatsPanelOpen}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
@@ -1720,6 +1734,22 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
           </div>
         )}
         {chatInputElement}
+        {chatUnlockDialog && chatAccess && (
+          <ChatConfirmDialog
+            title={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockTitle" : "chat.chatLockTitle")}
+            body={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockBody" : "chat.chatLockBody")}
+            confirmLabel={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockConfirm" : "chat.chatLockConfirm")}
+            cancelLabel={t("chat.chatConfirmCancel")}
+            busy={chatAccess.busy}
+            error={chatAccess.error}
+            onCancel={() => { chatAccess.clearError(); setChatUnlockDialog(null); }}
+            onConfirm={() => {
+              void chatAccess.setUnlocked(chatUnlockDialog === "unlock").then((ok) => {
+                if (ok) setChatUnlockDialog(null);
+              });
+            }}
+          />
+        )}
         {(belowEditorWidgets.length > 0 || hasExtensionStatus) && (
           <div className={`extension-status-shelf${belowEditorWidgets.length > 0 ? " has-widgets" : ""}${hasExtensionStatus ? " has-status" : ""}`}>
             {belowEditorWidgets.length > 0 && <ExtensionWidgets widgets={belowEditorWidgets} />}

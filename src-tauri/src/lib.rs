@@ -208,9 +208,57 @@ fn reveal_item_in_dir(path: String) -> Result<(), String> {
 /// and cache copies (Playwright's Chrome for Testing) are noise in a context
 /// menu, so they are dropped here rather than in the UI. The path travels as
 /// an argument, never spliced into the script.
+///
+/// Launch Services is generous with text: Word, Excel, Numbers and Notes all
+/// claim `public.plain-text`, so a `.mjs` file would list them next to the code
+/// editors. When the file's type has a specific family (source code, JSON,
+/// markdown, ...), only apps that declare a document type inside that family
+/// stay, plus the default app and the system's default text editor. Anything
+/// that cannot be classified (no extension, a dynamic type, macOS < 11) keeps
+/// the full list, as does a filter that would leave nothing to offer.
 #[cfg(target_os = "macos")]
 const LIST_APPS_FOR_FILE_JXA: &str = r#"
 ObjC.import("AppKit");
+// Too broad to say anything about an app: nearly every text claim reaches one.
+const GENERIC_TYPES = [
+  "public.item", "public.data", "public.content", "public.composite-content",
+  "public.text", "public.plain-text", "public.executable",
+];
+function utTypeClass() {
+  const framework = $.NSBundle.bundleWithPath("/System/Library/Frameworks/UniformTypeIdentifiers.framework");
+  if (!framework || framework.isNil() || !framework.load) return null;
+  const cls = $.NSClassFromString("UTType");
+  return cls && !cls.isNil() ? cls : null;
+}
+// The file type's family: the widest of its own and ancestor types that is not
+// generic, so `.mjs` maps to source code and `.json` stays JSON.
+function familyOf(UTType, path) {
+  const dot = path.lastIndexOf(".");
+  if (dot <= path.lastIndexOf("/") + 1 || dot === path.length - 1) return null;
+  const type = UTType.typeWithFilenameExtension(path.slice(dot + 1));
+  if (!type || type.isNil() || ObjC.unwrap(type.dynamic)) return null;
+  const candidates = [type];
+  const supertypes = type.supertypes.allObjects;
+  for (let i = 0; i < supertypes.count; i++) candidates.push(supertypes.objectAtIndex(i));
+  let family = null;
+  for (const candidate of candidates) {
+    if (GENERIC_TYPES.indexOf(ObjC.unwrap(candidate.identifier)) !== -1) continue;
+    if (!family || family.conformsToType(candidate)) family = candidate;
+  }
+  return family;
+}
+function claimsFamily(UTType, appPath, family) {
+  const info = $.NSBundle.bundleWithPath(appPath).infoDictionary;
+  const docs = info && !info.isNil() ? ObjC.deepUnwrap(info.objectForKey("CFBundleDocumentTypes")) : null;
+  for (const doc of docs || []) {
+    const ids = (doc.LSItemContentTypes || []).map((id) => UTType.typeWithIdentifier(id));
+    for (const ext of doc.CFBundleTypeExtensions || []) ids.push(UTType.typeWithFilenameExtension(ext));
+    for (const type of ids) {
+      if (type && !type.isNil() && type.conformsToType(family)) return true;
+    }
+  }
+  return false;
+}
 function run(argv) {
   const url = $.NSURL.fileURLWithPath(argv[0]);
   const workspace = $.NSWorkspace.sharedWorkspace;
@@ -232,8 +280,18 @@ function run(argv) {
       isDefault: appPath === preferredPath,
     });
   }
-  apps.sort((a, b) => (b.isDefault - a.isDefault) || a.name.localeCompare(b.name));
-  return JSON.stringify(apps.slice(0, 40));
+  let kept = apps;
+  const UTType = utTypeClass();
+  const family = UTType ? familyOf(UTType, argv[0]) : null;
+  if (family) {
+    const textEditor = workspace.URLForApplicationToOpenContentType(UTType.typeWithIdentifier("public.plain-text"));
+    const textEditorPath = textEditor && !textEditor.isNil() ? ObjC.unwrap(textEditor.path) : null;
+    const narrowed = apps.filter((app) =>
+      app.isDefault || app.path === textEditorPath || claimsFamily(UTType, app.path, family));
+    if (narrowed.length > 0) kept = narrowed;
+  }
+  kept.sort((a, b) => (b.isDefault - a.isDefault) || a.name.localeCompare(b.name));
+  return JSON.stringify(kept.slice(0, 40));
 }
 "#;
 
@@ -760,6 +818,23 @@ mod tests {
         assert!(defaults <= 1);
         if defaults == 1 {
             assert_eq!(apps[0]["isDefault"], true, "default app is listed first");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn source_code_files_skip_apps_that_only_claim_plain_text() {
+        let file = std::env::temp_dir().join(format!("pi-open-with-{}.mjs", std::process::id()));
+        std::fs::write(&file, "export {};").unwrap();
+        let apps = super::list_apps_for_file_macos(&file);
+        let _ = std::fs::remove_file(&file);
+
+        let apps = apps.unwrap();
+        for app in apps.as_array().expect("an array of apps") {
+            let path = app["path"].as_str().expect("path");
+            for office in ["Microsoft Word.app", "Microsoft Excel.app", "Numbers.app", "Notes.app"] {
+                assert!(!path.ends_with(office), "{path} only claims generic text");
+            }
         }
     }
 

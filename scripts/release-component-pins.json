@@ -1,7 +1,7 @@
 {
   "pi": {
-    "version": "1.3.0",
-    "reason": "Upgrade the bundled SDK to pi 1.3.0; packaged Code mode re-verified with desktop:verify, and enabledModels scope warnings accept pi's new `ambiguous` diagnostic."
+    "version": "1.4.0",
+    "reason": "Upgrade the bundled SDK to pi 1.4.0; typecheck, the unit suite and packaged Code mode (desktop:verify) pass with no source changes needed."
   },
   "pi-web": {
     "version": "0.10.0",

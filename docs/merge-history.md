@@ -80,3 +80,9 @@ Merged 15ab42a..d414e9d (upstream desktop 0.7.5). Adopted: Chats with skills/MCP
 - **Continue in a project uses `DirectoryPicker`**, not upstream's `ProjectPicker` block (declined UI stays declined); validation goes through `validateProjectDirectory`.
 - **The macOS paint mask applies to the main window only** (`show_main_window` checks `window.label() == WINDOW_LABEL`): `end_paint_mask` restores alpha on `WINDOW_LABEL` alone, so masking the remote-backend window would leave it transparent.
 - **Kept ours**: version files, component manifest (`cheneyveron/pi-agent-desktop`), release notes, Homebrew cask; the sidebar's generate-title and full-history menu items were merged with upstream's chat actions.
+
+## Merge of upstream 845a7ec (2026-10-23, desktop 0.7.11)
+Merged d414e9d..845a7ec (upstream desktop 0.7.6, 14 commits). Adopted: a private folder per chat with bash off by default and the per-chat unlock (upstream's rewrite of the Chats hard rule in AGENTS.md replaces the fork's wording; legacy shared-cwd chats keep the old policy), the pi 1.4.0 SDK (`desktop:verify` passes), slim loading of large session files, cached streaming Markdown blocks, Open With filtered by file type family, monospace/CJK font fallbacks, the window-title loop fix.
+- **`MarkdownBody`** keeps the fork's `sessionId` prop on top of upstream's `useStreamingMarkdownText` / `StreamingMarkdown` (the fork's `useStreamingThrottle` is gone with it).
+- **`fork-desktop.md`** keeps the macOS signing note next to upstream's updated file-menu paragraph.
+- **Kept ours**: version files, component manifest (`cheneyveron/pi-agent-desktop`), release notes, Homebrew cask, the Developer ID signing steps in `release.yml`. CSS baseline is `845a7ec1`.

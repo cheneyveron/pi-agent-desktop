@@ -16,7 +16,7 @@ import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSess
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { notifySessionComplete } from "./web-push";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
-import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
 import type {
@@ -65,14 +65,23 @@ import {
   readSessionToolSelection,
   validateSessionToolSelection,
 } from "./session-tool-selection";
-import { isChatWorkspacePath } from "./chat-workspace";
+import {
+  createChatFolder,
+  ensureChatCwd,
+  isChatFolderPath,
+  isChatRootPath,
+  isChatWorkspacePath,
+} from "./chat-workspace";
+import { appendChatUnlock, readChatUnlocked } from "./chat-unlock";
+import { saveAttachedFilesToFolder } from "./chat-attachment-files";
 import { deriveSessionPolicy, type SessionPolicy } from "./session-policy";
 import { chatInstructionsSection, readChatSettings, resolveChatStartDefaults } from "./chat-settings";
 import { ChatFileGrants, isNetworkExposedServer } from "./chat-file-access";
 import { createChatDownloadsExtension } from "./chat-downloads-tool";
 import {
-  CHAT_BLOCKED_TOOL_NAMES,
+  CHAT_FOLDER_TOOL_NAMES,
   CHAT_READ_TOOL_NAME,
+  chatBlockedToolNames,
   chatWorkspacePrompt,
   createChatWorkspaceExtension,
   isChatToolAllowed,
@@ -138,8 +147,12 @@ type ExtensionUiRequestBody = Record<string, unknown> & {
 type AgentSessionWrapperOptions = {
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
-  /** The hidden non-project workspace. Chats reject tool and shell commands. */
+  /** A non-project chat. Chats reject tool commands, and shell commands unless unlocked. */
   chatWorkspace?: boolean;
+  /** The chat owns a folder: its file tools work inside it (a legacy chat has none). */
+  chatFolder?: boolean;
+  /** The user let this chat use their computer. */
+  chatUnlocked?: boolean;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
   /** Connects the session's MCP servers before a prompt starts a run, and lets go of them when it closes (lib/mcp-host.ts). */
@@ -229,10 +242,10 @@ export interface RpcSessionStartOptions {
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
 /** The names a chat may keep active (lib/chat-workspace-policy.ts decides which tools those are). */
-function restrictToChatTools(session: AgentSessionLike, names: readonly string[]): string[] {
+function restrictToChatTools(session: AgentSessionLike, names: readonly string[], hasFolder: boolean): string[] {
   const registered = new Map(session.getAllTools().map((tool) => [tool.name, tool]));
   const extra = new Set(readChatSettings().allowedTools);
-  return names.filter((name) => isChatToolAllowed(registered.get(name) ?? { name }, extra));
+  return names.filter((name) => isChatToolAllowed(registered.get(name) ?? { name }, extra, hasFolder));
 }
 
 // A tool that hands work to another agent. A chat loads no extension that registers one.
@@ -333,6 +346,7 @@ export class AgentSessionWrapper {
   private readonly exactSystemPrompt?: () => string;
   /** What this session may reach; computed once at start (lib/session-policy.ts). */
   private readonly policy: SessionPolicy;
+  private readonly chatFolder: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
   private readonly mcpHost?: Pick<McpHost, "prepareForPrompt" | "dispose">;
@@ -360,7 +374,12 @@ export class AgentSessionWrapper {
     options: AgentSessionWrapperOptions = {},
   ) {
     this.exactSystemPrompt = options.exactSystemPrompt;
-    this.policy = deriveSessionPolicy({ chatOnly: options.chatOnly, chatWorkspace: options.chatWorkspace });
+    this.policy = deriveSessionPolicy({
+      chatOnly: options.chatOnly,
+      chatWorkspace: options.chatWorkspace,
+      chatUnlocked: options.chatUnlocked,
+    });
+    this.chatFolder = options.chatFolder === true;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.mcpHost = options.mcpHost;
@@ -446,17 +465,32 @@ export class AgentSessionWrapper {
     return this.policy.kind === "chat-only";
   }
 
-  /** The hidden non-project workspace (skills and MCP, never files or shell). */
+  /** A non-project chat that is still limited (no shell; files only in its own folder, if it has one). */
   private get chatWorkspace(): boolean {
     return this.policy.kind === "chat";
+  }
+
+  /** A chat the user let use their computer. */
+  private get chatUnlocked(): boolean {
+    return this.policy.kind === "chat-unlocked";
   }
 
   isChatOnly(): boolean {
     return this.chatOnly;
   }
 
+  /** Limited chat: no shell, and file tools only in its own folder. */
   isChatWorkspace(): boolean {
     return this.chatWorkspace;
+  }
+
+  /** Any chat, limited or unlocked; a chat's tool preset is not the user's to change. */
+  isChat(): boolean {
+    return this.chatWorkspace || this.chatUnlocked;
+  }
+
+  isChatUnlocked(): boolean {
+    return this.chatUnlocked;
   }
 
   hasSuppressedCompletionNotifications(): boolean {
@@ -651,7 +685,7 @@ export class AgentSessionWrapper {
   /** Apply a coding tool selection; `carry` defaults to the tools active now. */
   setActiveToolSelection(toolNames: string[], carry: readonly string[] = this.inner.getActiveToolNames()): void {
     const names = resolveActiveToolNames(this.inner, toolNames, carry);
-    this.inner.setActiveToolsByName(this.chatWorkspace ? restrictToChatTools(this.inner, names) : names);
+    this.inner.setActiveToolsByName(this.chatWorkspace ? restrictToChatTools(this.inner, names, this.chatFolder) : names);
   }
 
   /**
@@ -666,14 +700,14 @@ export class AgentSessionWrapper {
   ): Promise<{ cancelled: boolean; aborted?: boolean }> {
     const activeBefore = this.inner.getActiveToolNames();
     const result = await this.inner.navigateTree(targetId, options);
-    if (result.cancelled || this.chatOnly) {
+    if (result.cancelled || this.chatOnly || this.chatUnlocked) {
       return { cancelled: result.cancelled, ...(result.aborted ? { aborted: true } : {}) };
     }
     if (this.chatWorkspace) {
       // The target branch's transcript may declare coding tools a chat must not have.
       const activeAfter = this.inner.getActiveToolNames();
       this.setActiveToolSelection(
-        [CHAT_READ_TOOL_NAME],
+        this.chatFolder ? [...CHAT_FOLDER_TOOL_NAMES] : [CHAT_READ_TOOL_NAME],
         [...activeAfter, ...activeBefore.filter((name) => SESSION_TOOL_NAMES.has(name))],
       );
       return { cancelled: false };
@@ -860,6 +894,10 @@ export class AgentSessionWrapper {
         await this.composerQueue.sendNow(command.id as string);
         return { item: null, pending: this.composerQueue.snapshot(), pendingVersion: this.composerQueue.version };
       case "prompt": {
+        // A chat's folder keeps a copy of the text files attached to the message.
+        if (this.chatFolder && typeof command.message === "string") {
+          saveAttachedFilesToFolder(this.cwd, command.message);
+        }
         // Serialize only admission. Once the preceding prompt has either
         // passed or failed preflight, the SDK can atomically decide whether
         // this submission starts a run or joins its streaming queue.
@@ -1247,7 +1285,7 @@ export class AgentSessionWrapper {
         // A hidden tool is withdrawn: pi ignores it when setting the active tools. A chat
         // never lists the coding tools it blocks.
         const all: ToolInfo[] = this.inner.getAllTools().filter((t) => (
-          t.exposure !== "hidden" && !(this.chatWorkspace && CHAT_BLOCKED_TOOL_NAMES.has(t.name))
+          t.exposure !== "hidden" && !(this.chatWorkspace && chatBlockedToolNames(this.chatFolder).has(t.name))
         ));
         const active = new Set<string>(this.inner.getActiveToolNames());
         // The definition's description is not always what the model gets: `prepareLoadout`
@@ -1295,7 +1333,7 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
-        if (this.chatWorkspace) {
+        if (this.chatWorkspace || this.chatUnlocked) {
           throw new Error("Chats have no tools. Open a project to change the tool preset.");
         }
         const toolNames = command.toolNames as string[];
@@ -2314,7 +2352,7 @@ export async function setRpcSessionTools(
   }
 
   if (existing.isRunning()) throw new Error("Cannot change tools while the session is running");
-  if (existing.isChatWorkspace()) {
+  if (existing.isChat()) {
     throw new Error("Chats have no tools. Open a project to change the tool preset.");
   }
   if (readSubagentSessionResources(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[])) {
@@ -2356,6 +2394,53 @@ export async function setRpcSessionTools(
       ? { thinkingLevel: currentThinkingLevel as ThinkingLevel }
       : {}),
   });
+  return { session: started.session, sessionId: started.realSessionId, recreated: true };
+}
+
+/**
+ * Let one chat use the user's computer (a shell, files anywhere), or take that back. The
+ * choice is a session entry, so it outlives the process; the session restarts to apply it.
+ * Only a chat with a folder that has been saved can be unlocked, and never on a server other
+ * machines can reach.
+ */
+export async function setRpcChatUnlock(
+  sessionId: string,
+  sessionFile: string | undefined,
+  unlocked: boolean,
+): Promise<SetRpcSessionToolsResult> {
+  if (unlocked && isNetworkExposedServer()) {
+    throw new Error("A chat cannot use this computer while the server is open to other machines.");
+  }
+  const existing = getRpcSession(sessionId);
+
+  if (!existing?.isAlive()) {
+    if (!sessionFile) throw new Error("Session not found");
+    const pending = closingRpcSessionWait(sessionId) ?? getLocks().get(sessionId);
+    if (pending) {
+      await pending.catch(() => undefined);
+      return setRpcChatUnlock(sessionId, sessionFile, unlocked);
+    }
+    const manager = SessionManager.open(sessionFile, undefined);
+    if (!isChatFolderPath(manager.getCwd())) throw new Error("Only a chat with its own folder can use the computer.");
+    appendChatUnlock(manager, unlocked);
+    invalidateSessionListCache();
+    const started = await startRpcSession(sessionId, sessionFile, undefined);
+    return { session: started.session, sessionId: started.realSessionId, recreated: false };
+  }
+
+  if (existing.isRunning()) throw new Error("Wait for the chat to finish first");
+  if (!isChatFolderPath(existing.cwd)) throw new Error("Only a chat with its own folder can use the computer.");
+  if (existing.isChatUnlocked() === unlocked) return { session: existing, sessionId, recreated: false };
+  const persistedFile = existing.sessionFile && existsSync(existing.sessionFile)
+    ? existing.sessionFile
+    : undefined;
+  // pi writes a session out only once it has an assistant message; an entry added before
+  // that would be lost with the restart.
+  if (!persistedFile) throw new Error("Send a message first, then this chat can use the computer.");
+  appendChatUnlock(existing.inner.sessionManager, unlocked);
+  invalidateSessionListCache();
+  await existing.shutdown();
+  const started = await startRpcSession(sessionId, persistedFile, undefined);
   return { session: started.session, sessionId: started.realSessionId, recreated: true };
 }
 
@@ -2555,14 +2640,22 @@ export async function startRpcSession(
     sessionManager = SessionManager.open(sessionFile, undefined);
   } else {
     if (!cwd) throw new Error("cwd is required for a new session");
+    // A new chat is requested with the chat root; it gets a folder of its own.
     sessionManager = SessionManager.create(
-      cwd,
+      isChatRootPath(cwd) ? await createChatFolder() : cwd,
       undefined,
       options.parentSession ? { parentSession: options.parentSession } : undefined,
     );
   }
   const sessionCwd = sessionManager.getCwd();
   const chatWorkspace = isChatWorkspacePath(sessionCwd);
+  const chatFolder = isChatFolderPath(sessionCwd);
+  if (chatWorkspace) await ensureChatCwd(sessionCwd);
+  // Unlocking lets a chat use the computer, so it is a local choice: a server that other
+  // machines can reach never honours it.
+  const chatUnlocked = chatFolder
+    && !isNetworkExposedServer()
+    && readChatUnlocked(sessionManager.getEntries() as unknown as SessionEntry[]);
   const subagentResources = sessionFile && !chatWorkspace
     ? readSubagentSessionResources(
         sessionManager.getEntries() as unknown as SessionEntry[],
@@ -2584,6 +2677,7 @@ export async function startRpcSession(
   );
   const sessionPolicy = deriveSessionPolicy({
     chatWorkspace,
+    chatUnlocked,
     chatOnly: selectedToolNames?.length === 0 && !subagentLoadsResources,
   });
   const chatOnly = sessionPolicy.kind === "chat-only";
@@ -2623,7 +2717,7 @@ export async function startRpcSession(
     // Reading a file the user names and saving to Downloads act on this computer, so they
     // are off when the server accepts connections from other machines.
     const chatFilesEnabled = chatWorkspace && !isNetworkExposedServer();
-    const chatGrants = chatFilesEnabled ? new ChatFileGrants() : undefined;
+    const chatGrants = chatFilesEnabled && !chatUnlocked ? new ChatFileGrants() : undefined;
     const chatSessionRef: {
       current?: { resourceLoader: { getSkills(): { skills: { filePath: string; baseDir: string }[] } } };
     } = {};
@@ -2665,11 +2759,12 @@ export async function startRpcSession(
               // Extensions, skills, prompt templates and MCP load as in a project, but no
               // global, ancestor or project instructions may leak into a chat's prompt.
               noContextFiles: true,
-              systemPrompt: chatWorkspacePrompt(chatFilesEnabled),
+              systemPrompt: chatWorkspacePrompt(chatFilesEnabled, { folder: chatFolder, unlocked: chatUnlocked }),
               extensionFactories: [
                 ...(builtins?.extensions ?? []),
                 createArtifactGuideExtension(),
-                ...(chatGrants
+                // A chat with a folder saves into it; only a legacy chat still saves to Downloads.
+                ...(chatGrants && !chatFolder
                   ? [createChatDownloadsExtension({
                       grants: chatGrants,
                       confirmBeforeSaving: () => readChatSettings().confirmSave,
@@ -2680,10 +2775,15 @@ export async function startRpcSession(
                   getCwd: () => sessionCwd,
                   getInstructions: () => chatInstructionsSection(readChatSettings()),
                   getExtraTools: () => readChatSettings().allowedTools,
+                  folder: chatFolder,
+                  unrestricted: chatUnlocked,
                   ...(chatGrants ? { grants: chatGrants } : {}),
                 }),
               ],
-              extensionsOverride: (base) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES),
+              // An unlocked chat has every tool, so extensions that hand work to an agent may load too.
+              ...(chatUnlocked
+                ? {}
+                : { extensionsOverride: (base: LoadExtensionsResult) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES) }),
             }
         : chatOnly
           ? {
@@ -2772,12 +2872,15 @@ export async function startRpcSession(
     // its policy extension confines it to skill files, which is how a skill loads.
     if (!subagentResources && !chatOnly) {
       const initialToolNames = inner.getActiveToolNames();
+      const chatRestricted = chatWorkspace && !chatUnlocked;
       const activeToolNames = resolveActiveToolNames(
         inner,
-        chatWorkspace ? [CHAT_READ_TOOL_NAME] : selectedToolNames ?? initialToolNames,
+        chatRestricted
+          ? chatFolder ? [...CHAT_FOLDER_TOOL_NAMES] : [CHAT_READ_TOOL_NAME]
+          : selectedToolNames ?? initialToolNames,
         initialToolNames,
       );
-      inner.setActiveToolsByName(chatWorkspace ? restrictToChatTools(inner, activeToolNames) : activeToolNames);
+      inner.setActiveToolsByName(chatRestricted ? restrictToChatTools(inner, activeToolNames, chatFolder) : activeToolNames);
     }
 
     const exactSystemPrompt = subagentResources?.exactSystemPrompt !== undefined
@@ -2792,6 +2895,8 @@ export async function startRpcSession(
       exactSystemPrompt,
       chatOnly,
       chatWorkspace,
+      chatFolder,
+      chatUnlocked,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);

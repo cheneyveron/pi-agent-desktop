@@ -70,7 +70,8 @@ export async function POST(req: Request) {
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
     // in sync so the new cwd is immediately readable via /api/files. Without this,
     // a file request under a brand-new cwd would 403 for up to the cache TTL.
-    allowFileRoot(cwd);
+    // A new chat was requested with the chat root and runs in a folder of its own.
+    allowFileRoot(session.cwd || cwd);
     invalidateSessionListCache();
 
     const state = await session.send({ type: "get_state" }) as {

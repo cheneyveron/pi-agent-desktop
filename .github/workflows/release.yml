@@ -153,25 +153,49 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.10
+            ## Pi Agent Desktop 0.7.11
 
             ### Changed
 
-            - The macOS app is now signed with a Developer ID certificate and notarized by Apple, so a downloaded copy opens directly instead of having to be approved in System Settings first.
-            - Because the signature changes with this version, macOS may ask once more for access to folders such as Desktop, Documents or Downloads. Later updates keep the permission.
+            - **Every chat gets its own folder.** A chat now works in a private folder of its own and cannot run shell commands by default. To let one chat use your computer (a shell, files anywhere), turn it on for that chat only; it is never available when the server is exposed to the network. Show a chat's folder in your file manager from its menu, and deleting a chat can move its folder to the Trash.
+            - Updated to the bundled **pi 1.4.0** SDK.
 
-            Bundled components: pi 1.3.0, pi-web 0.10.0.
+            ### Improved
+
+            - Opening very large session files is much faster and uses far less memory: bulky browser-automation output that the interface never shows is no longer parsed.
+            - Streaming replies render faster: finished Markdown blocks are cached instead of being re-rendered on every update.
+            - **Open With** on a source-code or JSON file now lists code editors, not Word, Excel, Numbers, or Notes.
+            - The default font prefers your system monospace and falls back to proper CJK fonts.
+
+            ### Fixed
+
+            - Switching to another session while editing an earlier message no longer leaves that session unable to send ("Entry … not found").
+            - The window title no longer loops on titles that contain repeated spaces.
+
+            Bundled components: pi 1.4.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.10
+            ## Pi Agent Desktop 0.7.11
 
             ### 变更
 
-            - macOS 版现在使用 Developer ID 证书签名并经过 Apple 公证，下载后可以直接打开，不再需要先到“系统设置”里手动允许。
-            - 由于本版本更换了签名，macOS 可能会再询问一次对桌面、文稿、下载等文件夹的访问权限；之后的更新会保留该授权。
+            - **每个对话都有自己的文件夹。** 对话现在在专属的私有文件夹中工作，默认不能执行 shell 命令。如需让某个对话使用你的电脑（shell、访问任意位置的文件），可只为该对话单独开启；当服务对外开放到网络时，此功能始终不可用。可从对话菜单在文件管理器中显示对话文件夹，删除对话时也可把它的文件夹移到废纸篓。
+            - 内置 **pi 1.4.0** SDK 升级。
 
-            内置组件版本：pi 1.3.0、pi-web 0.10.0。
+            ### 改进
+
+            - 打开超大会话文件明显更快、占用内存更少：界面从不显示的大体积浏览器自动化输出不再被解析。
+            - 回复流式输出时渲染更快：已完成的 Markdown 块会被缓存，不再每次更新都重新渲染。
+            - 对源代码、JSON 等文件使用 **打开方式** 时，只列出代码编辑器，不再出现 Word、Excel、Numbers 或“备忘录”。
+            - 默认字体优先使用系统等宽字体，并为中日韩文字提供合适的回退字体。
+
+            ### 修复
+
+            - 正在编辑较早的消息时切换到其他会话，不会再导致那个会话无法发送（“Entry … not found”）。
+            - 当窗口标题含连续空格时，标题不再陷入循环。
+
+            内置组件版本：pi 1.4.0、pi-web 0.10.0。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

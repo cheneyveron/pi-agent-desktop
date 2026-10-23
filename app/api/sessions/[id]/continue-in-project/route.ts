@@ -2,7 +2,7 @@ import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { NextResponse } from "next/server";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { isChatWorkspacePath } from "@/lib/chat-workspace";
+import { isChatFolderPath, isChatWorkspacePath } from "@/lib/chat-workspace";
 import { allowFileRoot } from "@/lib/file-access";
 import { getRpcSession } from "@/lib/rpc-manager";
 import {
@@ -68,6 +68,8 @@ export async function POST(
       sessionId: manager.getSessionId(),
       path: manager.getSessionFile() ?? null,
       cwd,
+      // Files the chat made stay in its folder; the project session starts without them.
+      chatFolder: isChatFolderPath(header.cwd) ? header.cwd : null,
     });
   } catch (error) {
     return NextResponse.json(

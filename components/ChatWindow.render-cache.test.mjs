@@ -52,7 +52,7 @@ test("the transcript loop reads the caches instead of re-deriving per render", (
   assert.doesNotMatch(loop, /splitFinalAssistantBlocks\(|withAssistantBlocks\(|extractTurnWrittenFiles\(/);
 });
 
-test("streaming markdown is throttled and the parsed element memoized", () => {
-  assert.match(markdownSource, /const markdown = useStreamingThrottle\(children, Boolean\(isStreaming\)\);/);
-  assert.match(markdownSource, /const body = useMemo\(\(\) => \(\s*<ReactMarkdown/);
+test("streaming markdown snapshots are coalesced and the renderer element memoized", () => {
+  assert.match(markdownSource, /const markdown = useStreamingMarkdownText\(children, Boolean\(isStreaming\)\);/);
+  assert.match(markdownSource, /const body = useMemo\(\(\) => \(\s*<StreamingMarkdown/);
 });

@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.7.10",
+  "appVersion": "0.7.11",
   "components": [
     {
       "id": "pi-agent-desktop",
       "repository": "cheneyveron/pi-agent-desktop",
-      "version": "0.7.10"
+      "version": "0.7.11"
     },
     {
       "id": "pi",
       "repository": "earendil-works/pi",
-      "version": "1.3.0"
+      "version": "1.4.0"
     },
     {
       "id": "pi-web",

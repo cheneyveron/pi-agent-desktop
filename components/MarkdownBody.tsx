@@ -1,7 +1,9 @@
 "use client";
 
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type MouseEvent } from "react";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
+import { createContext, memo, useContext, useMemo, type ComponentProps, type MouseEvent } from "react";
+import { type Components, type ExtraProps } from "react-markdown";
+import { useStreamingMarkdownText } from "@/hooks/useStreamingMarkdown";
+import { StreamingMarkdown } from "./StreamingMarkdown";
 import { useFileContextMenu } from "@/hooks/useFileContextMenu";
 import { inlineCodeFilePath } from "@/lib/file-context-menu";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
@@ -209,57 +211,30 @@ function buildComponents(
   };
 }
 
-// A streaming bubble receives a new string on every text delta, and each one
-// re-runs remark/rehype/KaTeX over the whole accumulated answer — quadratic in
-// the answer's length. Parse at most once per interval while streaming; the
-// final text renders as soon as streaming ends.
-export const STREAMING_MARKDOWN_INTERVAL_MS = 120;
-
-function useStreamingThrottle(value: string, active: boolean): string {
-  const [shown, setShown] = useState(value);
-  const lastShownAtRef = useRef(0);
-  useEffect(() => {
-    if (!active) return;
-    const publish = () => {
-      lastShownAtRef.current = Date.now();
-      setShown(value);
-    };
-    const wait = lastShownAtRef.current + STREAMING_MARKDOWN_INTERVAL_MS - Date.now();
-    if (wait <= 0) {
-      publish();
-      return;
-    }
-    // Trailing edge: the latest text still lands once the interval elapses.
-    const timer = setTimeout(publish, wait);
-    return () => clearTimeout(timer);
-  }, [value, active]);
-  return active ? shown : value;
-}
-
 // Memoized: markdown parsing + highlighting is the most expensive render work
 // in the app, so parent re-renders with identical props must be free.
 export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, sessionId, onOpenFile, keepLineBreaks, artifacts }: MarkdownBodyProps) {
-  const markdown = useStreamingThrottle(children, Boolean(isStreaming));
+  const markdown = useStreamingMarkdownText(children, Boolean(isStreaming));
   const normalizedMarkdown = useMemo(
-    () => normalizeDisplayMath(artifacts ? encodeArtifactsForMarkdown(markdown) : markdown),
+    () => normalizeDisplayMath(artifacts && markdown.includes(":::artifact") ? encodeArtifactsForMarkdown(markdown) : markdown),
     [markdown, artifacts],
   );
   const components = useMemo(
     () => buildComponents(isStreaming, cwd, sessionId, onOpenFile),
     [isStreaming, cwd, sessionId, onOpenFile],
   );
-  // ReactMarkdown is not memoized itself; reusing the element lets the
-  // throttled re-renders (text unchanged) skip parsing entirely.
+  // Reuse the element when a new network delta has not published a snapshot.
   const body = useMemo(() => (
-    <ReactMarkdown
+    <StreamingMarkdown
+      isStreaming={isStreaming}
       remarkPlugins={keepLineBreaks ? markdownUserRemarkPlugins : markdownRemarkPlugins}
       rehypePlugins={markdownRehypePlugins}
       urlTransform={onOpenFile ? markdownUrlTransform : undefined}
       components={components}
     >
       {normalizedMarkdown}
-    </ReactMarkdown>
-  ), [normalizedMarkdown, components, onOpenFile, keepLineBreaks]);
+    </StreamingMarkdown>
+  ), [normalizedMarkdown, components, onOpenFile, keepLineBreaks, isStreaming]);
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>

@@ -53,6 +53,8 @@ import {
 } from "@/lib/chat-attachments";
 import { SessionMentionMenu } from "./SessionMentionMenu";
 import { SessionAutomationMenu } from "./SessionAutomationMenu";
+import { ChatAccessRows } from "./ChatAccessRows";
+import type { ChatAccessControls } from "@/hooks/useChatAccess";
 import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
@@ -146,6 +148,10 @@ interface Props {
   cwd?: string | null;
   /** The hidden model-only chat workspace: images only, no file/shell mentions. */
   chatOnly?: boolean;
+  /** A chat's folder and computer access (null while unknown or for a legacy chat). */
+  chatAccess?: ChatAccessControls | null;
+  /** The user flipped "let this chat use my computer"; the parent confirms and applies it. */
+  onToggleChatUnlocked?: (nextUnlocked: boolean) => void;
   /** Project root shown in the composer so the session context is always visible. */
   projectPath?: string | null;
   /** Open the project chooser and switch the active project. */
@@ -804,6 +810,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   draftKey,
   cwd,
   chatOnly = false,
+  chatAccess = null,
+  onToggleChatUnlocked,
   projectPath,
   onSelectProject,
   projectOptions = [],
@@ -2009,8 +2017,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   })();
   const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "configured"))?.[0] ?? "configured";
   // A chat (no folder) and the "Chat only" tool preset of a project are different things.
+  const chatUnlocked = chatOnly && Boolean(chatAccess?.state.unlocked);
   const toolPresetLabel = chatOnly
-    ? t("chat.chatWorkspace")
+    ? t(chatUnlocked ? "chat.chatUnlocked" : "chat.chatWorkspace")
     : rawToolPresetLabel === "chat-only"
       ? t("chat.chatOnly")
       : rawToolPresetLabel;
@@ -2022,7 +2031,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const canCompactNow = Boolean(onCompact && !isStreaming && !isCompacting);
   const runSettingsLabel = [
     onThinkingLevelChange ? thinkingDisplayLabel : null,
-    chatOnly ? t("chat.chatWorkspace") : null,
+    chatOnly ? t(chatUnlocked ? "chat.chatUnlocked" : "chat.chatWorkspace") : null,
     !onThinkingLevelChange && chatOnly ? toolPresetLabel : null,
   ].filter(Boolean).join(" · ");
   const runSettingsTitle = [
@@ -2031,7 +2040,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ? t("chat.currentReasoning", { level: thinkingDisplayLabel })
         : t("chat.changeReasoning", { level: thinkingDisplayLabel }))
       : null,
-    chatOnly ? `${t("chat.chatWorkspace")}: ${t("chat.chatOnlyDescription")}` : null,
+    chatOnly
+      ? chatUnlocked
+        ? `${t("chat.chatUnlocked")}: ${t("chat.chatUnlockedDescription")}`
+        : `${t("chat.chatWorkspace")}: ${t(chatAccess && !chatAccess.state.folder ? "chat.chatOnlyDescription" : "chat.chatFolderDescription")}`
+      : null,
     onToolPresetChange ? t("chat.changeToolPreset") + `: ${toolPresetLabel}` : null,
   ].filter(Boolean).join(" · ");
 
@@ -3034,18 +3047,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         <div className="composer-menu-heading" data-separated={onThinkingLevelChange ? true : undefined}>
                           {t("chat.toolsHeading")}
                         </div>
-                        <div
-                          className="composer-menu-row"
-                          role="menuitem"
-                          aria-disabled="true"
-                          data-active="true"
-                          title={t("chat.chatOnlyDescription")}
-                        >
-                          <span style={{ flex: 1 }}>{t("chat.chatWorkspace")}</span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8, whiteSpace: "normal" }}>
-                            {t("chat.chatOnlyDescription")}
-                          </span>
-                        </div>
+                        <ChatAccessRows
+                          access={chatAccess}
+                          onToggleUnlocked={(next) => {
+                            setThinkingDropdownOpen(false);
+                            onToggleChatUnlocked?.(next);
+                          }}
+                        />
                       </>
                     )}
                     </div>

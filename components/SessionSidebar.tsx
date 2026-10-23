@@ -40,6 +40,7 @@ import {
 } from "@/lib/desktop-menu";
 import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
+import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
@@ -1115,8 +1116,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd }),
       });
-      const data = await res.json().catch(() => ({})) as { sessionId?: string; path?: string | null; cwd?: string; error?: string };
+      const data = await res.json().catch(() => ({})) as { sessionId?: string; path?: string | null; cwd?: string; chatFolder?: string | null; error?: string };
       if (!res.ok || !data.sessionId) throw new Error(data.error ?? `HTTP ${res.status}`);
+      // The project session starts without the files the chat made; say where they are.
+      if (data.chatFolder) appNotify.info({ message: t("sidebar.continueInProjectFolderNote", { path: data.chatFolder }) });
       const now = new Date().toISOString();
       activateProject(cwd);
       handleSelectSessionFromList({
@@ -2411,6 +2414,8 @@ function SessionItem({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // A chat with a folder asks in a dialog, which can also move the folder to the Trash.
+  const [folderDeleteOpen, setFolderDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -2446,8 +2451,9 @@ function SessionItem({
 
   const beginDeleteConfirmation = useCallback(() => {
     if (session.transient) return;
-    setConfirmDelete(true);
-  }, [session.transient]);
+    if (session.chatFolder) setFolderDeleteOpen(true);
+    else setConfirmDelete(true);
+  }, [session.chatFolder, session.transient]);
 
   const reportActionError = useCallback((message: string) => {
     appNotify.error({ message });
@@ -2477,12 +2483,15 @@ function SessionItem({
     }
   }, [renameValue, session.id, session.name, onRenamed, reportActionError, t, title]);
 
-  const performDelete = useCallback(async () => {
+  const performDelete = useCallback(async (trashChatFolder = false) => {
     if (session.transient) return;
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(session.id)}${trashChatFolder ? "?chatFolder=trash" : ""}`,
+        { method: "DELETE" },
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(d.error ?? `HTTP ${res.status}`);
@@ -3091,6 +3100,23 @@ function SessionItem({
           )}
 
         </>
+      )}
+      {folderDeleteOpen && createPortal(
+        <ChatConfirmDialog
+          title={t("sidebar.deleteChatTitle")}
+          body={t("sidebar.deleteChatBody")}
+          checkboxLabel={t("sidebar.deleteChatFolder")}
+          checkboxDefault
+          confirmLabel={t("sidebar.delete")}
+          cancelLabel={t("sidebar.cancel")}
+          danger
+          onCancel={() => setFolderDeleteOpen(false)}
+          onConfirm={(trashFolder) => {
+            setFolderDeleteOpen(false);
+            void performDelete(trashFolder);
+          }}
+        />,
+        document.body,
       )}
     </div>
   );
