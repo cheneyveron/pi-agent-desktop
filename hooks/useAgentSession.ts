@@ -224,9 +224,14 @@ function asConcreteThinkingLevel(value?: string | null): ConcreteThinkingLevel |
   return value as ConcreteThinkingLevel;
 }
 
-// Session id -> user entry being edited. ChatWindow remounts per session, so a
-// pending edit lives here as long as that session's in-memory draft does.
+// Session id -> user entry being edited. A pending edit lives here as long as
+// that session's in-memory draft does.
 const pendingHistoryEdits = new Map<string, string>();
+
+function readPendingHistoryEdit(sid: string | undefined): string | null {
+  if (sid && !getDraft(sid)) pendingHistoryEdits.delete(sid);
+  return (sid && pendingHistoryEdits.get(sid)) || null;
+}
 
 const PROMPT_SETTLE_INITIAL_DELAY_MS = 800;
 const PROMPT_SETTLE_POLL_MS = 600;
@@ -687,11 +692,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   // Editing a past message only prefills the composer; the branch moves when it is sent,
   // so cancelling or reloading never hides the rest of the conversation.
-  const [editEntryId, setEditEntryId] = useState(() => {
-    const sid = session?.id;
-    if (sid && !getDraft(sid)) pendingHistoryEdits.delete(sid);
-    return (sid && pendingHistoryEdits.get(sid)) || null;
-  });
+  const [editEntryId, setEditEntryId] = useState(() => readPendingHistoryEdit(session?.id));
+  // ChatWindow stays mounted across session switches, so the edit must follow
+  // the session: an entry id from the previous session makes every send fail
+  // with "Entry … not found" when it navigates there first.
+  const [editSessionId, setEditSessionId] = useState(session?.id);
+  if (editSessionId !== session?.id) {
+    setEditSessionId(session?.id);
+    setEditEntryId(readPendingHistoryEdit(session?.id));
+  }
   const setEdit = useCallback((entryId: string | null) => {
     if (!session?.id) return;
     if (entryId) pendingHistoryEdits.set(session.id, entryId);

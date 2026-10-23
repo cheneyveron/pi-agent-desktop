@@ -856,3 +856,16 @@ test("keeps the compaction control reachable while a turn is auto-compacting", (
   // Starting one is offered only when nothing is running.
   assert.match(chatInputSource, /const canCompactNow = Boolean\(onCompact && !isStreaming && !isCompacting\)/);
 });
+
+test("a pending message edit follows the session when ChatWindow stays mounted", () => {
+  // Switching sessions swaps data in place instead of remounting ChatWindow, so
+  // an edit started in one session must not survive into the next: its entry id
+  // does not exist there and every send would fail with "Entry … not found".
+  assert.match(appShellSource, /Do not bump sessionKey here/);
+  const editSource = source.slice(
+    source.indexOf("  const [editEntryId, setEditEntryId] = useState"),
+    source.indexOf("  const setEdit = useCallback"),
+  );
+  assert.match(editSource, /useState\(\(\) => readPendingHistoryEdit\(session\?\.id\)\)/);
+  assert.match(editSource, /if \(editSessionId !== session\?\.id\) \{\n\s+setEditSessionId\(session\?\.id\);\n\s+setEditEntryId\(readPendingHistoryEdit\(session\?\.id\)\);/);
+});
