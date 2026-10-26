@@ -3196,6 +3196,43 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 
 
 
+/* Click-to-rename title: a quiet hover chip, and an input in the same footprint. */
+.app-topbar-title > .app-topbar-title-editable {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: -1px -5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  cursor: text;
+  transition: background-color 140ms ease;
+}
+
+.app-topbar-title > .app-topbar-title-editable:hover {
+  background: var(--bg-hover);
+}
+
+.app-topbar-title > .app-topbar-title-editable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.app-topbar-title-input {
+  width: 100%;
+  min-width: 0;
+  margin: -2px -5px;
+  padding: 1px 5px;
+  border: var(--hairline) solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.18;
+}
+
 .app-topbar-title > small {
   min-width: 0;
   margin-top: 2px;

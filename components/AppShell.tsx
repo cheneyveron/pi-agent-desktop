@@ -10,6 +10,7 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { selectProjectDirectoryNative, validateProjectDirectory } from "./ProjectPicker";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
+import { TopBarTitle } from "./TopBarTitle";
 import { AppNoticeShelf } from "./AppNoticeShelf";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -47,6 +48,7 @@ import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
 import { isImeComposing } from "@/lib/ime";
+import { appNotify } from "@/lib/notification-store";
 import {
   resolveInitialNavigation,
   type PersistedWorkspace,
@@ -1830,6 +1832,33 @@ export function AppShell() {
     : isChatWorkspaceActive
       ? translate("workspace.chatTitle")
       : activeCwdName ?? translate("appshell.subtitle");
+  const canRenameTopBarTitle = !scheduledOpen && Boolean(selectedSession) && !selectedSession?.transient;
+  const handleTopBarRename = useCallback((name: string) => {
+    const session = selectedSession;
+    if (!session) return;
+    const previousName = session.name;
+    const applyName = (value: string | undefined) => {
+      setSelectedSession((current) => current?.id === session.id ? { ...current, name: value } : current);
+      setSessionStats((current) => current?.sessionId === session.id ? { ...current, sessionName: value } : current);
+    };
+    applyName(name);
+    void fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(d.error ?? `HTTP ${res.status}`);
+        }
+        setRefreshKey((key) => key + 1);
+      })
+      .catch((e: unknown) => {
+        applyName(previousName);
+        appNotify.error({ message: translate("sidebar.renameFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      });
+  }, [selectedSession, translate]);
   const windowTitle = isChatWorkspaceActive
     ? `${topBarTitle} - ${PRODUCT_NAME}`
     : activeCwdName
@@ -2170,10 +2199,13 @@ export function AppShell() {
               </svg>
             </button>
           )}
-          <div className="app-topbar-title" title={topBarTitle}>
-            <span>{topBarTitle}</span>
-            <small>{topBarSubtitle}</small>
-          </div>
+          <TopBarTitle
+            key={selectedSession?.id ?? ""}
+            title={topBarTitle}
+            subtitle={topBarSubtitle}
+            onRename={canRenameTopBarTitle ? handleTopBarRename : undefined}
+            renameLabel={translate("sidebar.rename")}
+          />
           {showChat && !scheduledOpen && (
             <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               <button
