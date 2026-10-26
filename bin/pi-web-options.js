@@ -9,11 +9,16 @@ const CLI_OPTIONS = {
   port: { type: "string", short: "p" },
   hostname: { type: "string", short: "H" },
   "no-open": { type: "boolean" },
+  verbose: { type: "boolean", short: "v" },
   help: { type: "boolean", short: "h" },
 };
 
 function isEnabled(value) {
   return typeof value === "string" && TRUE_VALUES.has(value.trim().toLowerCase());
+}
+
+function isVerboseLogging(env = process.env) {
+  return isEnabled(env.PI_WEB_VERBOSE);
 }
 
 function normalizePort(value) {
@@ -38,12 +43,14 @@ Options:
   -p, --port <port>          Server port (default: 30141, or PORT)
   -H, --hostname <host>      Bind hostname (default: 127.0.0.1, or PI_WEB_HOSTNAME)
       --no-open              Do not open a browser automatically
+  -v, --verbose              Show detailed terminal diagnostics (no payloads)
   -h, --help                 Show this help message and exit
 
 Environment:
   PORT                       Default port when --port is omitted
   PI_WEB_HOSTNAME            Default hostname when --hostname is omitted
   PI_WEB_NO_OPEN             Set to 1/true/yes/on to disable browser open
+  PI_WEB_VERBOSE             Set to 1/true/yes/on for detailed terminal diagnostics
   PI_WEB_PASSWORD            Enable browser password login and API Basic Auth
   PI_WEB_ALLOW_UNAUTHENTICATED  Set to 1 to listen beyond loopback without a password
   PI_WEB_ALLOWED_HOSTS       Extra exact proxy/custom hostnames, comma-separated
@@ -85,7 +92,8 @@ function parseLaunchOptions(args = process.argv.slice(2), env = process.env) {
     port: normalizePort(values.port ?? env.PORT ?? "30141"),
     hostname: values.hostname ?? env.PI_WEB_HOSTNAME ?? "127.0.0.1",
     openBrowser: !values["no-open"] && !isEnabled(env.PI_WEB_NO_OPEN),
+    verbose: Boolean(values.verbose) || isVerboseLogging(env),
   };
 }
 
-module.exports = { parseLaunchOptions, getHelpText };
+module.exports = { parseLaunchOptions, getHelpText, isVerboseLogging };

@@ -88,9 +88,9 @@
     },
     "components/MessageView.tsx": {
       "risk": "high",
-      "drift": 337,
+      "drift": 533,
       "reason": "Message bubble markup adjusted.",
-      "structuralDrift": 340,
+      "structuralDrift": 332,
       "disposition": "accepted"
     },
     "lib/i18n/registry.ts": {
@@ -200,6 +200,19 @@
     }
   },
   "forkOwnedPaths": [
+    "components/ConversationNavigator.tsx",
+    "e2e/conversation-navigator.fixture.tsx",
+    "e2e/conversation-navigator.mjs",
+    "lib/installed-fonts.ts",
+    "lib/system-fonts.ts",
+    "lib/installed-fonts.test.mjs",
+    "app/api/desktop/fonts/",
+    "components/FontSettings.tsx",
+    "hooks/useFonts.ts",
+    "lib/font-preferences.ts",
+    "lib/font-preferences.test.mjs",
+    "lib/font-settings.ts",
+    "app/api/appearance/fonts/",
     "components/StreamingMarkdown.tsx",
     "hooks/useStreamingMarkdown.ts",
     "lib/streaming-markdown.ts",
@@ -270,6 +283,7 @@
     "2026-10-17 — components/FileViewer.tsx: removed the dead FileViewerStatus component. No runtime path used it, so the file retains the toolbar while matching the behavior upstream owns.",
     "2026-10-17 — lib/i18n/messages/{en,zh-CN,zh-TW}.ts: restored to upstream shape; fork additions, replacements, and deliberate deletions moved to lib/i18n/locale-plugins.ts. Runtime message maps are unchanged, but future upstream locale edits no longer conflict with a rewritten fork pack.",
     "2026-10-19 — Rebased local menu/composer customizations onto desktop 0.7.4 (3b6a877), keeping upstream component extractions and SDK 1.3.0. Shared AppSelect/AppCombobox and app-menu tokens (including 4px row gaps) apply to the extracted settings/project/session menus; Config remains a separate entry. Runtime userHome tracing guards, concentric composer geometry and right-aligned toolbar survive. Synchronization procedure: docs/fork-sync.zh-CN.md.",
-    "2026-10-19 — merged abcwyc/pi-agent-desktop main@15ab42a (unified Send/Stop, editable composer outbox). lib/desktop-menu.ts keeps the fork's NEXT_PUBLIC_NATIVE_POPUP_MENUS=1 opt-in (default off, same as upstream's hard-coded false) so desktop-test-build.yml can still build native-popup installers."
+    "2026-10-19 — merged abcwyc/pi-agent-desktop main@15ab42a (unified Send/Stop, editable composer outbox). lib/desktop-menu.ts keeps the fork's NEXT_PUBLIC_NATIVE_POPUP_MENUS=1 opt-in (default off, same as upstream's hard-coded false) so desktop-test-build.yml can still build native-popup installers.",
+    "2026-10-25 — components/MessageView.tsx: backported readable completed write content from agegr/pi-web #1024. Streamed input, empty files and additional arguments, ambiguous paths and paths truncated by the header keep the generic JSON view. No syntax highlighting or styling changes; the implementation converges with pi-web and is retained until the next upstream sync. Drift re-measured against the recorded 6fcd7d4 baseline."
   ]
 }

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { isVerboseLogging } from "./bin/pi-web-options.js";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
 
@@ -12,6 +13,13 @@ const isDesktopBuild = process.env.PI_WEB_DESKTOP_BUILD === "1";
 const gfmAutolinkEmailLoader = join(configDir, "lib/gfm-autolink-email-loader.cjs");
 
 const nextConfig: NextConfig = {
+  logging: {
+    // Use Next's source-level switch rather than filtering arbitrary stdout.
+    // Query strings can carry credentials, even when diagnostics are enabled.
+    incomingRequests: isVerboseLogging() ? { ignore: [/\?/] } : false,
+    browserToTerminal: "warn",
+    serverFunctions: false,
+  },
   // Desktop packaging gets an isolated standalone build. Keeping it outside
   // `.next` prevents a Tauri release build from disrupting `npm run dev`.
   // outputFileTracingRoot roots standalone output in this package. Runtime

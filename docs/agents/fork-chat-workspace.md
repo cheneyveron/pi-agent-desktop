@@ -39,8 +39,8 @@ returned by `/api/sessions`.
   families at a time with "Show more", and keeps the section available when
   there are no projects.
 - Chats never enter `groupByProject()`, recent projects, project pickers,
-  worktree lookup, project trust, the file tree, the right workspace panel,
-  terminals, or Scheduled's project roots.
+  worktree lookup, project trust, terminals, or Scheduled's project roots. The right
+  panel is theirs only as a viewer of their own folder (see "Files on this computer").
 - `AppShell` closes and suppresses project-only chrome while a chat is active.
   The window title and topbar subtitle never expose the hidden cwd.
 - `ChatInput` disables `@` file completions and hides `#` session mentions and `!`
@@ -167,8 +167,16 @@ off (and the prompt says so) when `PI_WEB_HOSTNAME` is a non-loopback address
 - **The chat's folder.** Everything a chat creates lives in its folder; the user finds it
   from the composer's run menu ("Show chat folder", `POST /api/chat-folder/reveal`, which
   looks the folder up from the session, loopback only; the desktop shell uses
-  `revealItemInDirNative`). There is no in-app file panel for chats yet: the right panel,
-  file tree and terminals stay project-only (`AppShell.chat-workspace.test.mjs`).
+  `revealItemInDirNative`). The same folder also opens **in the right panel**: a chat with a
+  folder (`session.chatFolder`) passes its `cwd` to `ChatWindow` as `messageCwd` and an
+  `onOpenFile`, so the "files edited" card, markdown file links and inline-code paths open in
+  `FileViewer` exactly as in a project, and `AppShell` shows the folder's file tree
+  (`workbenchCwd = visibleProjectCwd ?? chatFolderCwd`) behind the topbar panel toggle.
+  `handleOpenFile` only accepts paths inside that folder (`isPathInside`), so a link to
+  anything else does nothing. The panel is reset on every chat switch and when leaving a chat.
+  Terminals, project trust, `@` mentions and artifact tabs stay project-only; a legacy chat has
+  no folder and gets no panel (`AppShell.chat-workspace.test.mjs`,
+  `ChatWindow.chat-folder-files.test.mjs`).
 - **Reading a named path.** `ChatFileGrants` collects the paths in the user's own messages
   (`extractUserNamedPaths`: absolute, `~/`, `file://`, Windows drive paths; bare, or quoted
   when they contain spaces) from `before_agent_start` events of type `user` and, once per

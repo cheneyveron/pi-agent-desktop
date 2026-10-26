@@ -50,7 +50,11 @@ const child = spawn(
   {
     cwd: pkgDir,
     stdio: ["inherit", "pipe", "inherit"],
-    env: { ...process.env, PI_WEB_HOSTNAME: "127.0.0.1" },
+    env: {
+      ...process.env,
+      PI_WEB_HOSTNAME: "127.0.0.1",
+      PI_WEB_VERBOSE: launchOptions.verbose ? "1" : "0",
+    },
   },
 );
 

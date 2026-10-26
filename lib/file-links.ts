@@ -61,7 +61,7 @@ function normalizeLocalPath(filePath: string): string {
   return leadingSlash ? `/${joined}` : joined;
 }
 
-function isPathInside(candidate: string, root: string): boolean {
+export function isPathInside(candidate: string, root: string): boolean {
   const normalizedCandidate = normalizeLocalPath(candidate).replace(/\/+$/, "");
   const normalizedRoot = normalizeLocalPath(root).replace(/\/+$/, "");
   const useCaseInsensitive = /^[a-zA-Z]:\//.test(normalizedCandidate) || /^[a-zA-Z]:\//.test(normalizedRoot);

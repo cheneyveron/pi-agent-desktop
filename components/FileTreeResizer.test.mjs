@@ -24,7 +24,7 @@ test("the tree sits on the panel's left and grows rightward", () => {
 test("a narrow panel collapses the tree only while something is viewed", () => {
   // Rendering is gated on the derived visibility, never the bare preference,
   // or a narrow panel squeezes the viewer until its toolbar clips.
-  assert.match(appShellSource, /\{visibleProjectCwd && fileTreeShown && \(/);
+  assert.match(appShellSource, /\{workbenchCwd && fileTreeShown && \(/);
   assert.doesNotMatch(appShellSource, /\{visibleProjectCwd && fileTreeOpen && \(/);
   assert.match(appShellSource, /const fileTreeAutoCollapsed = fileTreeNarrow && panelHasViewer && !fileTreeNarrowOverride;/);
   assert.match(appShellSource, /ref=\{panelBodyRef\} className="right-panel-body"/);

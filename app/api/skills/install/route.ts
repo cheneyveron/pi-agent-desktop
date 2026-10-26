@@ -4,6 +4,7 @@ import { runNpx } from "@/lib/npx";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
+import { isVerboseLogging } from "@/bin/pi-web-options.js";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,8 @@ export async function POST(req: Request) {
     const args = ["skills", "add", pkg, "-y", "--agent", "pi"];
     if (isGlobal) args.push("-g");
 
-    console.log(`[skills/install] running: npx ${args.join(" ")}`);
+    // Private package URLs may contain credentials; never log raw argv.
+    if (isVerboseLogging()) console.log("[skills/install] running npx skills add");
     const { stdout, stderr } = await runNpx(args, {
       timeout: 60000,
       cwd: !isGlobal && cwd ? cwd : undefined,
