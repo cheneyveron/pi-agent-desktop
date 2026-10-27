@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.7.12",
+  "appVersion": "0.7.13",
   "components": [
     {
       "id": "pi-agent-desktop",
       "repository": "cheneyveron/pi-agent-desktop",
-      "version": "0.7.12"
+      "version": "0.7.13"
     },
     {
       "id": "pi",

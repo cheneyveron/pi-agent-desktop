@@ -1,5 +1,5 @@
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -7,6 +7,8 @@ use tauri::{AppHandle, Manager, Theme, Url};
 
 use crate::shell::WINDOW_LABEL;
 
+#[cfg(not(target_os = "macos"))]
+use std::env;
 #[cfg(not(target_os = "macos"))]
 use tauri::webview::Color;
 
@@ -53,9 +55,8 @@ fn remove_counting(path: &Path) -> u64 {
 }
 
 /// Delete the webview's disk caches while the app runs and return the bytes
-/// freed. Deliberately narrower than `clear_webview_caches`: on macOS that one
-/// removes `~/Library/WebKit/<id>`, which also holds `localStorage` (sidebar
-/// width, drafts, open tabs), so a user-triggered clear must not touch it.
+/// freed. Neither this nor `clear_webview_caches` touches `~/Library/WebKit/<id>`
+/// on macOS: it holds `localStorage` (sidebar width, drafts, open tabs).
 /// Sessions, settings and credentials live in `~/.pi/agent` and are never
 /// reached from here.
 fn clear_runtime_caches(app: &AppHandle) -> u64 {
@@ -199,24 +200,17 @@ fn clear_webview_caches(app: &AppHandle) {
             }
         }
     }
-    // macOS WKWebView: per-origin caches under ~/Library/WebKit/<identifier>.
+    // macOS WKWebView: the HTTP / network cache under ~/Library/Caches/<identifier>/WebKit.
+    // Never ~/Library/WebKit/<identifier>: that is WebsiteData, which holds
+    // localStorage (drafts, unread markers, open tabs) and would be wiped on
+    // every upgrade.
     #[cfg(target_os = "macos")]
-    if let Ok(config_dir) = app.path().app_config_dir() {
-        // app_config_dir on macOS is ~/Library/Application Support/<identifier>;
-        // WKWebView WebsiteKit caches live under ~/Library/WebKit/<bundle-id>.
-        if let Some(home) = dirs_home_dir() {
-            let wk = home.join("Library/WebKit/com.abcwyc.pi-agent");
-            if wk.is_dir() {
-                let _ = fs::remove_dir_all(&wk);
-            }
+    if let Ok(cache_dir) = app.path().app_cache_dir() {
+        let webkit_cache = cache_dir.join("WebKit");
+        if webkit_cache.is_dir() {
+            let _ = fs::remove_dir_all(&webkit_cache);
         }
-        let _ = config_dir; // suppress unused on non-mac
     }
-}
-
-#[cfg(target_os = "macos")]
-fn dirs_home_dir() -> Option<PathBuf> {
-    env::var_os("HOME").map(PathBuf::from)
 }
 
 /// Detect a version change since the last successful launch and, when one is

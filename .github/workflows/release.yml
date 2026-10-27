@@ -153,49 +153,21 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.12
-
-            ### New
-
-            - **Rename a task from its title.** Click the title at the top of the window to edit it; press Enter or click elsewhere to apply, Esc to cancel.
-            - **Appearance settings.** Theme choices move to a new Appearance page: System, Light, Dark, Mist, Rose and Pine, plus five background washes for Light and Dark and separate fonts for the interface and for code. Installed fonts are listed in the desktop app; Reset appears once you change something.
-            - **Open the files a chat made.** A chat can now open and browse the files it generated (an HTML report, for example) in the right panel, from the "Edited files" card or from file links in the reply. Only files inside the chat's own folder open.
-
-            ### Improved
-
-            - Light and Dark use a refreshed palette with a blue selection and focus color. Mist, Rose and Pine keep their own colors.
-            - The conversation navigator now hides when the chat column is too narrow, so it no longer overlaps the transcript.
-            - Settings controls share consistent spacing, and the configuration editors match the General page.
-            - A `write` tool call now shows the file's text instead of raw JSON.
+            ## Pi Agent Desktop 0.7.13
 
             ### Fixed
 
-            - The app waits longer for its server (up to 3 minutes when launched at sign-in). A failed start at sign-in now exits cleanly instead of crashing, and the reason is written to `desktop.log`.
-            - Fixed a rendering warning in the notification toasts.
+            - **Upgrading no longer wipes your local state on macOS.** Unread markers, half-typed messages, open tabs and other window preferences used to disappear after each update, because the post-upgrade cache clear deleted the folder that holds them. It now clears only the web cache.
 
             Bundled components: pi 1.4.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.12
-
-            ### 新增
-
-            - **点击标题重命名任务。** 点击窗口顶部的标题即可编辑；按回车或点击别处应用，按 Esc 取消。
-            - **外观设置。** 主题选项移到新的“外观”页：跟随系统、浅色、深色、Mist、Rose、Pine；浅色与深色另有五种背景渐变，并可分别设置界面字体和代码字体。桌面版会列出已安装的字体；修改后才会出现“重置”。
-            - **打开对话生成的文件。** 对话现在可以在右侧面板中打开并浏览自己生成的文件（例如 HTML 报告），入口是“已编辑文件”卡片或回复中的文件链接。只有对话自己文件夹内的文件可以打开。
-
-            ### 改进
-
-            - 浅色与深色采用新的配色，选区和焦点统一为蓝色；Mist、Rose、Pine 保留各自的配色。
-            - 对话区过窄时会隐藏对话导航，不再遮挡正文。
-            - 设置页控件的间距统一，各配置编辑器与“通用”页样式一致。
-            - `write` 工具调用现在直接显示文件正文，而不是原始 JSON。
+            ## Pi Agent Desktop 0.7.13
 
             ### 修复
 
-            - 应用等待服务启动的时间更长（开机自启时最长 3 分钟）；开机自启时启动失败会正常退出，不再崩溃，原因会写入 `desktop.log`。
-            - 修复通知提示在渲染时出现的警告。
+            - **macOS 升级后不再丢失本地状态。** 以前每次更新后，未读标记、输入到一半的消息、打开的标签页和其他窗口偏好都会消失，因为升级后的缓存清理删除了保存它们的文件夹。现在只清理网页缓存。
 
             内置组件版本：pi 1.4.0、pi-web 0.10.0。
           releaseDraft: true
