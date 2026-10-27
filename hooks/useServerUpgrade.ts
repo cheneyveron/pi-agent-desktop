@@ -11,6 +11,8 @@ async function readState(init?: RequestInit): Promise<ServerUpdateState> {
   const response = await fetch("/api/updates/install", { cache: "no-store", ...init });
   const body = await response.json().catch(() => null) as (ServerUpdateState & { error?: string }) | null;
   if (!response.ok || !body) throw new Error(body?.error ?? `HTTP ${response.status}`);
+  // Render reads `status.phase`; an answer without it (another server, a stub) must not crash Settings.
+  if (typeof body.status?.phase !== "string") throw new Error("Unexpected update status response.");
   return body;
 }
 

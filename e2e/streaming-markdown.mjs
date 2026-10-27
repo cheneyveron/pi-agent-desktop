@@ -8,7 +8,8 @@ const out = "test-results/streaming-markdown";
 await mkdir(out, { recursive: true });
 const buildOptions = {
   entryPoints: ["e2e/streaming-markdown.fixture.tsx"], bundle: true, platform: "browser", format: "iife",
-  jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, logLevel: "warning",
+  // The whole object, like the other fixtures: the fork's lib/desktop-menu.ts reads a NEXT_PUBLIC_ flag.
+  jsx: "automatic", define: { "process.env": '{"NODE_ENV":"production"}' }, logLevel: "warning",
 };
 await build({ ...buildOptions, outfile: `${out}/current.js` });
 await build({

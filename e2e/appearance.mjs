@@ -35,6 +35,8 @@ const servers=[createServer(serve),createServer(serve)];
 for(const server of servers)await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const urls=servers.map(s=>'http://127.0.0.1:'+s.address().port);
 const browser=await chromium.launch();
+// Mist is also a theme name in this fork, so background radios are looked up inside their own group.
+const background=(page,name)=>page.getByRole('radiogroup',{name:'Background'}).getByRole('radio',{name,exact:true});
 const selected=(page,id)=>page.waitForFunction(value=>document.documentElement.dataset.background===value,id);
 const saved=async()=>{for(let i=0;i<200;i++){if(activeWrites===0)return;await delay(20);}throw Error('Save did not finish');};
 const names=['Petal','Mist','Meadow','Dusk','Plain'];const ids=['rex','mist','meadow','dusk','plain'];
@@ -71,7 +73,7 @@ try{
     stored=null;const page=await browser.newPage({viewport:{width,height:820},colorScheme:theme,reducedMotion:'reduce'});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.addInitScript(theme=>{localStorage.setItem('pi-theme',theme);localStorage.setItem('pi-locale','en');},theme);
-    await page.goto(urls[0]);await page.getByRole('radio',{name:'Petal',exact:true}).waitFor();
+    await page.goto(urls[0]);await background(page,'Petal').waitFor();
     const layout=await page.locator('.settings-background-grid').evaluate(grid=>{
       const box=grid.getBoundingClientRect();
       return {right:box.right,sectionRight:grid.parentElement.getBoundingClientRect().right,
@@ -87,14 +89,15 @@ try{
     const gradients=[];
     for(let i=0;i<ids.length;i++){
       const response=i>0?page.waitForResponse(r=>r.url().endsWith('/api/appearance')&&r.request().method()==='PUT'):null;
-      await page.getByRole('radio',{name:names[i],exact:true}).locator('..').click();await selected(page,ids[i]);
+      response?.catch(()=>{});
+      await background(page,names[i]).locator('..').click();await selected(page,ids[i]);
       if(response)await response;
       assert.equal(await page.locator('input[name="background"]:checked').count(),1);
       gradients.push(await page.locator('.settings-dialog-surface').evaluate(el=>getComputedStyle(el).backgroundImage));
     }
     assert.equal(new Set(gradients).size,5,'All five backgrounds must be visually distinct');
-    await page.reload();await selected(page,'plain');assert.equal(await page.getByRole('radio',{name:'Plain',exact:true}).isChecked(),true);
-    await page.getByRole('radio',{name:'Plain',exact:true}).focus();await page.keyboard.press('ArrowLeft');await selected(page,'dusk');
+    await page.reload();await selected(page,'plain');assert.equal(await background(page,'Plain').isChecked(),true);
+    await background(page,'Plain').focus();await page.keyboard.press('ArrowLeft');await selected(page,'dusk');
     await page.getByRole('radio',{name:theme==='light'?'Dark':'Light',exact:true}).locator('..').click();
     await page.waitForFunction(t=>document.documentElement.dataset.theme===t,theme==='light'?'dark':'light');
     assert.equal(await page.locator('html').getAttribute('data-background'),'dusk','Mode changes must preserve background');
@@ -107,12 +110,12 @@ try{
   // The server setting restores the choice even when localStorage is on a new origin.
   const page=await browser.newPage({viewport:{width:1280,height:820}});
   await page.addInitScript(()=>localStorage.setItem('pi-locale','en'));
-  putDelay=120;await page.goto(urls[0]);await page.getByRole('radio',{name:'Petal',exact:true}).locator('..').click();
-  await page.getByRole('radio',{name:'Mist',exact:true}).locator('..').click();await page.getByRole('radio',{name:'Meadow',exact:true}).locator('..').click();
-  await page.getByRole('radio',{name:'Dusk',exact:true}).locator('..').click();await selected(page,'dusk');
+  putDelay=120;await page.goto(urls[0]);await background(page,'Petal').locator('..').click();
+  await background(page,'Mist').locator('..').click();await background(page,'Meadow').locator('..').click();
+  await background(page,'Dusk').locator('..').click();await selected(page,'dusk');
   await page.waitForFunction(()=>!document.querySelector('[role="status"]'));await saved();
   assert.equal(stored,'dusk');assert.equal(maxWrites,1,'Saves must be serialized');
-  await page.goto(urls[1]);await selected(page,'dusk');assert.equal(await page.getByRole('radio',{name:'Dusk',exact:true}).isChecked(),true);
+  await page.goto(urls[1]);await selected(page,'dusk');assert.equal(await background(page,'Dusk').isChecked(),true);
   // A delayed old read cannot undo a newer user selection.
   let release,markBlocked;const held=new Promise(r=>{release=r;});const blocked=new Promise(r=>{markBlocked=r;});
   await page.route('**/api/appearance',async route=>{
@@ -120,11 +123,11 @@ try{
     else await route.continue();
   });
   await page.reload();await page.waitForFunction(()=>document.querySelector('input[value="plain"]'));
-  await blocked;await page.getByRole('radio',{name:'Plain',exact:true}).locator('..').click();release();
+  await blocked;await background(page,'Plain').locator('..').click();release();
   await page.waitForFunction(()=>!document.querySelector('[role="status"]'));await selected(page,'plain');
   await page.unroute('**/api/appearance');
   await page.route('**/api/appearance',route=>route.fulfill({status:500,json:{error:'test failure'}}));
-  await page.getByRole('radio',{name:'Mist',exact:true}).locator('..').click();await page.getByRole('alert').waitFor();
+  await background(page,'Mist').locator('..').click();await page.getByRole('alert').waitFor();
   assert.equal(await page.locator('html').getAttribute('data-background'),'mist','Failed saves keep the local preview');
   await page.close();
   await writeFile(out+'/results.json',JSON.stringify({backgrounds:ids,themes:['light','dark'],widths:[1464,1280,1024,800,640,390,320],maxWrites,persistence:true,staleRead:true,saveFailure:true},null,2));
