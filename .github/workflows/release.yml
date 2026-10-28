@@ -153,21 +153,21 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.13
+            ## Pi Agent Desktop 0.7.14
 
             ### Fixed
 
-            - **Upgrading no longer wipes your local state on macOS.** Unread markers, half-typed messages, open tabs and other window preferences used to disappear after each update, because the post-upgrade cache clear deleted the folder that holds them. It now clears only the web cache.
+            - **Clicking a notification opens its session.** Clicking a "finished" or scheduled-run notification used to only bring the window forward. It now opens the session the notification is about.
 
             Bundled components: pi 1.4.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.13
+            ## Pi Agent Desktop 0.7.14
 
             ### 修复
 
-            - **macOS 升级后不再丢失本地状态。** 以前每次更新后，未读标记、输入到一半的消息、打开的标签页和其他窗口偏好都会消失，因为升级后的缓存清理删除了保存它们的文件夹。现在只清理网页缓存。
+            - **点击通知会打开对应会话。** 以前点击“已完成”或定时任务的通知只会把窗口切到前台，现在会直接打开通知所指的会话。
 
             内置组件版本：pi 1.4.0、pi-web 0.10.0。
           releaseDraft: true
