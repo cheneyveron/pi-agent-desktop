@@ -2314,7 +2314,8 @@ html.dark .sidebar-view-switcher-thumb {
   color: var(--text-dim);
 }
 
-.sidebar-chats-header {
+.sidebar-chats-header,
+.sidebar-pinned-header {
   margin-top: 2px;
 }
 
@@ -9004,13 +9005,7 @@ html.native-desktop :is(
 }
 
 
-/* Chats: the pin mark and archived rows. */
-.session-item-pin {
-  flex: 0 0 auto;
-  color: var(--text-dim);
-  opacity: 0.8;
-}
-
+/* Chats: archived rows. */
 .sidebar-chats-archived-toggle {
   margin-top: 2px;
 }

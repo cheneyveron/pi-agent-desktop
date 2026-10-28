@@ -44,7 +44,8 @@ import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
-import { orderChatFamilies, toggleId } from "@/lib/chat-groups";
+import { toggleId } from "@/lib/chat-groups";
+import { readPinnedSessionIds, splitPinnedFamilies } from "@/lib/pinned-sessions";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
 import { isScheduledRunSession } from "@/hooks/useScheduledTasks";
 import { prefetchSessionData } from "@/lib/session-data-cache";
@@ -282,7 +283,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.chatSessionPages);
     return typeof stored === "number" && Number.isInteger(stored) && stored > 0 ? stored : 0;
   });
-  const [pinnedChats, setPinnedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedChats));
+  // Pinned sessions (chats and project sessions alike) sit under Pinned, above every
+  // section, like Claude Desktop; the set is a browser preference keyed by root id.
+  const [pinnedSessionIds, setPinnedSessionIds] = useState<Set<string>>(() => readPinnedSessionIds());
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(() => getPref(APP_PREF_KEYS.collapsedPinned) === "1");
   const [archivedChats, setArchivedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedChats));
   const [showArchivedChats, setShowArchivedChats] = useState(false);
   const [chatsMenuOpen, setChatsMenuOpen] = useState(false);
@@ -583,9 +587,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [chatsCollapsed]);
 
   useEffect(() => {
-    if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
-    else setPrefJson(APP_PREF_KEYS.pinnedChats, [...pinnedChats]);
-  }, [pinnedChats]);
+    if (pinnedSessionIds.size === 0) removePref(APP_PREF_KEYS.pinnedSessions);
+    else setPrefJson(APP_PREF_KEYS.pinnedSessions, [...pinnedSessionIds]);
+  }, [pinnedSessionIds]);
+
+  useEffect(() => {
+    if (pinnedCollapsed) setPref(APP_PREF_KEYS.collapsedPinned, "1");
+    else removePref(APP_PREF_KEYS.collapsedPinned);
+  }, [pinnedCollapsed]);
 
   useEffect(() => {
     if (archivedChats.size === 0) removePref(APP_PREF_KEYS.archivedChats);
@@ -1109,6 +1118,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onSelectSession(s, false, entryId, blockIndex);
   }, [onSelectSession, setSessionUnread]);
 
+  const togglePin = useCallback((session: SessionInfo) => {
+    setPinnedSessionIds((current) => toggleId(current, session.id));
+  }, []);
+
+  const handleSessionDeleted = useCallback((id: string) => {
+    // A deleted session leaves the pin list too, so the id cannot pin a later session.
+    setPinnedSessionIds((current) => (current.has(id) ? toggleId(current, id) : current));
+    onSessionDeleted?.(id);
+    loadSessions();
+  }, [loadSessions, onSessionDeleted]);
+
   const continueChatInProject = useCallback(async (chat: SessionInfo, cwd: string) => {
     setContinueChat(null);
     try {
@@ -1292,8 +1312,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     (session) => session.workspaceKind !== "chat" && !isChatCwd(session.cwd),
   );
   const allChatFamilies = listSessionFamilies(chatSessions);
-  // Pinned first, then by recency. Archived chats leave the list unless a search is looking for them.
-  const orderedChatFamilies = orderChatFamilies(allChatFamilies, pinnedChats);
+  // A pinned chat or session lives only under Pinned, above every section, whatever its
+  // archive state (Claude Desktop's rule); the rest keep their place, ordered by recency.
+  // Archived chats leave the list unless a search is looking for them.
+  const { pinned: pinnedChatFamilies, rest: orderedChatFamilies } = splitPinnedFamilies(allChatFamilies, pinnedSessionIds);
   const chatFamilies = trimmedSessionQuery
     ? orderedChatFamilies
     : orderedChatFamilies.filter((family) => !archivedChats.has(family.root.id));
@@ -1301,14 +1323,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ? []
     : orderedChatFamilies.filter((family) => archivedChats.has(family.root.id));
   const sessionFamilies = listSessionFamilies(projectSessions);
+  const { pinned: pinnedProjectFamilies, rest: unpinnedSessionFamilies } = splitPinnedFamilies(sessionFamilies, pinnedSessionIds);
+  // Ids (root and subagents) of pinned project families: their project keeps its row.
+  const pinnedSessionKeys = new Set(
+    pinnedProjectFamilies.flatMap((family) => [family.root.id, ...family.subagents.map((session) => session.id)]),
+  );
+  const pinnedFamilies = [...pinnedChatFamilies, ...pinnedProjectFamilies]
+    .sort((a, b) => b.latestModified.localeCompare(a.latestModified));
   const allProjects = groupByProject(projectSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
   const activeProjectRoots = activeProjects.map((group) => group.projectRoot);
   const projectDisplayNames = getProjectDisplayNames(activeProjectRoots);
   const canCollapseAllProjects = activeProjects.some((group) => !collapsedProjects.has(group.projectRoot));
   const canExpandAllProjects = activeProjects.some((group) => collapsedProjects.has(group.projectRoot));
+  // The chronological view skips pinned families too: they are listed under Pinned.
   const timelineFamilies = projectViewMode === "timeline"
-    ? sessionFamilies.filter((family) => (
+    ? unpinnedSessionFamilies.filter((family) => (
         !archivedProjectRoots.has(family.root.projectRoot ?? family.root.cwd)
       )).sort((a, b) => b.root.modified.localeCompare(a.root.modified))
     : [];
@@ -1352,7 +1382,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (folded) setChatSessionPages(0);
   };
 
-  const renderChatFamily = (family: (typeof chatFamilies)[number]) => {
+  const renderChatFamily = (family: (typeof chatFamilies)[number], subtitle?: string) => {
     const [node] = buildSessionTree([family.root, ...family.subagents]);
     if (!node) return null;
     const id = family.root.id;
@@ -1360,6 +1390,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       <SessionFamilyItem
         node={node}
         familySessions={[family.root, ...family.subagents]}
+        subtitle={subtitle}
         selectedSessionId={selectedSessionId}
         runningSessionIds={runningSessionIds}
         unreadSessionIds={unreadSessionIds}
@@ -1369,26 +1400,64 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         onGenerateTitle={onGenerateTitle}
         onOpenFullHistory={onOpenFullHistory}
         onContinueInProject={setContinueChat}
+        pinnedSessionIds={pinnedSessionIds}
+        onTogglePin={togglePin}
         chatActions={{
-          pinned: pinnedChats.has(id),
           archived: archivedChats.has(id),
-          onTogglePin: () => setPinnedChats((current) => toggleId(current, id)),
           onToggleArchive: () => setArchivedChats((current) => toggleId(current, id)),
         }}
-        onSessionDeleted={(deletedId) => {
-          onSessionDeleted?.(deletedId);
-          loadSessions();
-        }}
+        onSessionDeleted={handleSessionDeleted}
       />
     );
   };
 
+  // The Pinned section mixes chats and project sessions, so every row names where it
+  // came from, like the chronological project view does.
+  const renderPinnedFamily = (family: (typeof pinnedFamilies)[number]) => {
+    const isChat = family.root.workspaceKind === "chat" || isChatCwd(family.root.cwd);
+    if (isChat) return renderChatFamily(family, t("sidebar.chats"));
+    const [node] = buildSessionTree([family.root, ...family.subagents]);
+    if (!node) return null;
+    const projectRoot = family.root.projectRoot ?? family.root.cwd;
+    const projectName = projectDisplayNames.get(projectRoot)
+      ?? getProjectDisplayName(projectRoot, activeProjectRoots);
+    return (
+      <SessionFamilyItem
+        node={node}
+        familySessions={[family.root, ...family.subagents]}
+        subtitle={projectName}
+        selectedSessionId={selectedSessionId}
+        runningSessionIds={runningSessionIds}
+        unreadSessionIds={unreadSessionIds}
+        onUnreadChange={setSessionUnread}
+        onSelectSession={handleSelectSessionFromList}
+        onRenamed={loadSessions}
+        onSessionDeleted={handleSessionDeleted}
+        onGenerateTitle={onGenerateTitle}
+        onOpenFullHistory={onOpenFullHistory}
+        pinnedSessionIds={pinnedSessionIds}
+        onTogglePin={togglePin}
+      />
+    );
+  };
+  const pinnedFolded = !trimmedSessionQuery && pinnedCollapsed;
+  const pinnedRunningCount = pinnedFamilies.filter((family) => (
+    [family.root, ...family.subagents].some((session) => runningSessionIds.has(session.id))
+  )).length;
+  const pinnedUnreadCount = pinnedFamilies.filter((family) => (
+    [family.root, ...family.subagents].some((session) => unreadSessionIds.has(session.id))
+  )).length;
+
   const renderProjectGroup = (group: ReturnType<typeof groupByProject>[number]) => {
     const isCollapsed = !trimmedSessionQuery && collapsedProjects.has(group.projectRoot);
     const isActive = group.projectRoot === projectRootFor(selectedCwd);
-    const runningCount = group.runningIds.size;
-    const unreadCount = group.unreadIds.size;
-    const groupTree = buildSessionTree(group.sessions);
+    // Pinned sessions are listed under Pinned instead; the project keeps its row.
+    const groupSessions = pinnedSessionKeys.size === 0
+      ? group.sessions
+      : group.sessions.filter((session) => !pinnedSessionKeys.has(session.id));
+    const runningCount = groupSessions.filter((session) => runningSessionIds.has(session.id)).length;
+    const unreadCount = groupSessions.filter((session) => unreadSessionIds.has(session.id)).length;
+    const groupTree = buildSessionTree(groupSessions);
     const extraPages = projectSessionPages[group.projectRoot] ?? 0;
     const visibleSessionLimit = MAX_VISIBLE_PROJECT_SESSIONS * (extraPages + 1);
     let visibleGroupTree = trimmedSessionQuery
@@ -1541,12 +1610,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 onUnreadChange={setSessionUnread}
                 onSelectSession={handleSelectSessionFromList}
                 onRenamed={loadSessions}
-                onSessionDeleted={(id) => {
-                  onSessionDeleted?.(id);
-                  loadSessions();
-                }}
+                onSessionDeleted={handleSessionDeleted}
                 onGenerateTitle={onGenerateTitle}
                 onOpenFullHistory={onOpenFullHistory}
+                pinnedSessionIds={pinnedSessionIds}
+                onTogglePin={togglePin}
               />
               );
             })}
@@ -1591,12 +1659,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             onUnreadChange={setSessionUnread}
             onSelectSession={handleSelectSessionFromList}
             onRenamed={loadSessions}
-            onSessionDeleted={(id) => {
-              onSessionDeleted?.(id);
-              loadSessions();
-            }}
+            onSessionDeleted={handleSessionDeleted}
             onGenerateTitle={onGenerateTitle}
             onOpenFullHistory={onOpenFullHistory}
+            pinnedSessionIds={pinnedSessionIds}
+            onTogglePin={togglePin}
           />
         );
       })}
@@ -1855,6 +1922,49 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         aria-label={`${t("sidebar.chats")} / ${t("sidebar.projects")}`}
         onScroll={handleListScroll}
       >
+        {/* Pinned sits above every section and only appears while something is pinned. */}
+        {pinnedFamilies.length > 0 && (
+          <>
+            <div className="sidebar-project-tree-header sidebar-pinned-header">
+              <button
+                type="button"
+                className="sidebar-chats-title"
+                data-sidebar-tree-row
+                aria-expanded={!pinnedFolded}
+                title={t(pinnedFolded ? "sidebar.expandPinned" : "sidebar.collapsePinned")}
+                onClick={() => setPinnedCollapsed(!pinnedCollapsed)}
+              >
+                <span className="sidebar-project-tree-title">{t("sidebar.pinned")}</span>
+                {pinnedFolded && (
+                  <span className="sidebar-project-tree-count" title={t("sidebar.sessionCount", { count: pinnedFamilies.length })}>
+                    ({pinnedFamilies.length})
+                  </span>
+                )}
+                {pinnedFolded && (
+                  <span className="sidebar-project-tree-meta">
+                    {pinnedRunningCount > 0 && (
+                      <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: pinnedRunningCount })}>
+                        {pinnedRunningCount}
+                      </span>
+                    )}
+                    {pinnedUnreadCount > 0 && (
+                      <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: pinnedUnreadCount })}>
+                        {pinnedUnreadCount}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </button>
+            </div>
+            {!pinnedFolded && (
+              <div className="sidebar-project-tree-children sidebar-pinned-list">
+                {pinnedFamilies.map((family) => (
+                  <Fragment key={family.root.id}>{renderPinnedFamily(family)}</Fragment>
+                ))}
+              </div>
+            )}
+          </>
+        )}
         <div className={`sidebar-project-tree-header sidebar-chats-header${chatsMenuOpen ? " is-menu-open" : ""}`}>
           <button
             type="button"
@@ -2170,6 +2280,8 @@ function SessionFamilyItem({
   onOpenFullHistory,
   onContinueInProject,
   chatActions,
+  pinnedSessionIds,
+  onTogglePin,
   familySessions,
   subtitle,
 }: {
@@ -2187,8 +2299,11 @@ function SessionFamilyItem({
   onOpenFullHistory?: (sessionId: string) => void;
   /** Chats only: copy the conversation into a project. */
   onContinueInProject?: (session: SessionInfo) => void;
-  /** Chats only: pin and archive, which the row menu offers beside the other actions. */
+  /** Chats only: archive, which the row menu offers beside the other actions. */
   chatActions?: ChatRowActions;
+  /** Root rows only: the Pin / Unpin entry of the row menu. */
+  pinnedSessionIds?: ReadonlySet<string>;
+  onTogglePin?: (session: SessionInfo) => void;
   /** Cross-project context, shown by the chronological sidebar view. */
   subtitle?: string;
 }) {
@@ -2221,6 +2336,8 @@ function SessionFamilyItem({
           onOpenFullHistory={onOpenFullHistory}
           onContinueInProject={depth === 0 ? onContinueInProject : undefined}
           chatActions={depth === 0 ? chatActions : undefined}
+          pinned={depth === 0 && (pinnedSessionIds?.has(node.session.id) ?? false)}
+          onTogglePin={depth === 0 && onTogglePin ? () => onTogglePin(node.session) : undefined}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -2361,9 +2478,7 @@ function showProjectActivity(
 }
 
 interface ChatRowActions {
-  pinned: boolean;
   archived: boolean;
-  onTogglePin: () => void;
   onToggleArchive: () => void;
 }
 
@@ -2380,6 +2495,8 @@ function SessionItem({
   onOpenFullHistory,
   onContinueInProject,
   chatActions,
+  pinned = false,
+  onTogglePin,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
@@ -2398,6 +2515,10 @@ function SessionItem({
   onOpenFullHistory?: (sessionId: string) => void;
   onContinueInProject?: (session: SessionInfo) => void;
   chatActions?: ChatRowActions;
+  /** Listed under the sidebar's Pinned section: the row menu offers Unpin. The section
+   *  header already says so, so the row carries no pin mark of its own. */
+  pinned?: boolean;
+  onTogglePin?: () => void;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -2550,8 +2671,8 @@ function SessionItem({
         ? [{ label: generateTitleLabel, disabled: naming, onSelect: () => { void generateTitle(); } }]
         : []),
       { label: t("sidebar.copySessionId"), onSelect: copySessionId },
-      ...(chatActions
-        ? [{ label: t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat"), onSelect: chatActions.onTogglePin }]
+      ...(onTogglePin
+        ? [{ label: t(pinned ? "sidebar.unpinSession" : "sidebar.pinSession"), onSelect: onTogglePin }]
         : []),
       ...(onContinueInProject
         ? [{ label: t("sidebar.continueInProject"), onSelect: () => onContinueInProject(session) }]
@@ -2573,7 +2694,7 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [beginDeleteConfirmation, copySessionId, generateTitle, generateTitleLabel, isUnread, naming, onGenerateTitle, onOpenFullHistory, onUnreadChange, openFullHistory, chatActions, onContinueInProject, locale, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
+  }, [beginDeleteConfirmation, copySessionId, generateTitle, generateTitleLabel, isUnread, naming, onGenerateTitle, onOpenFullHistory, onTogglePin, onUnreadChange, openFullHistory, chatActions, onContinueInProject, locale, pinned, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
 
   const openSessionMenu = useCallback((point: NativeMenuPoint) => {
     const openDomMenu = () => {
@@ -2582,7 +2703,8 @@ function SessionItem({
         + 31 // copy session id
         + (onOpenFullHistory ? 31 : 0)
         + (onContinueInProject ? 30 : 0)
-        + (chatActions ? 60 : 0)
+        + (onTogglePin ? 30 : 0)
+        + (chatActions ? 30 : 0)
         + ((session.compactionCount ?? 0) > 0 ? 18 : 0)
         + (session.worktreeBranch ? 18 : 0);
       setMenuPos({
@@ -2598,7 +2720,7 @@ function SessionItem({
     } else {
       openDomMenu();
     }
-  }, [chatActions, onContinueInProject, onGenerateTitle, onOpenFullHistory, session.compactionCount, session.worktreeBranch, showNativeSessionMenu]);
+  }, [chatActions, onContinueInProject, onGenerateTitle, onOpenFullHistory, onTogglePin, session.compactionCount, session.worktreeBranch, showNativeSessionMenu]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -2816,11 +2938,6 @@ function SessionItem({
           >
             {title}
           </span>
-          {chatActions?.pinned && (
-            <svg className="session-item-pin" aria-label={t("sidebar.unpinChat")} width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
-            </svg>
-          )}
           {subtitle && (
             <span className="session-item-project" title={subtitle}>
               {subtitle}
@@ -2975,10 +3092,10 @@ function SessionItem({
                 </svg>
                 {t("sidebar.copySessionId")}
               </button>
-              {chatActions && (
+              {onTogglePin && (
                 <button
                   role="menuitem"
-                  onClick={() => { setMenuOpen(false); chatActions.onTogglePin(); }}
+                  onClick={() => { setMenuOpen(false); onTogglePin(); }}
                   style={{
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", height: 30, padding: "0 8px",
@@ -2990,7 +3107,7 @@ function SessionItem({
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
                   </svg>
-                  {t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat")}
+                  {t(pinned ? "sidebar.unpinSession" : "sidebar.pinSession")}
                 </button>
               )}
               {onContinueInProject && (

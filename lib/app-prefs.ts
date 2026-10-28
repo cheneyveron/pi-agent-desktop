@@ -26,8 +26,12 @@ export const APP_PREF_KEYS = {
   collapsedChats: "pi-web:collapsed-chats",
   /** Additional five-chat pages shown past the Chats preview cap. */
   chatSessionPages: "pi-web:chat-session-pages",
-  /** Chat session ids pinned to the top of the Chats section. */
+  /** Session ids (chats and project sessions) shown under the sidebar's Pinned section. */
+  pinnedSessions: "pi-web:pinned-sessions",
+  /** Legacy chat-only pins, folded into `pinnedSessions` on first read. */
   pinnedChats: "pi-web:pinned-chats",
+  /** "1" while the sidebar Pinned section is folded. */
+  collapsedPinned: "pi-web:collapsed-pinned",
   /** Chat session ids hidden from the Chats section until "Show archived". */
   archivedChats: "pi-web:archived-chats",
   updateSnooze: "pi-web:update-snooze",

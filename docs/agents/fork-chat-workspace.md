@@ -52,12 +52,15 @@ returned by `/api/sessions`.
   `chatSessionPages`). Folding drops the extra pages, so unfolding shows five again;
   every "Show more" adds five. A search ignores the fold.
 
-- Chats can be pinned and archived from the row menu (`lib/chat-groups.ts`). Pinned chats
-  come first (a pin mark on the row), the rest by recency; there are no Today / This week
-  headings because every row already shows its relative time. The +5 paging runs over that
-  whole order. Archived chats leave the list (a search still finds them) and sit behind
-  "Show archived (N)" with an Unarchive entry. Pin and archive are browser preferences like
-  archived projects (`pinnedChats`, `archivedChats`), keyed by the chat's root session id.
+- Chats can be pinned and archived from the row menu. A pinned chat leaves the Chats
+  section for the sidebar's Pinned section (see [fork-ui](fork-ui.md), "Pinned sessions");
+  the rest are ordered by recency, with no Today / This week headings because every row
+  already shows its relative time. The +5 paging runs over that order. Archived chats leave
+  the list (a search still finds them) and sit behind "Show archived (N)" with an Unarchive
+  entry; a pinned chat stays under Pinned even while archived. Archive is a browser
+  preference like archived projects (`archivedChats`, `lib/chat-groups.ts`), keyed by the
+  chat's root session id; the old chat-only `pinnedChats` key is folded into
+  `pinnedSessions` on first read.
 
 ## Settings › General › Chats
 

@@ -184,9 +184,10 @@ test("the Chats header shows its menu and add buttons only on hover, like Projec
   assert.doesNotMatch(source, /sidebar-chats-add/);
 });
 
-test("chats can be pinned and archived, ordered by recency with no date groups", () => {
-  // Pinned first, then recency; archived chats leave the list unless a search is running.
-  assert.match(source, /orderChatFamilies\(allChatFamilies, pinnedChats\)/);
+test("chats can be archived, ordered by recency with no date groups", () => {
+  // Pinned chats move to the Pinned section; the rest by recency, and archived chats
+  // leave the list unless a search is running.
+  assert.match(source, /splitPinnedFamilies\(allChatFamilies, pinnedSessionIds\)/);
   assert.match(source, /trimmedSessionQuery\s*\? orderedChatFamilies\s*: orderedChatFamilies\.filter\(\(family\) => !archivedChats\.has\(family\.root\.id\)\)/);
   // Rows already show their own relative time, so the list has no Today / This week headings.
   assert.doesNotMatch(source, /sidebar-chats-group-label|chatsToday|CHAT_GROUP_LABEL_KEYS/);
@@ -194,12 +195,40 @@ test("chats can be pinned and archived, ordered by recency with no date groups",
   assert.match(source, /: chatFamilies\.slice\(0, MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\)\)/);
   // Archived chats stay reachable and recoverable.
   assert.match(source, /sidebar\.showArchivedChats/);
-  assert.match(source, /APP_PREF_KEYS\.pinnedChats/);
   assert.match(source, /APP_PREF_KEYS\.archivedChats/);
-  // Row menu: only chat rows (depth 0) get the actions, in both the native and DOM menus.
+  // Row menu: only chat rows (depth 0) get the action, in both the native and DOM menus.
   assert.match(source, /chatActions=\{depth === 0 \? chatActions : undefined\}/);
-  assert.match(source, /t\(chatActions\.pinned \? "sidebar\.unpinChat" : "sidebar\.pinChat"\)/);
   assert.match(source, /t\(chatActions\.archived \? "sidebar\.unarchiveChat" : "sidebar\.archiveChat"\)/);
+});
+
+test("sessions can be pinned to a Pinned section above every group, like Claude Desktop", () => {
+  // One pin set for chats and project sessions, read through the legacy-chat-pin migration.
+  assert.match(source, /useState<Set<string>>\(\(\) => readPinnedSessionIds\(\)\)/);
+  assert.match(source, /APP_PREF_KEYS\.pinnedSessions/);
+  assert.doesNotMatch(source, /APP_PREF_KEYS\.pinnedChats|orderChatFamilies/);
+  // The section renders only while something is pinned, before the Chats header, and folds.
+  const pinnedAt = source.indexOf("sidebar-pinned-header");
+  const chatsAt = source.indexOf("sidebar-chats-header");
+  assert.ok(pinnedAt > 0 && pinnedAt < chatsAt, "the Pinned section precedes Chats");
+  assert.match(source, /\{pinnedFamilies\.length > 0 && \(/);
+  assert.match(source, /APP_PREF_KEYS\.collapsedPinned/);
+  assert.match(source, /t\("sidebar\.pinned"\)/);
+  // Pinned rows leave their own section: chats come out of the Chats order, project
+  // sessions out of their group's tree (the group keeps its row) and the timeline.
+  assert.match(source, /rest: orderedChatFamilies \} = splitPinnedFamilies\(allChatFamilies, pinnedSessionIds\)/);
+  assert.match(source, /rest: unpinnedSessionFamilies \} = splitPinnedFamilies\(sessionFamilies, pinnedSessionIds\)/);
+  assert.match(source, /\? unpinnedSessionFamilies\.filter\(/);
+  assert.match(source, /group\.sessions\.filter\(\(session\) => !pinnedSessionKeys\.has\(session\.id\)\)/);
+  assert.match(source, /const groupTree = buildSessionTree\(groupSessions\)/);
+  // Every pinned row says where it came from.
+  assert.match(source, /if \(isChat\) return renderChatFamily\(family, t\("sidebar\.chats"\)\)/);
+  // Row menu: root rows of every section get Pin / Unpin (native and DOM), never subagents.
+  assert.match(source, /onTogglePin=\{depth === 0 && onTogglePin \? \(\) => onTogglePin\(node\.session\) : undefined\}/);
+  assert.equal(source.match(/t\(pinned \? "sidebar\.unpinSession" : "sidebar\.pinSession"\)/g)?.length, 2);
+  // The section header names the state; rows carry no pin mark of their own.
+  assert.doesNotMatch(source, /session-item-pin/);
+  // Deleting a session drops its pin.
+  assert.match(source, /const handleSessionDeleted = useCallback\(\(id: string\) => \{\s*\/\/[^\n]*\n\s*setPinnedSessionIds/);
 });
 
 test("a chat's row menu can continue it in a project", () => {
@@ -319,7 +348,8 @@ test("Projects pane chooses between grouped and chronological views", () => {
 
 test("the chronological view lists session families by activity with project labels", () => {
   assert.match(source, /const timelineFamilies = projectViewMode === "timeline"/);
-  assert.match(source, /sessionFamilies\.filter\(\(family\) =>/);
+  // Pinned families are listed under Pinned instead, so the timeline takes the rest.
+  assert.match(source, /\? unpinnedSessionFamilies\.filter\(\(family\) =>/);
   assert.match(source, /\.sort\(\(a, b\) => b\.root\.modified\.localeCompare\(a\.root\.modified\)\)/);
   assert.match(source, /buildSessionTree\(\[family\.root, \.\.\.family\.subagents\]\)/);
   assert.match(source, /className="sidebar-project-timeline"/);
