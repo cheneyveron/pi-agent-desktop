@@ -96,6 +96,9 @@ The prompt-anchor spacer must subtract the floating composer's separate trailing
 ## `!command` output renders live, then collapses
 The pending bash bubble accumulates `bash_execution_update` deltas into `pendingBash.output` and renders them through `BashExecutionView` as a synthesized partial result, default-expanded while running (`ToolCallBlock defaultExpanded`). When the run finishes the persisted message mounts collapsed like any other tool call — live-watched, then folded, is intentional.
 
+## An executing tool call is not "cancelled"
+`ToolCallBlock` shows the `chat.toolCancelled` badge for a toolCall with no paired toolResult, because a loaded transcript that ends that way was interrupted. But the session file is reloaded after every entry, so a running turn's assistant message is persisted minutes before a slow tool (a foreground `Agent`, `get_subagent_result` with `wait`) returns, and persisted messages never carry `isStreaming`. `ChatWindow` therefore passes `toolCallsInFlight={agentRunning && idx === lastAssistantIdx}`: while the agent runs, the latest persisted assistant turn owns the executing calls (their results land as later toolResult entries, so it stays the last assistant message until the model speaks again). Without it a two-minute subagent showed as "Agent cancelled" while it ran. Pinned by `components/sidebar-and-message-updates.test.mjs`.
+
 ## Stats count standalone usage entries
 pi 0.86 cache warming appends `type:"usage"` entries (`kind: "cache_warm"`); `lib/session-stats.ts` folds them in exactly like the SDK's `getSessionStats()`. Skipping them under-reported tokens/cost against the TUI.
 

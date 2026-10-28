@@ -1373,6 +1373,14 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
               for (let i = messages.length - 1; i >= 0; i--) {
                 if (isMessageGroupAnchor(messages[i])) { lastAnchorIdx = i; break; }
               }
+              // While the agent runs, the latest persisted assistant turn owns the
+              // executing tool calls (results land as later toolResult entries, so
+              // the turn stays "last assistant" until the model speaks again).
+              // Its unpaired toolCalls are in flight, not interrupted.
+              let lastAssistantIdx = -1;
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === "assistant") { lastAssistantIdx = i; break; }
+              }
 
               const visibleRefIndexByMessage = new Map<number, number>();
               let refIdx = 0;
@@ -1419,6 +1427,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                   <MessageView
                     key={`${keyPrefix}-view-${messageKey}`}
                     message={msg}
+                    toolCallsInFlight={agentRunning && idx === lastAssistantIdx}
                     toolResults={toolResultsMap}
                     modelNames={modelNames}
                     cwd={messageCwd}

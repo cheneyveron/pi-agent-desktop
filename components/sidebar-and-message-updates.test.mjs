@@ -34,9 +34,22 @@ test("rename and delete failures surface an error instead of being swallowed", (
 });
 
 test("interrupted tool calls render a cancelled marker instead of success styling", () => {
-  // Loaded (non-streaming) message + no paired result ⇒ aborted.
-  assert.match(messageSource, /aborted=\{!isStreaming && !result\}/);
+  // Loaded (non-streaming) message + no paired result ⇒ aborted, unless the
+  // call is still executing in the running turn.
+  assert.match(messageSource, /aborted=\{!isStreaming && !toolCallsInFlight && !result\}/);
   assert.match(messageSource, /t\("chat\.toolCancelled"\)/);
   // Aborted styling is neutral slate, distinct from the green success border.
   assert.match(messageSource, /rgba\(148,163,184,0\.4\)/);
+});
+
+test("executing tool calls of the running turn are not labelled cancelled", () => {
+  // The session file is reloaded after every entry, so an assistant turn whose
+  // tool is still running (a foreground subagent, get_subagent_result with
+  // wait) is persisted minutes before its toolResult. Only the latest
+  // assistant turn can own such calls, and only while the agent runs.
+  const chatWindowSource = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+  assert.match(chatWindowSource, /if \(messages\[i\]\.role === "assistant"\) \{ lastAssistantIdx = i; break; \}/);
+  assert.match(chatWindowSource, /toolCallsInFlight=\{agentRunning && idx === lastAssistantIdx\}/);
+  // The flag must take part in the memo comparison or a stale badge survives agent_end.
+  assert.match(messageSource, /prev\.toolCallsInFlight === next\.toolCallsInFlight/);
 });
