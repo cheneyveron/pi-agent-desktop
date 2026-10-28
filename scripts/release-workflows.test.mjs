@@ -148,7 +148,19 @@ test("a failed release build is reported instead of failing silently", async () 
   assert.match(workflow, /if: failure\(\)/);
   assert.match(workflow, /gh issue create/);
   assert.match(workflow, /release-failure/);
-  assert.match(workflow, /needs: \[build, manifest\]/);
+  assert.match(workflow, /needs: \[draft, build, manifest\]/);
+});
+
+test("a draft left at another commit is replaced, and only this commit is published", async () => {
+  // v0.7.14 went out with installers from 4256a3f2 but the tag and notes of
+  // ddd1b2fb, whose failed run had created the draft tauri-action then reused.
+  const workflow = await readText(join(root, ".github", "workflows", "release.yml"), "utf8");
+  const buildJob = workflow.slice(workflow.indexOf("\n  build:"), workflow.indexOf("\n    strategy:"));
+  assert.match(buildJob, /needs: draft/);
+  assert.match(workflow, /release-draft\.mjs prepare "\$GITHUB_REPOSITORY" "v\$version" "\$GITHUB_SHA"/);
+  assert.match(workflow, /releaseCommitish: \$\{\{ github\.sha \}\}/);
+  const check = workflow.indexOf("release-draft.mjs check");
+  assert.ok(check > 0 && check < workflow.indexOf("gh release edit"), "check the draft's commit before publishing it");
 });
 
 test("the manifest job only publishes when every platform succeeded", async () => {
