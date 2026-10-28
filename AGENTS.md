@@ -7,6 +7,7 @@
 - 使用 CLI 时，在进程内读取该字段并作为子进程的 `GH_TOKEN` 环境变量传入。禁止将 PAT 内容写入文档、命令参数、日志、Git remote 或提交。
 - Git 推送使用已配置的 SSH 别名 `github.com-cheneyveron`。SSH 推送认证与 API / Actions 认证相互独立；不能因 CLI 未登录就判定 PAT 不存在。
 - 当前 secrets 目录以 `/home/hermes/AGENTS.md` 为准：`/ssd/appdata/secrets`。旧的 `/home/hermes/.hermes/secrets` 路径已停用。
+- 以上路径只适用于 Hermes 主机。macOS 工作站上没有 `/ssd/appdata/secrets`：同一账户的 PAT 在 `~/.hermes/secrets/github.yaml` 的 `pat` 字段（`user: cheneyveron`），SSH 别名为 `github-cheneyveron`。
 
 ## 桌面版发布
 
