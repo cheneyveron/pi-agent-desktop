@@ -164,6 +164,7 @@ jobs:
             - **Clicking a notification opens its session.** Clicking a "finished" or scheduled-run notification used to only bring the window forward. It now opens the session the notification is about.
             - **Long-running tool calls no longer show as cancelled.** While the agent was still working, a tool call that takes minutes (a foreground sub-agent, waiting on a sub-agent result) was labelled "cancelled" until its result arrived. It now shows as running.
             - **Docker self-update on hosts with BSD sed.** The updater sidecar's tag rewrite used a GNU-only `sed -i` form; on BSD sed it left the old tag in place and every update rolled back.
+            - **Security updates.** Next.js 16.4.1, undici 8.12.2 (a malicious server could crash the local server process through `fetch`), DOMPurify 3.4.17 and rustls 0.23.46.
 
             Bundled components: pi 1.4.0, pi-web 0.10.0.
 
@@ -180,6 +181,7 @@ jobs:
             - **点击通知会打开对应会话。** 以前点击“已完成”或定时任务的通知只会把窗口切到前台，现在会直接打开通知所指的会话。
             - **耗时较长的工具调用不再显示为“已取消”。** 以前在代理仍在运行时，需要数分钟的工具调用（前台子代理、等待子代理结果）在结果返回前会被标为“已取消”，现在会显示为运行中。
             - **BSD sed 主机上的 Docker 自更新。** updater 边车改写标签时用了仅 GNU sed 支持的 `sed -i` 写法；在 BSD sed 上旧标签原样保留，每次更新都会回滚。
+            - **安全更新。** 升级 Next.js 16.4.1、undici 8.12.2（恶意服务器可通过 `fetch` 让本地服务进程崩溃）、DOMPurify 3.4.17 和 rustls 0.23.46。
 
             内置组件版本：pi 1.4.0、pi-web 0.10.0。
           releaseDraft: true
