@@ -45,7 +45,12 @@ current_tag() { sed -n 's/^PI_AGENT_TAG=//p' "$ENV_FILE" 2>/dev/null | tail -n 1
 
 set_tag() {
   if [ -f "$ENV_FILE" ] && grep -q '^PI_AGENT_TAG=' "$ENV_FILE"; then
-    sed -i "s/^PI_AGENT_TAG=.*/PI_AGENT_TAG=$1/" "$ENV_FILE"
+    # Not `sed -i`: BSD sed (macOS) reads its argument as the backup suffix and
+    # fails, which left the old tag in place. Rewriting through `cat >` also
+    # keeps the file's mode and inode.
+    tmp="$ENV_FILE.tmp"
+    sed "s/^PI_AGENT_TAG=.*/PI_AGENT_TAG=$1/" "$ENV_FILE" > "$tmp" && cat "$tmp" > "$ENV_FILE"
+    rm -f "$tmp"
   else
     ( umask 077; printf 'PI_AGENT_TAG=%s\n' "$1" >> "$ENV_FILE" )
   fi
