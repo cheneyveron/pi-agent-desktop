@@ -6,6 +6,7 @@ import {
   type SyntaxHighlighterProps,
 } from "react-syntax-highlighter";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
+import { copiedCodeText } from "@/lib/code-copy";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -1698,6 +1699,14 @@ function TextFileViewer({
         onScroll={(event) => {
           viewerStateRef.current.scrollTop = event.currentTarget.scrollTop;
           viewerStateRef.current.scrollLeft = event.currentTarget.scrollLeft;
+        }}
+        onCopy={(event) => {
+          const selection = window.getSelection();
+          if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+          const text = copiedCodeText(selection.getRangeAt(0).cloneContents());
+          if (text === null) return;
+          event.preventDefault();
+          event.clipboardData.setData("text/plain", text);
         }}
         style={{ flex: 1, overflow: "auto", outline: "none", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >
