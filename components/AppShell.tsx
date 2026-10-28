@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { onDesktopNotificationOpened } from "@/lib/desktop-notify";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -1459,22 +1460,37 @@ export function AppShell() {
 
   // Scheduled runs have their own notification (success or failure, which task, why).
   // The desktop app shows it natively; a browser tab uses the same path as session completion.
+  const resolveSessionById = useCallback(async (sessionId: string): Promise<SessionInfo | null> => {
+    const known = sessionCatalog.find((s) => s.id === sessionId);
+    if (known) return known;
+    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) as { info?: SessionInfo } | null : null;
+    return data?.info ?? null;
+  }, [sessionCatalog]);
+
   useScheduledRunNotifications({
     onSound: handleBackgroundTaskDone,
     deliverInBrowser: (notification) => {
       if (!shouldShowBrowserNotification()) return;
       void (async () => {
         const { sessionId } = notification;
-        let targetSession: SessionInfo | null = sessionId ? sessionCatalog.find((s) => s.id === sessionId) ?? null : null;
-        if (!targetSession && sessionId) {
-          const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }).catch(() => null);
-          const data = response?.ok ? await response.json().catch(() => null) as { info?: SessionInfo } | null : null;
-          targetSession = data?.info ?? null;
-        }
+        const targetSession = sessionId ? await resolveSessionById(sessionId) : null;
         deliverSessionNotification({ targetSession, title: notification.title, body: notification.body, tag: notification.tag });
       })();
     },
   });
+
+  // Clicking a native desktop notification opens the session it is about.
+  const openNotifiedSessionRef = useRef<(sessionId: string) => void>(() => {});
+  useEffect(() => {
+    openNotifiedSessionRef.current = (sessionId) => {
+      if (selectedSession?.id === sessionId) return;
+      void resolveSessionById(sessionId).then((session) => {
+        if (session) handleSelectSession(session);
+      });
+    };
+  });
+  useEffect(() => onDesktopNotificationOpened((sessionId) => openNotifiedSessionRef.current(sessionId)), []);
 
   const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
     if (selectedSession?.relation?.kind === "subagent") return;
