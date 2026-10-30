@@ -30,7 +30,7 @@ export function useScheduledRunNotifications(options: Options): void {
       const notification = describeRunNotification(event, translate);
       if (!notification) return;
       if (notification.sound) onSound();
-      if (isTauriDesktop()) void notifyDesktop({ title: notification.title, body: notification.body, sessionId: notification.sessionId });
+      if (isTauriDesktop()) void notifyDesktop({ title: notification.title, body: notification.body });
       else deliverInBrowser(notification);
     });
     return () => { off(); release(); };

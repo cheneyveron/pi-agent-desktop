@@ -791,7 +791,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         void notifyDesktop({
           title: "Pi Agent",
           body: `Finished: ${sessionName(id)}`,
-          sessionId: id,
         });
       }
     }
