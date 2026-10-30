@@ -20,16 +20,14 @@ test("尚未落盘的会话不会触发依赖 JSONL 的自动命名", () => {
 
 test("会话落盘后会用服务端记录清除临时状态", () => {
   assert.match(source, /\{ \.\.\.prev, \.\.\.full, transient: full\.transient \?\? false \}/);
-  assert.match(source, /void hydrateSelectedSession\(sessionId\)\.then\(\(full\) => \{/);
+  assert.match(source, /if \(selectedSession\) void hydrateSelectedSession\(selectedSession\.id\);/);
 });
 
-test("新会话的第一轮结束后自动生成标题，且只针对本窗口新建且未命名的会话", () => {
-  // Tracked at creation, only when the session has no name yet.
-  assert.match(source, /if \(!session\.name\) freshSessionIdsRef\.current\.add\(session\.id\)/);
-  // Decided from the server record after the turn: a session without a file
-  // waits for the next turn; a name given meanwhile (any window) wins.
-  assert.match(source, /if \(!full \|\| full\.transient \|\| !freshSessionIdsRef\.current\.has\(sessionId\)\) return;/);
-  assert.match(source, /freshSessionIdsRef\.current\.delete\(sessionId\);\s*if \(full\.name \|\| activeSessionIdRef\.current !== sessionId\) return;\s*void handleAutoNameRef\.current\(\);/);
+test("新会话的标题由服务端在第一条消息后生成，浏览器不再在第一轮结束后重复命名", () => {
+  assert.doesNotMatch(source, /freshSessionIdsRef|handleAutoNameRef/);
+  const rpc = fs.readFileSync(new URL("../lib/rpc-manager.ts", import.meta.url), "utf8");
+  assert.match(rpc, /\?\.role === "user"\) \{\s*this\.autoNamer\.onUserMessage\(\);/);
+  assert.match(rpc, /if \(event\.type === "agent_end"\) this\.autoNamer\.onAgentEnd\(\);/);
 });
 
 test("侧栏行菜单共用同一个标题生成器与完整历史入口", () => {

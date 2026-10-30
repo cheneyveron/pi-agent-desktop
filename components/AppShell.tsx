@@ -1320,8 +1320,9 @@ export function AppShell() {
   }, []);
 
   // Asks the server to name a session from its transcript. Shared by the More
-  // menu (selected session, with status chips), the sidebar's row menu (any
-  // session) and the automatic naming after a new session's first turn.
+  // menu (selected session, with status chips) and the sidebar's row menu (any
+  // session). A new session is named by the server from its first message
+  // (lib/session-auto-name.ts); the name arrives through the session list.
   const generateSessionTitleFor = useCallback(async (sessionId: string): Promise<string> => {
     const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
       method: "POST",
@@ -1337,12 +1338,6 @@ export function AppShell() {
     return title;
   }, []);
 
-  // Sessions created from this window's composer that have not been named
-  // yet: the first completed turn names them automatically. Tracked by id so
-  // a session the user resumes later (or renames mid-run) is never renamed
-  // behind their back.
-  const freshSessionIdsRef = useRef<Set<string>>(new Set());
-  const handleAutoNameRef = useRef<() => Promise<void>>(async () => {});
 
   const handleOpenSession = useCallback(async (sessionId: string) => {
     // Prefer the catalogue the sidebar already delivered: selecting from it
@@ -1385,7 +1380,6 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = null;
     setNewSessionCwd(null);
     setSelectedSession(session);
-    if (!session.name) freshSessionIdsRef.current.add(session.id);
     void hydrateSelectedSession(session.id);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
   }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
@@ -1433,19 +1427,7 @@ export function AppShell() {
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
-    if (selectedSession) {
-      const sessionId = selectedSession.id;
-      void hydrateSelectedSession(sessionId).then((full) => {
-        // Name a fresh session once its first turn is on disk. The server's
-        // record decides: a turn that ended without an assistant message has
-        // no file yet (try again after the next turn), and a name given in
-        // the meantime, from any window, wins.
-        if (!full || full.transient || !freshSessionIdsRef.current.has(sessionId)) return;
-        freshSessionIdsRef.current.delete(sessionId);
-        if (full.name || activeSessionIdRef.current !== sessionId) return;
-        void handleAutoNameRef.current();
-      });
-    }
+    if (selectedSession) void hydrateSelectedSession(selectedSession.id);
 
     if (selectedSession?.relation?.kind === "subagent") return;
     if (!shouldShowBrowserNotification()) return;
@@ -1524,7 +1506,6 @@ export function AppShell() {
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 5000);
     }
   }, [autoNameStatus.kind, generateSessionTitleFor, selectedSession?.id]);
-  handleAutoNameRef.current = handleAutoName;
 
   useEffect(() => {
     if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);

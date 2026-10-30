@@ -17,7 +17,7 @@ import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trus
 import { notifySessionComplete } from "./web-push";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
-import type { LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
 import type {
@@ -89,6 +89,8 @@ import {
   withoutAgentDelegation,
 } from "./chat-workspace-policy";
 import { ComposerQueue } from "./composer-queue";
+import { isFirstUserMessage, SessionAutoNamer } from "./session-auto-name";
+import { generateSessionTitle } from "./session-title";
 import type { PendingComposerMessage } from "./composer-queue-types";
 
 // ============================================================================
@@ -340,6 +342,15 @@ export class AgentSessionWrapper {
   private activeMutatingCommands = 0;
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
+  // Names a new session from its first message (lib/session-auto-name.ts).
+  private readonly autoNamer = new SessionAutoNamer({
+    sessionName: () => this.inner.sessionManager.getSessionName(),
+    isFirstUserMessage: () => isFirstUserMessage(this.inner.sessionManager.getEntries()),
+    generate: async () => (await generateSessionTitle(this.inner as unknown as AgentSession)).title,
+    apply: (title) => this.inner.setSessionName(title),
+    isAlive: () => this.isAlive(),
+    log: (message) => console.error(`[pi-web] ${message}`),
+  });
   private promptAdmissionTail: Promise<void> = Promise.resolve();
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
@@ -521,6 +532,10 @@ export class AgentSessionWrapper {
         invalidateSessionListCache();
         notifyRunningChange();
       }
+      if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "user") {
+        this.autoNamer.onUserMessage();
+      }
+      if (event.type === "agent_end") this.autoNamer.onAgentEnd();
       this.trackActiveToolEvent(event);
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       this.emit(event);
