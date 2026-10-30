@@ -44,6 +44,11 @@ description = "Allows the UI to show and focus the main window."
 commands.allow = ["show_main_window_cmd"]
 
 [[permission]]
+identifier = "allow-show-session-notification"
+description = "Allows the UI to post a native notification that reports a click on it."
+commands.allow = ["show_session_notification"]
+
+[[permission]]
 identifier = "allow-app-ready"
 description = "Allows the UI to report that its first screen is ready, which shows the hidden main window."
 commands.allow = ["app_ready"]

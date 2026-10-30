@@ -2831,6 +2831,8 @@ dependencies = [
  "getrandom 0.3.4",
  "ksni",
  "libc",
+ "mac-notification-sys",
+ "notify-rust",
  "objc2",
  "objc2-foundation",
  "serde",

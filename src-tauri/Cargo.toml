@@ -25,6 +25,9 @@ tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "^2"
 tauri-plugin-dialog = "^2"
 tauri-plugin-notification = "^2"
+# Notifications that report a click (src/shell/notification.rs); the same
+# version tauri-plugin-notification already pulls in.
+notify-rust = "4.18"
 tauri-plugin-process = "^2"
 tauri-plugin-updater = "^2"
 tauri-plugin-window-state = "^2"
@@ -37,6 +40,8 @@ window-vibrancy = "0.8"
 # already pulls in.
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString"] }
+# Waits for a click on a notification body, which notify-rust does not on macOS.
+mac-notification-sys = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Avoid libappindicator's GTK menu bridge, which can render blank labels under GNOME.

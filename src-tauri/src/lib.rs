@@ -35,8 +35,8 @@ use shell::build_platform_tray;
 use shell::popup::{show_popup_menu, PopupMenuSelection, POPUP_ID_PREFIX};
 use shell::{
     app_ready, build_window, launched_at_login, open_external, quit_app, quit_application,
-    schedule_reveal_deadline, set_close_quits, show_main_window_cmd, window_painted, CloseQuits,
-    DesktopApiToken, DesktopServer, AUTOSTART_ARG, WINDOW_LABEL,
+    schedule_reveal_deadline, set_close_quits, show_main_window_cmd, show_session_notification,
+    window_painted, CloseQuits, DesktopApiToken, DesktopServer, AUTOSTART_ARG, WINDOW_LABEL,
 };
 #[cfg(target_os = "linux")]
 use shell::{build_linux_tray, show_main_window};
@@ -1290,6 +1290,7 @@ pub fn run() {
             set_close_quits,
             quit_app,
             show_main_window_cmd,
+            show_session_notification,
             app_ready,
             window_painted,
             set_ui_theme,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { onDesktopNotificationClicked } from "@/lib/desktop-notify";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -1478,6 +1479,18 @@ export function AppShell() {
       })();
     },
   });
+
+  // Clicking a native desktop notification opens the session it is about.
+  const openNotifiedSessionRef = useRef<(sessionId: string) => void>(() => {});
+  useEffect(() => {
+    openNotifiedSessionRef.current = (sessionId) => {
+      if (selectedSession?.id === sessionId) return;
+      void resolveSessionById(sessionId).then((session) => {
+        if (session) handleSelectSession(session);
+      });
+    };
+  });
+  useEffect(() => onDesktopNotificationClicked((sessionId) => openNotifiedSessionRef.current(sessionId)), []);
 
   const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
     if (selectedSession?.relation?.kind === "subagent") return;

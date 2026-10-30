@@ -26,6 +26,7 @@
     "allow-set-close-quits",
     "allow-quit-app",
     "allow-show-main-window-cmd",
+    "allow-show-session-notification",
     "allow-app-ready",
     "allow-window-painted",
     "allow-set-ui-theme",

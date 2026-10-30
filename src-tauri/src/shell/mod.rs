@@ -1,4 +1,5 @@
 mod macos_menu;
+mod notification;
 mod platform_tray;
 pub mod popup;
 mod server;
@@ -21,6 +22,7 @@ use crate::logging::{desktop_log, since_process_start_ms};
 
 #[cfg(target_os = "macos")]
 pub use macos_menu::build_macos_app_menu;
+pub use notification::show_session_notification;
 #[cfg(target_os = "linux")]
 pub use platform_tray::build_linux_tray;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
