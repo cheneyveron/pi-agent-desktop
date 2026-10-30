@@ -171,35 +171,43 @@ jobs:
           releaseName: pi-agent-desktop v__VERSION__
           releaseCommitish: ${{ github.sha }}
           releaseBody: |
-            ## Pi Agent Desktop 0.7.14
+            ## Pi Agent Desktop 0.7.15
 
-            ### Added
+            ### Improved
 
-            - **Pin sessions.** Any chat or project session can be pinned from its row menu. Pinned sessions move to a new Pinned section at the top of the sidebar, above Chats and Projects, with a label naming where each one came from, and stay there even if their project or chat is archived. Unpin sends a session back to its place. Chats you had already pinned are carried over.
+            - **Large files open fast in the side panel.** The source and diff views now render only the lines on screen, so a file of thousands of lines no longer slows down the whole app, and switching between Source and Diff is immediate. Files up to 1 MB keep their syntax highlighting, and the diff view is highlighted too. Find (Ctrl/Cmd+F) still searches the whole file.
+            - **A calmer look.** Neutral grays, a flat window and sidebar canvas, thinner two-tier borders that stay visible on Retina screens, softer code colors and consistent corner radii. The background presets from 0.7.12 are replaced by this neutral canvas; System, Light, Dark, Mist, Rose and Pine remain.
+            - **New sessions get their name sooner.** A title is generated from the first message while the first task is still running, and it no longer depends on staying on that session.
+            - **Richer replies.** A leading YAML block is shown as a code block instead of disappearing, GitHub alerts (`> [!NOTE]`) render as callouts, long code blocks fold, and code blocks the reply says were saved to a file get an Open button.
+            - **Choose the terminal shell.** General settings lets you pick the shell used by "Open in terminal". Terminals follow the workbench's light and dark colors and start faster.
+            - Session and project menus stay inside the window, delete confirmations are shared and keyboard friendly, and title generation shows its progress with an actionable message when it fails.
 
             ### Fixed
 
-            - **Clicking a notification opens its session.** Clicking a "finished" or scheduled-run notification used to only bring the window forward. It now opens the session the notification is about.
-            - **Long-running tool calls no longer show as cancelled.** While the agent was still working, a tool call that takes minutes (a foreground sub-agent, waiting on a sub-agent result) was labelled "cancelled" until its result arrived. It now shows as running.
-            - **Docker self-update on hosts with BSD sed.** The updater sidecar's tag rewrite used a GNU-only `sed -i` form; on BSD sed it left the old tag in place and every update rolled back.
-            - **Security updates.** Next.js 16.4.1, undici 8.12.2 (a malicious server could crash the local server process through `fetch`), DOMPurify 3.4.17 and rustls 0.23.46.
+            - **Copying code from the side panel no longer includes line numbers**, including selections that span lines scrolled out of view.
+            - **Notifications open their session only when clicked.** Returning to the app any other way (Cmd+Tab, the Dock, a window click) no longer jumps to the last notified session.
+            - A project that is a subfolder of a Git repository no longer shows the parent repository's worktrees in the sidebar.
 
             Bundled components: pi 1.4.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.14
+            ## Pi Agent Desktop 0.7.15
 
-            ### 新增
+            ### 改进
 
-            - **置顶会话。** 任意对话或项目会话都可以在行菜单中置顶。置顶的会话会移到侧栏最上方新的“已置顶”区块（在对话和项目之上），每行标注它来自哪里；即使所属项目或对话被归档，也仍然留在已置顶区块。取消置顶会把会话放回原处。之前已置顶的对话会自动沿用。
+            - **侧栏面板打开大文件更快。** 源码与差异视图现在只渲染屏幕上的行，数千行的文件不再拖慢整个应用，源码与差异之间切换也是即时的。1 MB 以内的文件保留语法高亮，差异视图也有高亮。查找（Ctrl/Cmd+F）仍然搜索整个文件。
+            - **更平静的外观。** 中性灰、统一的窗口与侧栏纯色底、更细的两档边线（在 Retina 屏上依然清晰）、更柔和的代码配色和统一圆角。0.7.12 的背景预设由中性底色取代；跟随系统、浅色、深色、Mist、Rose 和 Pine 保留。
+            - **新会话更早得到标题。** 第一条消息发出后、首个任务仍在运行时即生成标题，不再要求一直停留在该会话上。
+            - **更丰富的回复渲染。** 开头的 YAML 块以代码块显示而不是消失；支持 GitHub 提示块（`> [!NOTE]`）；长代码块可折叠；回复中说明已保存到文件的代码块会出现“打开”按钮。
+            - **选择终端 Shell。** “通用”设置可选择“在终端中打开”使用的 Shell。终端使用工作台的明暗配色且启动更快。
+            - 会话和项目菜单不会超出窗口，删除确认改为共用组件并支持键盘操作；标题生成会显示进度，失败时给出可操作的提示。
 
             ### 修复
 
-            - **点击通知会打开对应会话。** 以前点击“已完成”或定时任务的通知只会把窗口切到前台，现在会直接打开通知所指的会话。
-            - **耗时较长的工具调用不再显示为“已取消”。** 以前在代理仍在运行时，需要数分钟的工具调用（前台子代理、等待子代理结果）在结果返回前会被标为“已取消”，现在会显示为运行中。
-            - **BSD sed 主机上的 Docker 自更新。** updater 边车改写标签时用了仅 GNU sed 支持的 `sed -i` 写法；在 BSD sed 上旧标签原样保留，每次更新都会回滚。
-            - **安全更新。** 升级 Next.js 16.4.1、undici 8.12.2（恶意服务器可通过 `fetch` 让本地服务进程崩溃）、DOMPurify 3.4.17 和 rustls 0.23.46。
+            - **从侧栏面板复制代码不再带上行号**，包括跨越已滚出视野的行的选区。
+            - **只有点击通知才会打开对应会话。** 通过其他方式回到应用（Cmd+Tab、程序坞、点击窗口）不再跳到最后通知的会话。
+            - 作为 Git 仓库子目录的项目不再在侧栏中显示父仓库的工作树。
 
             内置组件版本：pi 1.4.0、pi-web 0.10.0。
           releaseDraft: true
