@@ -158,9 +158,24 @@ export function clearFindHighlights(): void {
 }
 
 /** Scroll `container` so `range` sits roughly mid-viewport, only when it is not already comfortably visible. */
-export function scrollRangeIntoView(container: HTMLElement, range: Range): void {
+export function scrollRangeIntoView(container: HTMLElement, range: Range, retry = true): void {
   const rect = range.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return;
+  if (rect.width === 0 && rect.height === 0) {
+    // Text inside `content-visibility: auto` content the browser has not laid
+    // out yet (the file viewer's off-screen code blocks) has no box. Centre the
+    // nearest ancestor that has one; once on screen it is laid out, and the next
+    // frame can place the match itself.
+    let element = range.startContainer.parentElement;
+    while (element && element !== container && element.getBoundingClientRect().height === 0) {
+      element = element.parentElement;
+    }
+    if (!retry || !element || element === container) return;
+    const target = element.getBoundingClientRect();
+    const view = container.getBoundingClientRect();
+    container.scrollTop += target.top - view.top - view.height / 2 + target.height / 2;
+    requestAnimationFrame(() => scrollRangeIntoView(container, range, false));
+    return;
+  }
   const box = container.getBoundingClientRect();
   const marginY = Math.min(48, box.height / 4);
   const marginX = Math.min(48, box.width / 4);

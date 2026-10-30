@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode } from "react";
-import {
-  createElement as renderSyntaxNode,
-  type SyntaxHighlighterProps,
-} from "react-syntax-highlighter";
-import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
+import { useEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { createElement as renderSyntaxNode, type createElementProps } from "react-syntax-highlighter";
+import { vs, vscDarkPlus } from "@/lib/syntax-highlighting";
+import { highlightCodeLines, type CodeLine } from "@/lib/code-highlight";
 import { copiedCodeText } from "@/lib/code-copy";
+import { CODE_ROW_HEIGHT, VirtualCodeList } from "./VirtualCodeList";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -66,7 +65,6 @@ interface FileData {
   truncated: boolean;
 }
 
-const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
 const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   source: "Source",
   preview: "Preview",
@@ -97,10 +95,6 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   verticalAlign: "top",
 };
 
-type SourceCodeRendererProps = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0] & {
-  wrapLines: boolean;
-};
-
 interface SelectedLineRange {
   startLine: number;
   endLine: number;
@@ -113,6 +107,10 @@ function MentionIcon() {
       <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
     </svg>
   );
+}
+
+function sourceLineElement(root: HTMLElement, lineNumber: number): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`.file-source-line[data-line-number="${lineNumber}"]`);
 }
 
 function closestSourceLine(node: Node): HTMLElement | null {
@@ -146,8 +144,9 @@ function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | nu
       selectedSuffix.selectNodeContents(startContent);
       selectedSuffix.setStart(range.startContainer, range.startOffset);
       if (selectedSuffix.toString().length === 0) {
-        const nextLine = startElement.nextElementSibling;
-        if (nextLine instanceof HTMLElement && nextLine.matches(".file-source-line[data-line-number]")) {
+        // Rows live in separately rendered blocks: find the neighbour by number.
+        const nextLine = sourceLineElement(root, startLine + 1);
+        if (nextLine) {
           startElement = nextLine;
           startLine = Number(startElement.dataset.lineNumber);
         }
@@ -160,8 +159,8 @@ function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | nu
       selectedPrefix.selectNodeContents(endContent);
       selectedPrefix.setEnd(range.endContainer, range.endOffset);
       if (selectedPrefix.toString().length === 0) {
-        const previousLine = endElement.previousElementSibling;
-        if (previousLine instanceof HTMLElement && previousLine.matches(".file-source-line[data-line-number]")) {
+        const previousLine = sourceLineElement(root, endLine - 1);
+        if (previousLine) {
           endElement = previousLine;
           endLine = Number(endElement.dataset.lineNumber);
         }
@@ -173,47 +172,68 @@ function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | nu
   return { startLine, endLine };
 }
 
-function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines }: SourceCodeRendererProps) {
-  return rows.map((row, lineIndex) => {
-    const children = row.children ?? [];
-    const firstChildClasses = children[0]?.properties?.className;
-    const hasLineNumber = Array.isArray(firstChildClasses)
-      && firstChildClasses.includes("react-syntax-highlighter-line-number");
-    const lineNumberNode = hasLineNumber ? children[0] : null;
-    const contentNodes = hasLineNumber ? children.slice(1) : children;
+/**
+ * Plain text of a selection spanning several source lines, read from the file
+ * text rather than the DOM: lines scrolled out of the virtualized view are not
+ * rendered, so the DOM range would skip them. Null for other selections.
+ */
+function copiedSourceText(root: HTMLElement, range: Range, sourceLines: string[]): string | null {
+  const startElement = closestSourceLine(range.startContainer);
+  const endElement = closestSourceLine(range.endContainer);
+  if (!startElement || !endElement || !root.contains(startElement) || !root.contains(endElement)) return null;
+  const startLine = Number(startElement.dataset.lineNumber);
+  const endLine = Number(endElement.dataset.lineNumber);
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine >= endLine) return null;
 
-    return (
-      <span
-        className="file-source-line"
-        data-line-number={lineIndex + 1}
-        key={`source-line-${lineIndex}`}
-        style={{ display: "flex", minWidth: "100%" }}
-      >
-        {lineNumberNode && renderSyntaxNode({
-          node: lineNumberNode,
-          stylesheet,
-          useInlineStyles,
-          key: `source-line-number-${lineIndex}`,
-        })}
-        <span
-          className="file-source-line-content"
-          style={{
-            flex: "1 1 auto",
-            minWidth: 0,
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-            whiteSpace: wrapLines ? "pre-wrap" : "pre",
-          }}
-        >
-          {contentNodes.map((node, tokenIndex) => renderSyntaxNode({
-            node,
-            stylesheet,
-            useInlineStyles,
-            key: `source-token-${lineIndex}-${tokenIndex}`,
-          }))}
-        </span>
-      </span>
-    );
-  });
+  // Only part of the first and last line may be selected.
+  const startContent = startElement.querySelector(".file-source-line-content");
+  let first = sourceLines[startLine - 1] ?? "";
+  if (startContent?.contains(range.startContainer)) {
+    const suffix = document.createRange();
+    suffix.selectNodeContents(startContent);
+    suffix.setStart(range.startContainer, range.startOffset);
+    first = suffix.toString();
+  }
+  const endContent = endElement.querySelector(".file-source-line-content");
+  let last = sourceLines[endLine - 1] ?? "";
+  if (endContent?.contains(range.endContainer)) {
+    const prefix = document.createRange();
+    prefix.selectNodeContents(endContent);
+    prefix.setEnd(range.endContainer, range.endOffset);
+    last = prefix.toString();
+  }
+  return [first, ...sourceLines.slice(startLine, endLine - 1), last].join("\n");
+}
+
+type SyntaxStylesheet = typeof vs;
+
+const SOURCE_LINE_STYLE: CSSProperties = { display: "flex", minWidth: "100%" };
+const SOURCE_LINE_CONTENT_STYLE: CSSProperties = {
+  flex: "1 1 auto",
+  minWidth: 0,
+  overflowWrap: "normal",
+  whiteSpace: "pre",
+};
+const WRAPPED_SOURCE_LINE_CONTENT_STYLE: CSSProperties = {
+  ...SOURCE_LINE_CONTENT_STYLE,
+  overflowWrap: "anywhere",
+  whiteSpace: "pre-wrap",
+};
+/** "... N unchanged lines ..." row of the diff view, before it is measured. */
+const DIFF_GAP_ROW_HEIGHT = 23;
+
+function renderCodeTokens(tokens: CodeLine, stylesheet: SyntaxStylesheet): ReactNode[] {
+  return tokens.map((node, index) => renderSyntaxNode({
+    node: node as createElementProps["node"],
+    stylesheet,
+    useInlineStyles: true,
+    key: index,
+  }));
+}
+
+/** Text color of untokenized code in a Prism theme. */
+function codeBaseColor(stylesheet: SyntaxStylesheet): string | undefined {
+  return stylesheet['pre[class*="language-"]']?.color;
 }
 
 function getFileApiUrl(
@@ -416,9 +436,137 @@ function diffLines(patch: string): DiffLine[] {
   }));
 }
 
-function DiffView({ patch }: { patch: string }) {
+type DiffRow =
+  | { type: "gap"; count: number }
+  | { type: "line"; line: DiffLine; index: number };
+
+/** Diff lines with runs of unchanged lines beyond 3 lines of a change collapsed. */
+function diffRows(diff: DiffLine[]): DiffRow[] {
+  const CONTEXT = 3;
+  const visible = new Uint8Array(diff.length);
+  diff.forEach((line, index) => {
+    if (line.type === "unchanged") return;
+    for (let j = Math.max(0, index - CONTEXT); j <= Math.min(diff.length - 1, index + CONTEXT); j++) visible[j] = 1;
+  });
+
+  const rows: DiffRow[] = [];
+  for (let index = 0; index < diff.length; index++) {
+    if (visible[index]) {
+      rows.push({ type: "line", line: diff[index], index });
+      continue;
+    }
+    const last = rows[rows.length - 1];
+    if (last?.type === "gap") last.count++;
+    else rows.push({ type: "gap", count: 1 });
+  }
+  return rows;
+}
+
+function DiffView({
+  patch,
+  language,
+  stylesheet,
+  scrollRef,
+  renderAll,
+}: {
+  patch: string;
+  language: string;
+  stylesheet: SyntaxStylesheet;
+  scrollRef: RefObject<HTMLElement | null>;
+  renderAll: boolean;
+}) {
   const { t } = useI18n();
-  const diff = diffLines(patch);
+  const diff = useMemo(() => diffLines(patch), [patch]);
+  const rows = useMemo(() => diffRows(diff), [diff]);
+  // Old and new lines are tokenized together, in diff order: a line keeps its
+  // place in multi-line constructs as long as both sides agree on them.
+  const tokens = useMemo(
+    () => highlightCodeLines(diff.map((line) => line.text).join("\n"), language),
+    [diff, language],
+  );
+
+  const estimateRowHeight = useCallback(
+    (index: number) => (rows[index].type === "gap" ? DIFF_GAP_ROW_HEIGHT : CODE_ROW_HEIGHT),
+    [rows],
+  );
+  const renderRow = useCallback((index: number) => {
+    const row = rows[index];
+    if (row.type === "gap") {
+      return (
+        <div
+          key={`gap-${index}`}
+          style={{
+            padding: "2px 16px",
+            color: "var(--text-dim)",
+            background: "var(--bg-panel)",
+            fontSize: 11,
+            borderTop: "var(--hairline) solid var(--border)",
+            borderBottom: "var(--hairline) solid var(--border)",
+          }}
+        >
+          ... {row.count} unchanged lines ...
+        </div>
+      );
+    }
+
+    const { line } = row;
+    const bg =
+      line.type === "added"
+        ? "rgba(0,200,80,0.12)"
+        : line.type === "removed"
+        ? "rgba(240,60,60,0.14)"
+        : "transparent";
+    const prefix =
+      line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
+    const prefixColor =
+      line.type === "added" ? "var(--success)" : line.type === "removed" ? "var(--danger)" : "var(--text-dim)";
+    const lineTokens = tokens?.[row.index];
+
+    return (
+      <div
+        key={`line-${index}`}
+        className="file-diff-line"
+        style={{
+          display: "flex",
+          minWidth: "100%",
+          background: bg,
+          borderLeft: line.type === "added"
+            ? "3px solid var(--success)"
+            : line.type === "removed"
+            ? "3px solid var(--danger)"
+            : "3px solid transparent",
+        }}
+      >
+        <span
+          style={FILE_LINE_NUMBER_STYLE}
+        >
+          {line.type === "removed" ? line.oldLineNo : line.newLineNo}
+        </span>
+        <span
+          style={{
+            minWidth: 16,
+            padding: "0 6px",
+            color: prefixColor,
+            userSelect: "none",
+            flexShrink: 0,
+            fontWeight: 600,
+          }}
+        >
+          {prefix}
+        </span>
+        <span
+          className="file-diff-line-content"
+          style={{
+            flexShrink: 0,
+            padding: "0 8px 0 0",
+            whiteSpace: "pre",
+          }}
+        >
+          {lineTokens && lineTokens.length > 0 ? renderCodeTokens(lineTokens, stylesheet) : line.text || "\u00a0"}
+        </span>
+      </div>
+    );
+  }, [rows, stylesheet, tokens]);
 
   const hasChanges = diff.some((l) => l.type !== "unchanged");
   if (!hasChanges) {
@@ -429,125 +577,22 @@ function DiffView({ patch }: { patch: string }) {
     );
   }
 
-  // Render with context: show 3 lines around each change, collapse the rest
-  const CONTEXT = 3;
-  const changed = new Set(diff.flatMap((l, i) => (l.type !== "unchanged" ? [i] : [])));
-  const visible = new Set<number>();
-  for (const ci of changed) {
-    for (let j = Math.max(0, ci - CONTEXT); j <= Math.min(diff.length - 1, ci + CONTEXT); j++) {
-      visible.add(j);
-    }
-  }
-
-  const segments: Array<{ hidden: true; count: number } | { hidden: false; lines: DiffLine[] }> = [];
-  let i = 0;
-  while (i < diff.length) {
-    if (visible.has(i)) {
-      const block: DiffLine[] = [];
-      while (i < diff.length && visible.has(i)) {
-        block.push(diff[i]);
-        i++;
-      }
-      segments.push({ hidden: false, lines: block });
-    } else {
-      let count = 0;
-      while (i < diff.length && !visible.has(i)) {
-        count++;
-        i++;
-      }
-      segments.push({ hidden: true, count });
-    }
-  }
-
   return (
-    <div
+    <VirtualCodeList
+      scrollRef={scrollRef}
+      rowCount={rows.length}
+      renderRow={renderRow}
+      estimateRowHeight={estimateRowHeight}
+      renderAll={renderAll}
       className="file-diff-view"
       style={{
         width: "max-content",
         minWidth: "100%",
+        color: (tokens && codeBaseColor(stylesheet)) || "var(--text)",
+        tabSize: 4,
         ...FILE_CODE_STYLE,
       }}
-    >
-      {segments.map((seg, si) => {
-        if (seg.hidden) {
-          const result = (
-            <div
-              key={si}
-              style={{
-                padding: "2px 16px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                fontSize: 11,
-                borderTop: "var(--hairline) solid var(--border)",
-                borderBottom: "var(--hairline) solid var(--border)",
-              }}
-            >
-              ... {seg.count} unchanged lines ...
-            </div>
-          );
-          return result;
-        }
-        const lines = seg.lines.map((line, li) => {
-          const bg =
-            line.type === "added"
-              ? "rgba(0,200,80,0.12)"
-              : line.type === "removed"
-              ? "rgba(240,60,60,0.14)"
-              : "transparent";
-          const prefix =
-            line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
-          const prefixColor =
-            line.type === "added" ? "var(--success)" : line.type === "removed" ? "var(--danger)" : "var(--text-dim)";
-
-          return (
-            <div
-              key={li}
-              className="file-diff-line"
-              style={{
-                display: "flex",
-                minWidth: "100%",
-                background: bg,
-                borderLeft: line.type === "added"
-                  ? "3px solid var(--success)"
-                  : line.type === "removed"
-                  ? "3px solid var(--danger)"
-                  : "3px solid transparent",
-              }}
-            >
-              <span
-                style={FILE_LINE_NUMBER_STYLE}
-              >
-                {line.type === "removed" ? line.oldLineNo : line.newLineNo}
-              </span>
-              <span
-                style={{
-                  minWidth: 16,
-                  padding: "0 6px",
-                  color: prefixColor,
-                  userSelect: "none",
-                  flexShrink: 0,
-                  fontWeight: 600,
-                }}
-              >
-                {prefix}
-              </span>
-              <span
-                className="file-diff-line-content"
-                style={{
-                  flexShrink: 0,
-                  padding: "0 8px 0 0",
-                  whiteSpace: "pre",
-                  color: "var(--text)",
-                }}
-              >
-                {line.text || "\u00a0"}
-              </span>
-            </div>
-          );
-        });
-        return <div key={si}>{lines}</div>;
-      })}
-    </div>
+    />
   );
 }
 
@@ -1340,75 +1385,34 @@ function TextFileViewer({
     : displayMode === "preview" && !hasPreview
       ? "source"
       : displayMode;
-  const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
-    && !(effectiveDisplayMode === "diff" && hasGitDiff)
-    && !(effectiveDisplayMode === "preview" && hasPreview);
-  // react-syntax-highlighter rebuilds every token element on each render, which
-  // costs hundreds of milliseconds on large files. Cache the rendered trees so
-  // unrelated re-renders (panel open/close, selection changes) reuse them as-is.
-  const highlightedSource = useMemo(
-    () => (
-      <SyntaxHighlighter
-        className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
-        language={language === "text" ? "plaintext" : language}
-        style={isDark ? vscDarkPlus : vs}
-        showLineNumbers
-        lineNumberStyle={{
-          ...FILE_LINE_NUMBER_STYLE,
-        }}
-        customStyle={{
-          margin: 0,
-          padding: 0,
-          border: 0,
-          background: "var(--bg)",
-          ...FILE_CODE_STYLE,
-          width: wrapLines ? "100%" : "max-content",
-          minWidth: "100%",
-          minHeight: "100%",
-          overflow: "visible",
-        }}
-        codeTagProps={{
-          style: {
-            fontFamily: "var(--font-mono)",
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-          },
-        }}
-        renderer={(rendererProps) => (
-          <SourceCodeRenderer {...rendererProps} wrapLines={wrapLines} />
-        )}
-        wrapLongLines={wrapLines}
-      >
-        {viewerContent}
-      </SyntaxHighlighter>
-    ),
-    [isDark, language, viewerContent, wrapLines],
+  const showsSource = effectiveDisplayMode === "source" || (effectiveDisplayMode === "diff" && !hasGitDiff);
+  const syntaxStylesheet = isDark ? vscDarkPlus : vs;
+  // Tokenized once per load; the virtualized list renders only the rows on screen.
+  const sourceTokens = useMemo(
+    () => (showsSource ? highlightCodeLines(viewerContent, language) : null),
+    [language, showsSource, viewerContent],
   );
-  const lightweightSourceLines = useMemo(
-    () => useLightweightSource ? sourceLines.map((line, lineIndex) => (
+  const renderSourceRow = useCallback((lineIndex: number) => {
+    const tokens = sourceTokens?.[lineIndex];
+    return (
       <span
         className="file-source-line"
         data-line-number={lineIndex + 1}
-        key={`source-line-${lineIndex}`}
-        style={{ display: "flex", minWidth: "100%" }}
+        key={lineIndex}
+        style={SOURCE_LINE_STYLE}
       >
         <span aria-hidden="true" style={FILE_LINE_NUMBER_STYLE}>
           {lineIndex + 1}
         </span>
         <span
           className="file-source-line-content"
-          style={{
-            flex: "1 1 auto",
-            minWidth: 0,
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-            whiteSpace: wrapLines ? "pre-wrap" : "pre",
-          }}
+          style={wrapLines ? WRAPPED_SOURCE_LINE_CONTENT_STYLE : SOURCE_LINE_CONTENT_STYLE}
         >
-          {line}
+          {tokens ? renderCodeTokens(tokens, syntaxStylesheet) : sourceLines[lineIndex]}
         </span>
       </span>
-    )) : null,
-    [sourceLines, useLightweightSource, wrapLines],
-  );
+    );
+  }, [sourceLines, sourceTokens, syntaxStylesheet, wrapLines]);
 
   useEffect(() => {
     const updateSelectedLineRange = () => {
@@ -1703,7 +1707,10 @@ function TextFileViewer({
         onCopy={(event) => {
           const selection = window.getSelection();
           if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
-          const text = copiedCodeText(selection.getRangeAt(0).cloneContents());
+          const range = selection.getRangeAt(0);
+          const text = (effectiveDisplayMode === "source" && contentRef.current
+            ? copiedSourceText(contentRef.current, range, sourceLines)
+            : null) ?? copiedCodeText(range.cloneContents());
           if (text === null) return;
           event.preventDefault();
           event.clipboardData.setData("text/plain", text);
@@ -1711,7 +1718,13 @@ function TextFileViewer({
         style={{ flex: 1, overflow: "auto", outline: "none", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >
         {effectiveDisplayMode === "diff" && hasGitDiff ? (
-          <DiffView patch={diffPatch!} />
+          <DiffView
+            patch={diffPatch!}
+            language={language}
+            stylesheet={syntaxStylesheet}
+            scrollRef={contentRef}
+            renderAll={find.open}
+          />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           htmlScriptsEnabled && htmlHasScripts ? (
             <iframe
@@ -1796,21 +1809,23 @@ function TextFileViewer({
               {markdownPreview}
             </ReactMarkdown>
           </div>
-        ) : useLightweightSource ? (
-          <div
-            className="file-source-view is-lightweight"
+        ) : (
+          <VirtualCodeList
+            scrollRef={contentRef}
+            rowCount={sourceLines.length}
+            renderRow={renderSourceRow}
+            renderAll={find.open}
+            className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
             style={{
               width: wrapLines ? "100%" : "max-content",
               minWidth: "100%",
               minHeight: "100%",
               background: "var(--bg)",
+              color: (sourceTokens && codeBaseColor(syntaxStylesheet)) || "var(--text)",
+              tabSize: 4,
               ...FILE_CODE_STYLE,
             }}
-          >
-            {lightweightSourceLines}
-          </div>
-        ) : (
-          highlightedSource
+          />
         )}
       </div>
     </div>
