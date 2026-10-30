@@ -150,9 +150,10 @@ try {
           .map((key) => [key, style.getPropertyValue(`--${key}`).trim()]));
       });
       assert.deepEqual(darkSurfaces, {
-        bg: "#141418", "workbench-bg": "#232328",
-        "surface-elevated": "#232327", "menu-selection-color": "#6b93ff",
-      }, "The palette keeps its graphite surfaces and shared blue in dark mode");
+        bg: "#19191a", "workbench-bg": "#242424",
+        "surface-elevated": "#262626", "menu-selection-color": darkSurfaces["menu-selection-color"],
+      }, "The palette keeps its neutral graphite surfaces in dark mode");
+      assert.ok(["#6b93ff", "AccentColor"].includes(darkSurfaces["menu-selection-color"]), "Selection colour is the system accent or its blue fallback");
     }
     assert.deepEqual(errors, []);
     console.log(`PASS ${width}px: palettes, contrast, persistence, system preference, keyboard navigation`);

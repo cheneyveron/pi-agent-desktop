@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { homedir } from "os";
 import type { IPty } from "node-pty";
 import { samePath } from "./paths";
+import { resolveTerminalShell } from "./terminal-settings";
 
 export type TerminalEvent =
   | { type: "output"; data: string; offset: number; reset?: boolean }
@@ -92,11 +93,8 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
       { cause: error },
     );
   }
-  const shell = process.platform === "win32"
-    ? process.env.ComSpec ?? "cmd.exe"
-    : process.env.SHELL || "/bin/sh";
-  const args = process.platform === "win32" ? [] : ["-l"];
-  const pty = spawn(shell, args, {
+  const shell = resolveTerminalShell();
+  const pty = spawn(shell.path, shell.args, {
     name: "xterm-256color",
     cols: dimension(cols, 80),
     rows: dimension(rows, 24),
@@ -189,9 +187,10 @@ export function killTerminal(id: string, force = false): boolean {
   if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
   registry().delete(id);
   if (!record.exited) {
-    record.pty.kill(force ? "SIGKILL" : undefined);
+    // ConPTY terminates the process directly and rejects POSIX signal names.
+    record.pty.kill(process.platform === "win32" ? undefined : force ? "SIGKILL" : undefined);
     // A shell may trap SIGHUP; explicit close and lease expiry must still finish.
-    if (!force) {
+    if (!force && process.platform !== "win32") {
       record.cleanupTimer = setTimeout(() => {
         if (!record.exited) record.pty.kill("SIGKILL");
       }, 2000);

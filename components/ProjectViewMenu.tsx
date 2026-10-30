@@ -4,12 +4,17 @@ import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
+import { useMenuPlacement } from "@/hooks/useMenuPlacement";
+import type { MenuAnchor } from "@/lib/menu-placement";
 
 export type ProjectViewMode = "grouped" | "timeline";
 
 interface ProjectViewMenuProps {
   menuRef: RefObject<HTMLDivElement | null>;
   pos: { top: number; left: number };
+  /** The button the menu belongs to; the menu flips above it when the space
+   *  below is too small for its measured height. */
+  anchor: MenuAnchor | null;
   mode: ProjectViewMode;
   canCollapseAll: boolean;
   canExpandAll: boolean;
@@ -28,6 +33,7 @@ interface ProjectViewMenuProps {
 export function ProjectViewMenu({
   menuRef,
   pos,
+  anchor,
   mode,
   canCollapseAll,
   canExpandAll,
@@ -39,6 +45,8 @@ export function ProjectViewMenu({
 }: ProjectViewMenuProps) {
   const { t } = useI18n();
   useMenuNavigation(true, menuRef, onClose);
+  const placed = useMenuPlacement(anchor, menuRef);
+  const position = placed ?? pos;
 
   const modeItem = (value: ProjectViewMode) => {
     const selected = mode === value;
@@ -62,7 +70,7 @@ export function ProjectViewMenu({
       className="project-view-menu native-popover app-menu"
       role="menu"
       aria-label={t("sidebar.projectViewMenu")}
-      style={{ top: pos.top, left: pos.left }}
+      style={{ top: position.top, left: position.left }}
     >
       <div className="project-view-menu-heading">{t("sidebar.projectViewMode")}</div>
       {modeItem("grouped")}

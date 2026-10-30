@@ -1,6 +1,7 @@
+import { linkDirectory } from "../../../../scripts/test-platform.mjs";
 import assert from "node:assert/strict";
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test, { after } from "node:test";
@@ -8,7 +9,8 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true });
 const { GET } = await jiti.import("./route.ts");
-const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
+const { allowFileRoot, normalizeSlashes } = await jiti.import("../../../../lib/file-access.ts");
+
 
 // Real paths: the temp folder is a link on macOS, and allowed roots compare resolved paths.
 const root = realpathSync(await mkdtemp(path.join(os.tmpdir(), "pi-web-cwd-status-")));
@@ -21,8 +23,15 @@ const outside = path.join(root, "outside");
 await mkdir(project, { recursive: true });
 await mkdir(outside, { recursive: true });
 await writeFile(file, "not a folder");
-await symlink(outside, escape);
+await linkDirectory(outside, escape);
 allowFileRoot(allowed);
+// A session of this machine can sit in the OS temp directory, which would make
+// every path under it an allowed root and hide what this route refuses. Pin
+// the allow-list to the fixture so the test means the same thing everywhere.
+globalThis.__piAllowedRootsCache = {
+  roots: new Set([normalizeSlashes(allowed)]),
+  expiresAt: Date.now() + 60_000,
+};
 after(() => rm(root, { recursive: true, force: true }));
 
 async function status(cwd) {

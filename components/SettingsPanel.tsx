@@ -40,6 +40,7 @@ import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { TerminalSettingsSection } from "./TerminalSettingsSection";
 
 interface Props {
   cwd: string | null;
@@ -348,6 +349,8 @@ function GeneralSettings({
           </section>
 
           <DesktopAppSection />
+
+          <TerminalSettingsSection />
 
           {shellSettings?.isWindows && (
             <section className="settings-general-section">

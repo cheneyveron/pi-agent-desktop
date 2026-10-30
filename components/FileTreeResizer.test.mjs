@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const appShellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+const appShellSource = (await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 test("exposes an accessible project-tree resize separator", () => {
   assert.match(appShellSource, /data-resize-handle="file-tree"/);

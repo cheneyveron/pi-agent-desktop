@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import test, { after, beforeEach } from "node:test";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
+import { markerCommand, useGitBashForTests } from "../../../../scripts/test-platform.mjs";
 import { approveSignIn, startFakeOAuthServer } from "../../../../lib/__fixtures__/mcp-oauth-server.mjs";
 
 // /api/mcp/sign-in connects and writes mcp-auth.json, so every case runs
@@ -49,7 +50,8 @@ const authPath = join(agentDir, "mcp-auth.json");
 const marker = join(root, "command-ran");
 const store = new ProjectTrustStore(agentDir);
 
-beforeEach(async () => {
+beforeEach(async (t) => {
+  useGitBashForTests(t);
   delete process.env.PI_WEB_DISABLE_MCP;
   clearMcpSignIns();
   clearMcpStatuses();
@@ -68,7 +70,7 @@ beforeEach(async () => {
     },
   }, null, 2)}\n`);
   await writeFile(projectPath, `${JSON.stringify({
-    mcpServers: { repo: { url: fake.url, headers: { "X-Probe": `!touch ${marker} && echo probe` } } },
+    mcpServers: { repo: { url: fake.url, headers: { "X-Probe": markerCommand(marker, "probe") } } },
   }, null, 2)}\n`);
   store.set(cwd, null);
 });

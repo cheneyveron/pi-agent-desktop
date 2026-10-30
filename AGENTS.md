@@ -59,6 +59,12 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
 - A worktree's `node_modules` can lag the lockfile (created before an SDK bump), which
   fails tests that pin newer SDK behaviour. `npm test` runs `npm run check:deps` first and
   stops with the mismatched packages; `npm ci` fixes it.
+- Windows test fixtures use `scripts/test-platform.mjs`: directory links are junctions,
+  unavailable file links skip only their own subtests, and POSIX mode checks remain
+  active on POSIX hosts. Shell-command fixtures select native Git Bash inside the
+  test process; trust fixtures must not inherit the user's ancestor skills. Await
+  session shutdown before deleting MCP working directories. Real PTY integration
+  runs in a child process; fake-clock tests use a controlled PTY.
 - **`next dev` rewrites `AGENTS.md`**: it appends a "This is NOT the Next.js you know" block
   to this file on every start. Preserve the project and user instructions here; review generated
   additions separately and never reset the entire file to discard development output.
@@ -254,7 +260,7 @@ The third direction is `forbiddenMarkers` on a `FORK_FEATURES` entry: a region t
 ### Upstream merge decisions (standing rules)
 Full per-merge reasoning (segments E, F, G, with what was adopted and what was declined) is in [merge-history.md](docs/merge-history.md). The rules that still bind a future merge:
 - **Upstream owns SDK adaptation.** Exact system prompts go through `lib/exact-system-prompt.ts` (`before_agent_start`); the session list comes from `lib/session-list-scanner.ts`; MCP and Code mode run on ADR 0006's `builtin:*` extensions (`createMcpExtension()` is never passed as a bare inline factory) and `resolveActiveToolNames()` replaced `withExtensionTools()`. Do not re-add a second path for any of these.
-- **Declined upstream UI stays declined**: the sidebar explorer and resizable session/explorer panes (`data-resize-handle="sidebar-sections"`), `SessionSearch`, `ChatMinimap`, `getSessionListIndices` windowing, the second mobile toolbar group, the topbar models/skills/settings quick-buttons, `ExtensionStatusBar` (the fork's `ExtensionStatusLine` replaces it). A merge that brings one back is re-introducing declined UI, not a test to satisfy. Web project selection intentionally uses `DirectoryPicker` directly in the sidebar and composer.
+- **Declined upstream UI stays declined**: the sidebar explorer and resizable session/explorer panes (`data-resize-handle="sidebar-sections"`), `SessionSearch`, `ChatMinimap`, `getSessionListIndices` windowing, the second mobile toolbar group, the topbar models/skills/settings quick-buttons, `ExtensionStatusBar` (the fork's `ExtensionStatusLine` replaces it). From the desktop upstream (abcwyc): `ConversationFind` (the chat keeps the shared `FindBar` and its pointer-based zones). A merge that brings one back is re-introducing declined UI, not a test to satisfy. Web project selection intentionally uses `DirectoryPicker` directly in the sidebar and composer.
 - **Fork layers that must survive a merge**: `userHome()` routing instead of literal `homedir()`, models-config literal-key redaction, `resolveSessionReferences` in the send/queue paths, the monotonic request-id guards in `useAgentSession`, the project-tree sidebar with the full-height layout, desktop i18n and Settings sections.
 - **`lib/startup-preferences.ts` stays deleted** (new-session model picks are session-scoped); `PUT /api/models/default` is the only writer of global defaults.
 - **`package-lock.json` keeps the tauri plugin versions pinned to `src-tauri/Cargo.lock`**: restore HEAD's lock before `npm install --package-lock-only`, or the carets re-resolve and `release-workflows.test.mjs` fails.

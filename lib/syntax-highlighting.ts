@@ -80,4 +80,3 @@ for (const [name, language] of Object.entries(LANGUAGES)) {
 }
 
 export { SyntaxHighlighter };
-export { vs, vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";

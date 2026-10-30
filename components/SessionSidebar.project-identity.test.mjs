@@ -20,3 +20,13 @@ test("default cwd is selected through the same validation as a custom path", asy
   // same validation as a custom pick without being remembered as one.
   assert.match(defaultSource, /await commitCustomPath\(data\.cwd\)/);
 });
+
+// A repo subfolder opened as a project gets the parent repo in its worktree
+// list; reverse-looking that list up must not pull the parent into the
+// subfolder's project, or clicking the parent's group can never switch back.
+test("worktree-list project lookup only applies to a top-level checkout", async () => {
+  const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+  const lookups = sidebar.match(/worktreeState\??\.[^\n]*worktrees\.some\(\(w\) => w\.path === cwd\)/g) ?? [];
+  assert.equal(lookups.length, 2);
+  for (const line of lookups) assert.match(line, /isTopLevel/);
+});

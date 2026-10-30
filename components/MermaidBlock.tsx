@@ -2,7 +2,8 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createElement as renderSyntaxNode, type SyntaxHighlighterProps } from "react-syntax-highlighter";
-import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
+import { SyntaxHighlighter } from "@/lib/syntax-highlighting";
+import { calmCodeTheme } from "@/lib/code-theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
@@ -346,23 +347,21 @@ const renderNumberedLines: NonNullable<SyntaxHighlighterProps["renderer"]> = ({ 
   ));
 };
 
+/** Blocks longer than this fold to their first lines until expanded. */
+export const CODE_FOLD_LINES = 30;
+/** A one- or two-line snippet (a command, a path) reads better without a gutter. */
+export const CODE_LINE_NUMBER_MIN_LINES = 3;
+
+export function codeLineCount(code: string): number {
+  return code.replace(/\n$/, "").split("\n").length;
+}
+
 interface CodeBlockProps {
   code: string;
   lang: string;
   headerAction?: ReactNode;
   isStreaming?: boolean;
 }
-
-// Prism's light theme uses backgroundColor, while its dark theme uses the
-// background shorthand. Keep the pre background solely in customStyle so a
-// theme switch cannot remove/update one and reset the other in React's diff.
-const codeBlockDarkTheme = {
-  ...vscDarkPlus,
-  'pre[class*="language-"]': {
-    ...vscDarkPlus['pre[class*="language-"]'],
-  },
-};
-delete codeBlockDarkTheme['pre[class*="language-"]'].background;
 
 /**
  * Syntax-highlighted code block with copy button.
@@ -373,9 +372,15 @@ delete codeBlockDarkTheme['pre[class*="language-"]'].background;
  * highlighting a growing block re-tokenizes all of it on every chunk.
  */
 export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isStreaming }: CodeBlockProps) {
-  const { isDark } = useTheme();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [wrap, setWrap] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = codeLineCount(code);
+  // A block keeps growing while it streams, so it only folds once complete.
+  const foldable = !isStreaming && lineCount > CODE_FOLD_LINES;
+  const folded = foldable && !expanded;
+  const showLineNumbers = lineCount >= CODE_LINE_NUMBER_MIN_LINES;
 
   const copy = () => {
     copyText(code).then(() => {
@@ -391,6 +396,13 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
         <div className="markdown-code-actions">
           {headerAction}
           <button
+            onClick={() => setWrap((value) => !value)}
+            className={`markdown-code-action${wrap ? " is-active" : ""}`}
+            aria-pressed={wrap}
+          >
+            {wrap ? t("chat.codeNoWrap") : t("chat.codeWrap")}
+          </button>
+          <button
             onClick={copy}
             className="markdown-code-action"
           >
@@ -398,6 +410,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
           </button>
         </div>
       </div>
+      <div className={`markdown-code-body${folded ? " is-folded" : ""}${wrap ? " is-wrapped" : ""}`}>
       {isStreaming ? (
         <pre
           style={{
@@ -414,15 +427,14 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
       ) : (
         <SyntaxHighlighter
           language={lang || "text"}
-          style={isDark ? codeBlockDarkTheme : vs}
-          renderer={renderNumberedLines}
+          style={calmCodeTheme}
+          renderer={showLineNumbers ? renderNumberedLines : undefined}
           customStyle={{
             margin: 0,
             padding: "11px 13px",
             fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.62,
-            // The light `vs` theme puts its own 1px #ddd border on <pre>; the
-            // block's wrapper already draws the frame.
+            // The wrapper draws the frame; the theme carries no border or background.
             border: "none",
             borderRadius: 0,
             backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
@@ -431,6 +443,17 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
         >
           {code}
         </SyntaxHighlighter>
+      )}
+      </div>
+      {foldable && (
+        <button
+          type="button"
+          className="markdown-code-fold"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? t("chat.codeCollapse") : t("chat.codeExpand", { count: lineCount })}
+        </button>
       )}
     </div>
   );

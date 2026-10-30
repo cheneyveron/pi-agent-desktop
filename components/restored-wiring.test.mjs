@@ -10,7 +10,7 @@ const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { ModelScopeWarningBanner } = await jiti.import("./ChatInput.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
-const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
+const read = async (file) => (await readFile(new URL(file, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 test("model scope warnings can be dismissed and link to provider setup (#48)", async () => {
   const html = renderToStaticMarkup(React.createElement(I18nProvider, null,

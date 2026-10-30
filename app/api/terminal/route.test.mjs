@@ -60,9 +60,9 @@ test("a cwd outside the allowed roots is refused the same way whatever is there"
 test("a symlink inside an allowed root that leaves it is refused", async (t) => {
   const allowed = await tempDir(t);
   const outside = await tempDir(t);
-  const { symlink } = await import("node:fs/promises");
+  const { linkDirectory } = await import("../../../scripts/test-platform.mjs");
   const link = path.join(allowed, "escape");
-  await symlink(outside, link, "dir");
+  await linkDirectory(outside, link);
   allowOnly(allowed);
 
   const response = await createRequest({ cwd: link });

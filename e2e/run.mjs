@@ -117,7 +117,7 @@ try {
   writeSession(CODE_BACKGROUND, [
     message("user", null, "user", "E2E code background"),
     message("answer", "user", "assistant", [{ type: "text", text:
-      "```js\nconst x = 1;\n```\n\n```mermaid\ngraph TD\n A --> B\n```",
+      "```js\nconst values = [\n  123,\n\n  456,\n];\nconsole.log(values);\n```\n\n```mermaid\ngraph TD\n A --> B\n```",
     }]),
   ]);
   // The default page is 50 *visible* messages (user / assistant / compaction).

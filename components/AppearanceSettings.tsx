@@ -3,9 +3,7 @@
 import { useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
-import { useBackground } from "@/hooks/useBackground";
 import { THEME_OPTIONS } from "@/lib/theme";
-import { BACKGROUND_OPTIONS } from "@/lib/backgrounds";
 import { isTauriDesktop, openPathNative } from "@/lib/desktop-native";
 import { ConfigButton } from "./SettingsUi";
 import { ThemeIcon } from "./ThemeIcon";
@@ -14,7 +12,6 @@ import { FontSettings } from "./FontSettings";
 export function AppearanceSettings() {
   const { t } = useI18n();
   const { preference, setThemePreference } = useTheme();
-  const { background, setBackground, error, saving } = useBackground();
   const [customCssBusy, setCustomCssBusy] = useState(false);
   const [customCssError, setCustomCssError] = useState(false);
 
@@ -59,28 +56,6 @@ export function AppearanceSettings() {
             ))}
           </div>
         </div>
-      </section>
-
-      <section className="settings-general-section settings-background-section">
-        <h3 className="settings-general-heading" id="settings-background-heading">{t("settings.background")}</h3>
-        <div className="settings-background-grid" role="radiogroup" aria-labelledby="settings-background-heading">
-          {BACKGROUND_OPTIONS.map((option) => (
-            <label key={option.id} className="settings-background-option">
-              <input type="radio" name="background" value={option.id} checked={background === option.id}
-                onChange={() => setBackground(option.id)} className="sr-only" />
-              <span className="settings-background-swatch" data-background-preview={option.id} aria-hidden="true">
-                <span className="settings-background-mini-sidebar" />
-                <span className="settings-background-mini-card" />
-                <span className="settings-background-indicator" />
-              </span>
-              <span className="settings-background-name">{t(option.label)}</span>
-            </label>
-          ))}
-        </div>
-        {saving && <p className="sr-only" role="status">{t("settings.backgroundSaving")}</p>}
-        {error && <p className="settings-general-error" role="alert">{t("settings.backgroundSaveError")}
-          <ConfigButton variant="secondary" size="small" onClick={() => setBackground(background)}>{t("settings.backgroundRetry")}</ConfigButton>
-        </p>}
       </section>
 
       <FontSettings />

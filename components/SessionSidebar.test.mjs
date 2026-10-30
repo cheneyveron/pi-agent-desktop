@@ -11,7 +11,7 @@ test("only Shift+click bypasses session deletion confirmation", () => {
   // itself rather than a named function, and tolerate either brace style.
   assert.match(
     sessionItemSource,
-    /if \(e\.shiftKey\)\s*\{?\s*void performDelete\(\);\s*\}?\s*else\s*\{?\s*setConfirmDelete\(true\);/,
+    /if \(e\.shiftKey\)\s*\{?\s*void performDelete\(\);\s*\}?\s*else\s*\{?\s*beginDeleteConfirmation\(\);/,
   );
 });
 

@@ -13,7 +13,11 @@ test("the More menu is portaled to the body so the open file panel cannot cover 
   assert.match(source, /document\.body/);
   // Fixed positioning is computed from the trigger rect, not the old absolute
   // "calc(100% + 7px) / right: -2px" that only worked inside the topbar.
-  assert.match(source, /position: "fixed", top: topMorePos\.top, right: topMorePos\.right/);
+  assert.match(source, /position: "fixed", zIndex: 700/);
+  // The menu measures itself and flips above the trigger when the space below
+  // is too small, so its last entries never fall off the window.
+  assert.match(source, /useMenuPlacement\(topMoreOpen \? topMoreAnchor : null, topMoreMenuRef\)/);
+  assert.match(source, /placedTopMorePos\.top, left: placedTopMorePos\.left/);
   assert.match(source, /setTopMorePos\(\{ top: rect\.bottom \+ 7, right: window\.innerWidth - rect\.right - 2 \}\)/);
 });
 

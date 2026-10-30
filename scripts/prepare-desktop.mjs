@@ -82,6 +82,9 @@ async function assembleServer() {
   // and restore the executable bit macOS strips from spawn-helper.
   const ptySource = join(rootDir, "node_modules", "node-pty");
   const ptyDestination = join(serverResourcesDir, "node_modules", "node-pty");
+  // Windows starts its output worker and console-list helper by computed path.
+  // The tracer omits both; copying native prebuilds alone still exits with -1.
+  await cp(join(ptySource, "lib"), join(ptyDestination, "lib"), { recursive: true, force: true });
   const ptyPrebuildsSource = join(ptySource, "prebuilds");
   let ptyPrebuildsPresent = false;
   try {

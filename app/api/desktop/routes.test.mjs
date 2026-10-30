@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { after } from "node:test";
 import { createJiti } from "jiti";
+import { fileSymlinkSkip } from "../../../scripts/test-platform.mjs";
 
 // The native-dialog routes accept absolute paths, so the desktop token is all
 // that keeps them from browser and LAN clients. lib/desktop-api-contract.test.mjs
@@ -106,7 +107,7 @@ test("save writes bytes to an absolute destination and refuses relative ones", a
   assert.equal(missingParent.status, 400);
 });
 
-test("save never writes through a symlink at the destination", async (t) => {
+test("save never writes through a symlink at the destination", { skip: fileSymlinkSkip }, async (t) => {
   const dir = await tempDir(t);
   const target = path.join(dir, "target.txt");
   await writeFile(target, "original");

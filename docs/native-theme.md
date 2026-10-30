@@ -68,20 +68,23 @@ the intent described here.
 **Palette.** The palette uses Pi's existing semantic tokens; attribution and its
 MIT license are retained in [third-party notices](../public/THIRD_PARTY_NOTICES.txt).
 Settings › Appearance separates light/dark/system
-mode from five background choices: Petal (`rex`, default), Mist, Meadow, Dusk and Plain.
-The sidebar/canvas and Settings chrome share `--canvas-background`; reading surfaces stay white in light
-mode and graphite `#232328` in dark mode. Popovers are opaque white / `#232327`.
-The blue `#3b6cf6` / `#6b93ff` is shared by selection pills, default stars,
+mode; there is no background picker. The sidebar/canvas and Settings chrome share one flat, neutral
+`--canvas-background` (`--bg-panel`, `#f0f0f1` / `#19191a`); no gradients or tinted washes; reading surfaces stay white in light
+mode and neutral graphite `#242424` in dark mode. Popovers are opaque white / `#262626`.
+The accent (`--menu-selection-color`) follows the system accent colour through the CSS `AccentColor`
+keyword, falling back to blue `#3b6cf6` / `#6b93ff` where unsupported. It is shared by selection pills, default stars,
 settings switches/sliders, text selection and focus. Primary action fills retain the
 neutral foreground/background pair. The semantic gray text is slightly darkened in light mode
 where needed: ordinary labels and metadata target 4.5:1, dim labels 3:1, and sidebar
-labels 4.5:1 on the wash. Do not use faint decorative gray on small labels.
+labels 4.5:1 on the canvas. Do not use faint decorative gray on small labels.
 Colors stay in `native-theme.css`; the 8px choice inset, 4px row gap, fonts and composer
-geometry are preserved. Thumbnail cards use the same `--wash-*` stops as the canvas.
-The background is cached in `pi-background` before paint and persisted through
-`/api/appearance` to Pi Web's own settings file. This survives changing desktop server
-ports. Writes are serialized and stale startup reads cannot undo a newer selection.
-`node e2e/appearance.mjs` covers all washes, themes, widths, keyboard use and persistence.
+geometry are preserved.
+Edges come in two tiers: `--border` outlines a surface (cards, inputs, code blocks) and `--separator`
+divides rows inside one; both are set above a 7% black so the 0.5px retina hairline stays visible.
+Shadows are pure black, grays are neutral (no blue cast), radii use `--radius-sm/md/lg` and sizes `--fs-*`.
+Syntax colours come from `lib/code-theme.ts` (one muted blue, one muted warm tone, gray comments) through
+`--code-accent`, `--code-warm` and `--code-comment`, so a mode switch is CSS-only.
+`node e2e/appearance.mjs` covers light/dark, widths and the flat neutral canvas.
 
 **Palette character.** Mist uses rounded controls, mist-line icons and a soft dissolve;
 Rose uses fuller corners, a flower that unfolds on interaction, and a reveal anchored to

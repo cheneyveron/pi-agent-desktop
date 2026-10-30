@@ -4,12 +4,12 @@ import { useEffect, useId, useRef, useState } from "react";
 import { openStackedDialog } from "@/lib/stacked-dialog";
 
 /**
- * A small confirmation for the two chat decisions that deserve more than a click: letting a
- * chat use the computer, and deleting a chat together with its folder. It reuses the trust
- * dialog's look; Escape closes only this dialog, like there.
+ * Shared confirmation for conversation deletion and access to the computer.
+ * Escape closes only this dialog; submitting keeps its progress and errors visible.
  */
 export function ChatConfirmDialog({
   title,
+  subject,
   body,
   checkboxLabel,
   checkboxDefault = false,
@@ -22,6 +22,8 @@ export function ChatConfirmDialog({
   onConfirm,
 }: {
   title: string;
+  /** Full conversation name, separate from the action and its consequences. */
+  subject?: string;
   body: string;
   /** An optional switch under the text; its value is handed to `onConfirm`. */
   checkboxLabel?: string;
@@ -46,6 +48,10 @@ export function ChatConfirmDialog({
   useEffect(() => openStackedDialog(document, dialogRef.current, () => {
     if (!busyRef.current) onCancelRef.current();
   }), []);
+  useEffect(() => {
+    // Disabling the focused submit button can otherwise drop focus behind the modal.
+    if (busy) dialogRef.current?.focus({ preventScroll: true });
+  }, [busy]);
 
   return (
     <div
@@ -61,14 +67,27 @@ export function ChatConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${id}-title`}
-        aria-describedby={`${id}-body`}
+        aria-describedby={`${subject ? `${id}-subject ` : ""}${id}-body`}
         tabIndex={-1}
-        className="project-trust-dialog"
+        className="project-trust-dialog chat-confirm-dialog"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"));
+          const first = controls[0];
+          const last = controls.at(-1);
+          if (!first) { event.preventDefault(); event.currentTarget.focus(); }
+          else if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+            event.preventDefault(); last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+          }
+        }}
       >
         <div className="project-trust-body">
           <div className="project-trust-content">
             <div id={`${id}-title`} className="project-trust-title">{title}</div>
+            {subject && <div id={`${id}-subject`} className="chat-confirm-subject">{subject}</div>}
             <div id={`${id}-body`} className="project-trust-text">{body}</div>
             {checkboxLabel && (
               <label className="chat-confirm-check">

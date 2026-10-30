@@ -55,7 +55,7 @@ const serve = async (req, res) => {
   }
   if (req.url.startsWith("/api/")) {
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify(req.url === "/api/appearance" ? { background: "mist" } : {})); return;
+    res.end(JSON.stringify({})); return;
   }
   res.setHeader("Content-Type", req.url === "/fixture.js" ? "text/javascript" : req.url === "/style.css" ? "text/css" : "text/html; charset=utf-8");
   res.end(req.url === "/fixture.js" ? js : req.url === "/style.css" ? css + '\n:root{--font-ui:"Arial",sans-serif;--font-mono:"Courier New",monospace}' :

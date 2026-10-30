@@ -92,6 +92,31 @@ test("CodeBlock renders plain text without tokenization while streaming", () => 
   assert.match(html, /const x = 1;/);
 });
 
+test("CodeBlock hides line numbers for short snippets and keeps them for longer code", () => {
+  assert.doesNotMatch(renderCode({ code: "npm test", lang: "bash" }), /data-line=/);
+  assert.match(renderCode({ code: "a\nb\nc", lang: "bash" }), /data-line="3"/);
+});
+
+test("CodeBlock folds a long block behind an expand button once complete", () => {
+  const code = Array.from({ length: 45 }, (_, i) => `line ${i}`).join("\n");
+
+  const folded = renderCode({ code, lang: "text" });
+  assert.match(folded, /markdown-code-body is-folded/);
+  assert.match(folded, /aria-expanded="false"/);
+  assert.match(folded, /Show all 45 lines/);
+
+  const streaming = renderCode({ code, lang: "text", isStreaming: true });
+  assert.doesNotMatch(streaming, /is-folded|markdown-code-fold/);
+
+  const short = renderCode({ code: "a\nb", lang: "text" });
+  assert.doesNotMatch(short, /markdown-code-fold/);
+});
+
+test("CodeBlock offers a wrap switch", () => {
+  const html = renderCode({ code: "x", lang: "text" });
+  assert.match(html, /aria-pressed="false"[^>]*>Wrap</);
+});
+
 test("MermaidBlock handles Chinese characters in diagram", () => {
   const chineseMermaid = `sequenceDiagram
     participant PC as PC客户端

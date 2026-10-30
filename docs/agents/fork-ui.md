@@ -1,5 +1,19 @@
 # Layout, settings and client behavior — fork notes
 
+## Terminal appearance
+
+`LazyTerminalPanel` caches the imported component and renders it synchronously after
+idle preloading. Do not wrap it in `next/dynamic`: a separate React.lazy instance
+still suspends on first mount and can add a 300ms fallback throttle even with cached
+chunks. Preloading must only load code, never start a PTY. Terminal height follows
+its workspace container, not the viewport.
+
+TerminalPanel reads workbench surface, text, selection and semantic ANSI colors through
+`lib/terminal-theme.ts`; its surrounding styles live in `app/native-theme.css`.
+Root theme/background changes update xterm options in place, preserving the PTY,
+scrollback and input. Minimum contrast is 4.5; light mode does not retain dark-only ANSI colors.
+Run `node e2e/terminal-theme.mjs` for light/dark and narrow-layout regression checks.
+
 ## Streaming Markdown
 
 `MarkdownBody` coalesces preprocessing snapshots at 48–96ms, then passes the
@@ -23,6 +37,9 @@ and screenshots go to the ignored `test-results/streaming-markdown/` directory.
 
 Fork-owned notes moved out of `AGENTS.md` to keep it short. The upstream doc on the same topic (`docs/agents/*.md` without the `fork-` prefix) may describe the same area in other words; where they disagree, these notes describe this fork. Hard rules that must survive a merge are also listed in `AGENTS.md` under **Hard rules**.
 
+## Conversation find
+Upstream's `ConversationFind` (abcwyc 0.7.8) is declined: the chat keeps the shared `FindBar` described under "Find in page", so Ctrl/Cmd+F goes to the chat or the file panel by pointer position (`lib/find-zone.ts`). Mounting both put two document-level shortcuts on the chat, and upstream's opened even with the pointer over the file panel.
+
 ## Conversation navigation
 ConversationNavigator 仅在右侧工作面板关闭、对话滚动区宽度至少 1024px，且正文左边距至少 64px 时显示。
 沿用 ResizeObserver 同时观察滚动区和实际正文列，因此侧栏缩放、窗口变化和正文宽度设置都会重新判断；
@@ -31,11 +48,41 @@ ConversationNavigator 仅在右侧工作面板关闭、对话滚动区宽度至�
 
 ## Touch affordances
 
+Sidebar and topbar menus are placed from their measured size, never from a
+guessed height: `lib/menu-placement.ts` flips a menu above its anchor when the
+space below cannot hold it and keeps it inside the viewport, and
+`hooks/useMenuPlacement.ts` applies that before the browser paints. A row near
+the bottom of the window must not push its last entry (delete, remove project)
+under the window edge. `node e2e/sidebar-menu-placement.mjs` covers the session
+and project menus in both themes and languages.
+
+The session-row more action reserves a 28px hit area. Its 20px painted highlight
+is inset by the shared 4px choice gap on all sides, with the same 4px clearance
+to the row's trailing edge. Keep the row/slot/button dimensions in CSS; do not
+restore the old 24px inline slot and separate 7px row padding. The glyph and
+highlight share a center in hover, keyboard-focus and open-menu states.
+
+Session deletion uses the shared `ChatConfirmDialog`; do not swap the 28px session
+row for inline Delete/Cancel buttons. Keep the row and title visible, show the full
+name separately from the consequence, and use the shared neutral/soft-danger actions
+with an 8px gap. Menu and Delete-key entry points share this confirmation, including
+the optional chat-folder checkbox; Shift+click retains its existing bypass. Keep the
+dialog open while deleting, with local errors and retry, and restore row focus on cancel.
+
 Session rows render the "…" action menu when `(hovered || touchMode)` — `touchMode` is a post-mount `matchMedia("(hover: none)")` check, so hover styling is untouched on desktop and rename/delete stay reachable on touch. The composer's single circular action shows Stop while a run is active and the draft is empty; typing switches it to queued Send, including on narrow screens. Escape remains available to stop while drafting. Rename/delete failures use the global shell notice shelf (`appNotify.error` with `sidebar.renameFailed` / `sidebar.deleteFailed`) instead of being swallowed.
 Message-row copy/edit/fork actions use CSS hover/focus-within reveal instead of JS hover state, and are always visible under `(hover: none)`. They must remain pointer-enabled when focused so keyboard tabbing does not land on invisible controls.
 While a session runs, in-session "Edit from here" stays visible but disabled with the Esc hint; fork stays available because it copies to an independent file.
 
 ## Global operation notices
+Persistent operations use `persistent: true` and replace their progress notice with
+`updateAppNotice` when they settle. An update cannot revive a dismissed notice;
+success resets the normal expiry deadline, while actionable errors remain visible.
+Generate title uses this shelf after its menu closes, including a Models shortcut
+for failures. Retry reuses the operation's notice and clears the old error action.
+The shelf starts below the 48px toolbar with a 12px gap and sits below menus and
+dialogs, so notices cannot block retry or window controls. Its surface uses the
+shared radius, spacing and semantic colors in both themes.
+
 `lib/notification-store.ts` and `components/AppNoticeShelf.tsx` own cross-surface shell notices (`appNotify.info/success/warning/error`). They queue and expire automatically, but a notice with an action stays until dismissed so the action cannot vanish. Keep errors beside the affected control when position carries meaning; use the shelf when the action comes from a global surface such as the sidebar or workspace shell. Do not claim Undo in one of these notices unless the data path really restores the original state — session DELETE currently unlinks files and cascades subagents, so it has no safe client-side undo.
 
 ## Keyboard shortcuts
@@ -44,7 +91,7 @@ While a session runs, in-session "Edit from here" stays visible but disabled wit
 
 Any root session row (a chat or a project session, never a subagent child) can be pinned from its row menu (native and DOM, "Pin" / "Unpin", `sidebar.pinSession`). The behaviour follows Claude Desktop: a pinned session leaves its own section and is listed under a "Pinned" section above Chats and Projects, ordered by recency, with a subtitle naming where it came from (no pin mark: the section header already says so) (the project's display name, or "Chats"). Its project keeps its row (the group tree, its folded count and chips just skip the pinned rows), the chronological view skips it too, and the pin wins over archiving: a pinned session of an archived project or an archived chat stays under Pinned. The section renders only while something is pinned, folds like Chats (`collapsedPinned`), and a search ignores the fold. Pins are a browser preference (`pinnedSessions`, keyed by root session id; `lib/pinned-sessions.ts` folds the older chat-only `pinnedChats` key in on first read and drops it); deleting a session drops its pin. Pinned by `components/SessionSidebar.test.mjs` and `lib/pinned-sessions.test.mjs`.
 
-The sidebar project tree is a keyboard `tree`: rows move focus with Up/Down/Home/End, project and subagent groups expand/collapse with Right/Left, Enter/Space activates, F2 starts rename, and Delete arms the same inline confirmation as the row menu. Roving-tabindex extraction is intentionally not used yet because timeline rows and future non-session tree rows still need one shared focus model.
+The sidebar project tree is a keyboard `tree`: rows move focus with Up/Down/Home/End, project and subagent groups expand/collapse with Right/Left, Enter/Space activates, F2 starts rename, and Delete opens the same shared confirmation dialog as the row menu. Roving-tabindex extraction is intentionally not used yet because timeline rows and future non-session tree rows still need one shared focus model.
 
 ## Projects pane views
 The Projects header's hover-only `…` menu switches between `grouped` (project rows with nested session families) and `timeline` (all top-level session families sorted by the root session's `modified` time, with each row's project name after the title). The choice persists in `APP_PREF_KEYS.projectViewMode`. Collapse/expand-all remain grouped-view actions; switching modes never rewrites the stored `collapsedProjects` set. The old Recent section is intentionally gone — the timeline replaces it. Desktop uses `showNativeMenu` check items, while the web build renders `ProjectViewMenu` as a DOM popover. In grouped view, "Show more" reveals five additional session rows per click; collapsing and reopening a project clears that page state so it starts from the latest five (`APP_PREF_KEYS.expandedProjects` stores root → extra pages).
@@ -111,17 +158,14 @@ The topbar renders exactly ONE toolbar group (`app-topbar-actions`: history/bran
 读取本机字体；Windows 使用系统字体集合及其本地化名称，macOS 使用 system_profiler，Linux 使用 fontconfig。
 两种字体选择器沿用 AppSelect 的菜单、键盘导航和间距，读取失败保留手动输入并提供重试。
 字体为默认值时隐藏恢复按钮，改动后显示可用的恢复操作；标题行保留高度。
-背景和字体保存状态仅供读屏播报，不插入可见行挤动布局；错误仍显示并可重试。
+字体保存状态仅供读屏播报，不插入可见行挤动布局；错误仍显示并可重试。
 嵌入设置的配置面板与侧栏共用 `--surface-elevated`，与常规/外观内容底色一致，控件和选中态仍使用各自 token。
 设置行的 `.settings-option-action` 使用 `align-self: center`，与多行说明整体居中。
+终端说明与 Shell 工具一致，使用标题与选项之间的 `.settings-general-description`，不放进选项卡片。
 回归：`node e2e/fonts.mjs` 覆盖真实设置页、即时预览、保存/恢复、错误、菜单及按钮几何。
 
-外观页提供花瓣、薄雾、草地、黄昏、纯色五种背景卡片，明暗模式独立选择。
-卡片网格使用内容区可用宽度，默认桌面窗口五项排成一行；空间不足再换行，不能用固定宽度上限提前挤出第二行。
-卡片预览和实际背景共用 `native-theme.css` 的 `--wash-*`，选中用蓝色边缘及圆点。
-`useBackground` 负责即时显示、串行保存与过期读取保护，`/api/appearance` 将选择保存到
-Pi Web 自身的 `pi-web/settings.json`，保留其他字段；端口改变后从该文件恢复。
-`THEME_INIT_SCRIPT` 先使用浏览器缓存避免刷新闪烁。相关回归：`node e2e/appearance.mjs`。
+外观页只提供明暗模式，没有背景选择；侧栏、窗口和设置外框是同一个中性纯色（`--canvas-background`），
+强调色用 CSS `AccentColor` 跟随系统。`THEME_INIT_SCRIPT` 先使用浏览器缓存避免刷新闪烁。相关回归：`node e2e/appearance.mjs`。
 
 ## 设置选项细节
 

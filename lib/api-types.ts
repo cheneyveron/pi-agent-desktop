@@ -2,6 +2,13 @@ import type { McpExposure, ResourceDiagnostic } from "@earendil-works/pi-coding-
 import type { McpImportNote } from "./mcp-import-core";
 import type { SubagentProfile } from "./subagents";
 
+export interface TerminalSettingsResponse {
+  shell: string;
+  defaultShell: string | null;
+  options: { value: string; label: string }[];
+  unavailable: boolean;
+}
+
 export interface SubagentProfilesResponse {
   profiles: SubagentProfile[];
 }

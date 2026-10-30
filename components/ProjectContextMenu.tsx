@@ -13,6 +13,8 @@ import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { isImeComposing } from "@/lib/ime";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
+import { useMenuPlacement } from "@/hooks/useMenuPlacement";
+import type { MenuAnchor } from "@/lib/menu-placement";
 import { showNativeMenu, type NativeMenuEntry, type NativeMenuPoint } from "@/lib/desktop-menu";
 import type { TranslationParams } from "@/lib/i18n/types";
 
@@ -217,6 +219,9 @@ interface ProjectContextMenuProps {
   menuRef: RefObject<HTMLDivElement | null>;
   projectRoot: string;
   pos: { top: number; left: number };
+  /** The "…" button the menu belongs to. The menu flips above it when the
+   *  space below is too small for its measured height. */
+  anchor: MenuAnchor | null;
   view: ProjectMenuView;
   branchMenu: ProjectBranchMenuState | null;
   branchLoading: boolean;
@@ -251,7 +256,7 @@ interface ProjectContextMenuProps {
 
 /** The menu itself; ProjectContextMenu portals it to the document body. */
 export function ProjectContextMenuPanel({
-  menuRef, projectRoot, pos, view, branchMenu, branchLoading, selectedCwd, switchingBranch,
+  menuRef, projectRoot, pos, anchor, view, branchMenu, branchLoading, selectedCwd, switchingBranch,
   fetching, worktreeBusy, worktreeError, confirmRemove, newBranch,
   canReveal, revealLabel, projectRevealError, t,
   onShowBranches, onShowWorktrees, onShowNewWorktree, onBackToActions, onOpenTerminal, onReveal, onArchive,
@@ -260,6 +265,11 @@ export function ProjectContextMenuPanel({
   onClose = () => {},
 }: ProjectContextMenuProps) {
   useMenuNavigation(view !== "new-worktree" && !confirmRemove, menuRef, onClose);
+  // The menu is far taller than the row that opened it, so its real height is
+  // measured after rendering: a row near the bottom of the window flips the
+  // menu upward instead of letting it run off the screen.
+  const placed = useMenuPlacement(anchor, menuRef);
+  const position = placed ?? pos;
   const data = branchMenu?.root === projectRoot ? branchMenu : null;
   const loaded = Boolean(data?.loaded);
   const checkout = data ? currentCheckout(data.worktrees, selectedCwd) : undefined;
@@ -491,7 +501,7 @@ export function ProjectContextMenuPanel({
     <div
       ref={menuRef}
       className={`sidebar-project-context-menu native-popover app-menu${view === "actions" ? "" : " sidebar-project-context-menu--wide"}`}
-      style={{ top: pos.top, left: pos.left, maxHeight: "min(70vh, 420px)", overflowY: "auto" }}
+      style={{ top: position.top, left: position.left, maxHeight: "min(70vh, 420px)", overflowY: "auto" }}
       role="menu"
     >
       {body}

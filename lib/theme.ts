@@ -1,5 +1,3 @@
-import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND } from "./backgrounds.ts";
-
 export const THEME_OPTIONS = [
   { id: "auto", label: "settings.themeSystem" },
   { id: "light", label: "settings.themeLight" },
@@ -21,4 +19,4 @@ export function isDarkTheme(theme: ResolvedTheme): boolean {
 }
 
 // Apply the saved palette before first paint, including when storage is blocked.
-export const THEME_INIT_SCRIPT = `(function(){var t="auto",b=${JSON.stringify(DEFAULT_BACKGROUND)};try{var s=localStorage.getItem("pi-theme");if(${JSON.stringify(THEME_OPTIONS.map((option) => option.id))}.includes(s))t=s;var p=localStorage.getItem("pi-background");if(${JSON.stringify(BACKGROUND_OPTIONS.map((option) => option.id))}.includes(p))b=p}catch(e){}if(t==="auto")t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=document.documentElement;r.dataset.theme=t;r.dataset.background=b;r.classList.toggle("dark",t==="dark"||t==="pine")})();`;
+export const THEME_INIT_SCRIPT = `(function(){var t="auto";try{var s=localStorage.getItem("pi-theme");if(${JSON.stringify(THEME_OPTIONS.map((option) => option.id))}.includes(s))t=s}catch(e){}if(t==="auto")t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=document.documentElement;r.dataset.theme=t;r.classList.toggle("dark",t==="dark"||t==="pine")})();`;

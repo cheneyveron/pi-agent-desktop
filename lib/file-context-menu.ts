@@ -25,6 +25,48 @@ export function inlineCodeFilePath(text: string, cwd: string | undefined): strin
   return resolveLocalFileHref(trimmed, cwd);
 }
 
+const FENCE_LINE = /^[ \t>]*(`{3,}|~{3,})/;
+const INLINE_CODE_SPAN = /`([^`\n]+)`/g;
+
+/**
+ * Fenced blocks introduced by a path: "Saved: `/a/b.md`. Full content:" followed
+ * by the fence. Maps the 1-based line a fence opens on to the file the prose
+ * right before it names (the last inline-code path with an extension in the
+ * paragraph above, blank lines skipped), so the block can offer an Open
+ * button. Only a guess; the caller confirms the file exists.
+ */
+export function fenceFilePaths(markdown: string, cwd: string | undefined): Map<number, string> {
+  const result = new Map<number, string>();
+  if (!markdown.includes("`")) return result;
+  const lines = markdown.split(/\r?\n/);
+  let fence: { marker: string; size: number } | null = null;
+  for (let index = 0; index < lines.length; index++) {
+    const match = FENCE_LINE.exec(lines[index]);
+    if (!match) continue;
+    const marker = match[1][0];
+    const size = match[1].length;
+    if (fence) {
+      if (marker === fence.marker && size >= fence.size) fence = null;
+      continue;
+    }
+    fence = { marker, size };
+    let above = index - 1;
+    while (above >= 0 && lines[above].trim() === "") above--;
+    let path: string | null = null;
+    for (; above >= 0 && lines[above].trim() !== "" && !FENCE_LINE.test(lines[above]); above--) {
+      const spans = [...lines[above].matchAll(INLINE_CODE_SPAN)];
+      for (let i = spans.length - 1; i >= 0 && !path; i--) {
+        const text = spans[i][1].trim();
+        if (/\s/.test(text) || !/\.[A-Za-z0-9]{1,8}$/.test(text)) continue;
+        path = inlineCodeFilePath(text, cwd);
+      }
+      if (path) break;
+    }
+    if (path) result.set(index + 1, path);
+  }
+  return result;
+}
+
 /** Apps are listed per file type: Launch Services answers by extension, and one lookup costs ~150ms. */
 export function appListCacheKey(filePath: string): string {
   const name = getFileName(filePath);

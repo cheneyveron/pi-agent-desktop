@@ -8,6 +8,8 @@ export interface AppNoticeInput {
   id?: string;
   message: string;
   type?: AppNoticeType;
+  /** Keep an in-progress operation or an actionable error visible until updated/dismissed. */
+  persistent?: boolean;
   /**
    * Notices with an action do not auto-expire. The caller owns the translated
    * label and keeps the handler current; the store only owns presentation.
@@ -71,14 +73,14 @@ function scheduleExpiry(): void {
   clearExpiryTimer();
   const now = Date.now();
   const deadlines = notices
-    .filter((notice) => !notice.exiting && !notice.action)
+    .filter((notice) => !notice.exiting && !notice.action && !notice.persistent)
     .map((notice) => notice.createdAt + NOTICE_VISIBLE_MS)
     .filter((deadline) => deadline > now);
   if (deadlines.length === 0) return;
   expiryTimer = setTimeout(() => {
     const current = Date.now();
     const expiredIds = notices
-      .filter((notice) => !notice.exiting && !notice.action && notice.createdAt + NOTICE_VISIBLE_MS <= current)
+      .filter((notice) => !notice.exiting && !notice.action && !notice.persistent && notice.createdAt + NOTICE_VISIBLE_MS <= current)
       .map((notice) => notice.id);
     if (expiredIds.length === 0) {
       scheduleExpiry();
@@ -138,6 +140,18 @@ export function dismissAppNotice(id: string): void {
   notices = notices.map((item) => item.id === id ? { ...item, exiting: true } : item);
   emit();
   expiryTimer = setTimeout(() => removeNotice(id), NOTICE_EXIT_ANIMATION_MS);
+}
+
+/** Replace progress with its result in place. Never resurrect a dismissed notice. */
+export function updateAppNotice(id: string, input: Omit<AppNoticeInput, "id">): boolean {
+  const message = input.message.trim();
+  if (!message || !notices.some((notice) => notice.id === id && !notice.exiting)) return false;
+  notices = notices.map((notice) => notice.id === id
+    ? { ...notice, ...input, message, type: input.type ?? notice.type, createdAt: Date.now() }
+    : notice);
+  emit();
+  scheduleExpiry();
+  return true;
 }
 
 export async function runAppNoticeAction(id: string): Promise<void> {

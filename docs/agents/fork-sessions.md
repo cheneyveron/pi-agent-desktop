@@ -1,5 +1,15 @@
 # Sessions, events and the chat client — fork notes
 
+## Generated session titles
+
+Generate title makes a separate bounded request with the current conversation's
+model and credentials. A stored key is not proof that the provider accepts it.
+AppShell keeps progress and results in the global notice shelf after More closes;
+authentication errors explain that the key/model needs attention and link to Models.
+It never silently switches providers. A synchronous per-session guard prevents
+duplicate submissions; results refresh the sidebar but only update the active
+header when they still belong to that conversation.
+
 ## Editable composer outbox
 
 `lib/composer-queue.ts` owns individually identified pending composer messages, including images.

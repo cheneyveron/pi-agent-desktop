@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { createElement as renderSyntaxNode, type createElementProps } from "react-syntax-highlighter";
-import { vs, vscDarkPlus } from "@/lib/syntax-highlighting";
+// Registers the Prism languages highlightCodeLines tokenizes with.
+import "@/lib/syntax-highlighting";
+import { calmCodeTheme } from "@/lib/code-theme";
 import { highlightCodeLines, type CodeLine } from "@/lib/code-highlight";
 import { copiedCodeText } from "@/lib/code-copy";
 import { CODE_ROW_HEIGHT, VirtualCodeList } from "./VirtualCodeList";
 import ReactMarkdown from "react-markdown";
-import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
   getFileExt,
@@ -205,7 +206,7 @@ function copiedSourceText(root: HTMLElement, range: Range, sourceLines: string[]
   return [first, ...sourceLines.slice(startLine, endLine - 1), last].join("\n");
 }
 
-type SyntaxStylesheet = typeof vs;
+type SyntaxStylesheet = typeof calmCodeTheme;
 
 const SOURCE_LINE_STYLE: CSSProperties = { display: "flex", minWidth: "100%" };
 const SOURCE_LINE_CONTENT_STYLE: CSSProperties = {
@@ -229,11 +230,6 @@ function renderCodeTokens(tokens: CodeLine, stylesheet: SyntaxStylesheet): React
     useInlineStyles: true,
     key: index,
   }));
-}
-
-/** Text color of untokenized code in a Prism theme. */
-function codeBaseColor(stylesheet: SyntaxStylesheet): string | undefined {
-  return stylesheet['pre[class*="language-"]']?.color;
 }
 
 function getFileApiUrl(
@@ -588,7 +584,7 @@ function DiffView({
       style={{
         width: "max-content",
         minWidth: "100%",
-        color: (tokens && codeBaseColor(stylesheet)) || "var(--text)",
+        color: "var(--text)",
         tabSize: 4,
         ...FILE_CODE_STYLE,
       }}
@@ -1134,7 +1130,6 @@ function TextFileViewer({
   onStateChange,
   watchEnabled = true,
 }: Props) {
-  const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
@@ -1386,7 +1381,7 @@ function TextFileViewer({
       ? "source"
       : displayMode;
   const showsSource = effectiveDisplayMode === "source" || (effectiveDisplayMode === "diff" && !hasGitDiff);
-  const syntaxStylesheet = isDark ? vscDarkPlus : vs;
+  const syntaxStylesheet = calmCodeTheme;
   // Tokenized once per load; the virtualized list renders only the rows on screen.
   const sourceTokens = useMemo(
     () => (showsSource ? highlightCodeLines(viewerContent, language) : null),
@@ -1821,7 +1816,7 @@ function TextFileViewer({
               minWidth: "100%",
               minHeight: "100%",
               background: "var(--bg)",
-              color: (sourceTokens && codeBaseColor(syntaxStylesheet)) || "var(--text)",
+              color: "var(--text)",
               tabSize: 4,
               ...FILE_CODE_STYLE,
             }}

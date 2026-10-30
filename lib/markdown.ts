@@ -14,6 +14,8 @@ const markdownSanitizeSchema = {
   attributes: {
     ...defaultSchema.attributes,
     code: [["className", /^language-./, "math-inline", "math-display"]],
+    div: [...(defaultSchema.attributes?.div ?? []), ["className", /^markdown-alert(?:-[a-z]+)?$/]],
+    p: [...(defaultSchema.attributes?.p ?? []), ["className", "markdown-alert-title"]],
   },
   protocols: {
     ...defaultSchema.protocols,
@@ -505,11 +507,79 @@ const remarkCurrencySafeMath: Plugin = function () {
   }
 };
 
+/**
+ * A leading `---` YAML block is parsed by remark-frontmatter so its closing
+ * `---` cannot turn it into a setext heading, but react-markdown has no
+ * rendering for the resulting `yaml` node and dropped it. In a reply that hid
+ * text the model wrote (a pasted YAML sample, or a `---` rule used as an
+ * opener), so the block is shown as a yaml code fence instead.
+ */
+export function remarkFrontmatterAsCode() {
+  return (tree: MarkdownTreeNode) => {
+    for (const node of tree.children ?? []) {
+      if (node.type === "yaml") {
+        node.type = "code";
+        (node as MarkdownTreeNode & { lang?: string }).lang = "yaml";
+      }
+    }
+  };
+}
+
+const ALERT_KINDS: Record<string, string> = {
+  NOTE: "Note",
+  TIP: "Tip",
+  IMPORTANT: "Important",
+  WARNING: "Warning",
+  CAUTION: "Caution",
+};
+const ALERT_MARKER = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\r?\n|$)/i;
+
+interface MarkdownAlertNode {
+  type: string;
+  value?: string;
+  children?: MarkdownAlertNode[];
+  data?: { hName?: string; hProperties?: Record<string, unknown> };
+}
+
+/**
+ * GitHub alerts: `> [!NOTE]` as the first line of a quote turns the quote
+ * into a titled callout. Only a direct top-level quote is converted, so a
+ * marker inside a list item or nested quote stays an ordinary quote.
+ */
+export function remarkGithubAlerts() {
+  return (tree: MarkdownAlertNode) => {
+    for (const node of tree.children ?? []) {
+      if (node.type !== "blockquote") continue;
+      const paragraph = node.children?.[0];
+      const first = paragraph?.type === "paragraph" ? paragraph.children?.[0] : undefined;
+      if (!paragraph || !first || first.type !== "text" || !first.value) continue;
+      const match = ALERT_MARKER.exec(first.value);
+      if (!match) continue;
+      const kind = match[1].toUpperCase();
+      first.value = first.value.slice(match[0].length);
+      if (!first.value) paragraph.children?.shift();
+      if (!paragraph.children?.length) node.children?.shift();
+      node.data = {
+        hName: "div",
+        hProperties: { className: ["markdown-alert", `markdown-alert-${kind.toLowerCase()}`] },
+      };
+      const title: MarkdownAlertNode = {
+        type: "paragraph",
+        data: { hName: "p", hProperties: { className: ["markdown-alert-title"] } },
+        children: [{ type: "text", value: ALERT_KINDS[kind] }],
+      };
+      node.children = [title, ...(node.children ?? [])];
+    }
+  };
+}
+
 export const markdownRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
   [remarkFrontmatter, ["yaml"]],
+  remarkFrontmatterAsCode,
   [remarkGfm, remarkGfmOptions],
   remarkSplitAutolinkLiterals,
   remarkCurrencySafeMath,
+  remarkGithubAlerts,
 ];
 
 // User messages keep every typed line break, as the TUI shows them (#680). The

@@ -49,7 +49,7 @@
     "release:verify": "node scripts/verify-release-components.mjs",
     "drift": "node scripts/measure-fork-drift.mjs",
     "preview-runtime": "node scripts/build-preview-runtime.mjs",
-    "desktop:verify": "node scripts/verify-packaged-codemode.mjs",
+    "desktop:verify": "node scripts/verify-packaged-codemode.mjs && node scripts/verify-packaged-terminal.mjs",
     "desktop:release": "node scripts/publish-desktop.mjs",
     "test:release-tools": "node --test scripts/*.test.mjs",
     "check:deps": "node scripts/check-installed-deps.mjs",
@@ -60,7 +60,7 @@
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
     "postinstall": "node bin/prepare-terminal.js",
     "test:terminal": "node e2e/terminal.mjs",
-    "test:e2e": "node e2e/conversation-navigator.mjs && node e2e/chat-prompt-anchor.mjs && node e2e/composer-outbox.mjs && node e2e/option-controls.mjs && node e2e/appearance.mjs && node e2e/settings-controls.mjs && node e2e/fonts.mjs && node e2e/streaming-markdown.mjs && node e2e/run.mjs"
+    "test:e2e": "node e2e/conversation-navigator.mjs && node e2e/chat-prompt-anchor.mjs && node e2e/composer-outbox.mjs && node e2e/option-controls.mjs && node e2e/appearance.mjs && node e2e/settings-controls.mjs && node e2e/fonts.mjs && node e2e/terminal-theme.mjs && node e2e/terminal-settings.mjs && node e2e/session-delete.mjs && node e2e/sidebar-menu-placement.mjs && node e2e/streaming-markdown.mjs && node e2e/title-feedback.mjs && node e2e/run.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^1.4.0",

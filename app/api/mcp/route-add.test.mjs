@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test, { after, beforeEach } from "node:test";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
+import { fixtureDir, linkDirectory } from "../../../scripts/test-platform.mjs";
 
 // POST /api/mcp { action: "add" } writes the user's files and trust.json, so
 // every case runs against a PI_CODING_AGENT_DIR in a temporary folder, never
 // the real ~/.pi/agent.
-const root = realpathSync(await mkdtemp(join(tmpdir(), "pi-web-mcp-add-route-")));
+const root = realpathSync(await fixtureDir("pi-web-mcp-add-route-"));
 const agentDir = join(root, "agent");
 const trusted = join(root, "trusted");
 const untrusted = join(root, "untrusted");
@@ -193,7 +193,7 @@ test("a fresh folder that gained resources since the panel offered the step is n
 test("a fresh folder with a link to nothing under .pi is not offered the step, and the step refuses it", async () => {
   // The SDK's existsSync sees nothing that needs trust yet; the link would need it once its target appears.
   await mkdir(join(fresh, ".pi"));
-  await symlink(join(root, "not-there-yet"), join(fresh, ".pi", "extensions"));
+  await linkDirectory(join(root, "not-there-yet"), join(fresh, ".pi", "extensions"));
   const listed = await (await GET(new Request(`http://localhost/api/mcp?cwd=${encodeURIComponent(fresh)}`, { headers: { host: "localhost" } }))).json();
   assert.deepEqual(listed.project.trust, { requiresTrust: false, trusted: true, decision: null, inherited: false });
   assert.deepEqual(listed.project.trustFolder, { allowed: false, reason: "folder-not-fresh" }, "GET and POST share one freshness rule");
