@@ -22,10 +22,11 @@ export function useMenuPlacement(
       return;
     }
     const place = () => {
-      const rect = element.getBoundingClientRect();
+      // Layout size, not getBoundingClientRect: an opening animation that
+      // scales the menu would make it measure short and overlap its anchor.
       const next = placeMenuWithinViewport(
         anchor,
-        { width: rect.width, height: rect.height },
+        { width: element.offsetWidth, height: element.offsetHeight },
         { width: window.innerWidth, height: window.innerHeight },
       );
       setPosition((current) =>

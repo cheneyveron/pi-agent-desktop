@@ -25,7 +25,10 @@ export type { NativeMenuEntry } from "./desktop-menu-model";
  * the picked id back as the command's result; a test build with this on was
  * checked by the user who reported the freeze.
  */
-export const NATIVE_POPUP_MENUS_ENABLED = process.env.NEXT_PUBLIC_NATIVE_POPUP_MENUS === "1";
+// Next inlines the variable at build time. The e2e fixtures bundle this file
+// with esbuild and no `process` at all, so guard the lookup.
+export const NATIVE_POPUP_MENUS_ENABLED = typeof process !== "undefined"
+  && process.env.NEXT_PUBLIC_NATIVE_POPUP_MENUS === "1";
 
 /** Whether a caller should try a native popup at all (desktop shell and not switched off). */
 export function canUseNativeMenu(): boolean {

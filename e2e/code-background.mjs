@@ -54,7 +54,9 @@ export async function checkCodeSelection(page, block = page.locator(".markdown-c
   // font metrics. This keeps the drag valid across themes, platforms and font
   // settings, while excluding the gutter from the start/end text-node search.
   const points = await block.evaluate((pre) => {
-    const numbers = [...pre.querySelectorAll(".react-syntax-highlighter-line-number")];
+    // Upstream numbers lines with spans; this fork draws them from data-line in
+    // a ::before, which is never text, so it cannot reach a selection either.
+    const numbers = [...pre.querySelectorAll(".react-syntax-highlighter-line-number, .code-line[data-line]")];
     if (numbers.length < 6) throw new Error("selection fixture must contain six numbered lines");
     const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
     const nodes = [];
@@ -68,7 +70,7 @@ export async function checkCodeSelection(page, block = page.locator(".markdown-c
     const a = start.getBoundingClientRect(), b = end.getBoundingClientRect();
     return { start: { x: a.left + .1, y: a.top + a.height / 2 },
       end: { x: b.right - .1, y: b.top + b.height / 2 },
-      selectableGutter: numbers.some((node) => getComputedStyle(node).userSelect !== "none") };
+      selectableGutter: numbers.some((node) => getComputedStyle(node, node.matches(".code-line") ? "::before" : null).userSelect !== "none") };
   });
   assert.equal(points.selectableGutter, false);
   try {
