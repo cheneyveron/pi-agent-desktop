@@ -25,6 +25,9 @@ tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "^2"
 tauri-plugin-dialog = "^2"
 tauri-plugin-notification = "^2"
+# Notifications that report a click (src/shell/notification.rs); the same
+# version tauri-plugin-notification already pulls in.
+notify-rust = "4.18"
 tauri-plugin-process = "^2"
 tauri-plugin-updater = "^2"
 tauri-plugin-window-state = "^2"
@@ -40,6 +43,8 @@ webview2-com = "0.39"
 windows-core = "0.62"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# Waits for a click on a notification body, which notify-rust does not on macOS.
+mac-notification-sys = "0.6"
 # NSVisualEffectView behind the (transparent) webview: the sidebar material.
 window-vibrancy = "0.8"
 # Re-applies the traffic-light inset after AppKit's own title-bar layout
