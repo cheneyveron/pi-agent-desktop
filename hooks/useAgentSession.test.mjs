@@ -868,6 +868,7 @@ test("a pending message edit follows the session when ChatWindow stays mounted",
   );
   assert.match(editSource, /useState\(\(\) => readPendingHistoryEdit\(session\?\.id\)\)/);
   assert.match(editSource, /if \(editSessionId !== session\?\.id\) \{\n\s+setEditSessionId\(session\?\.id\);\n\s+setEditEntryId\(readPendingHistoryEdit\(session\?\.id\)\);/);
+});
 
 test("the model list is requested after the session's opening read, with a bounded wait", () => {
   const openSource = source.slice(
