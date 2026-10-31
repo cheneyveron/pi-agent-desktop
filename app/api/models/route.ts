@@ -11,7 +11,7 @@ import {
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { projectTrustReloadOptions } from "@/lib/project-trust";
-import { isChatWorkspacePath } from "@/lib/chat-workspace";
+import { chatWorkspaceDir, isChatFolderPath, isChatWorkspacePath } from "@/lib/chat-workspace";
 import { readChatSettings, resolveChatStartDefaults } from "@/lib/chat-settings";
 
 export const dynamic = "force-dynamic";
@@ -136,7 +136,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    return Response.json(await loadModelsWithCache(cwd, () => loadModels(cwd)));
+    // Every chat folder gets the same list (same chat policy, no project config), so they
+    // share the chat root's entry instead of a cold load for each chat opened.
+    const cacheKey = isChatFolderPath(cwd) ? chatWorkspaceDir() : cwd;
+    return Response.json(await loadModelsWithCache(cacheKey, () => loadModels(cwd)));
   } catch {
     return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }

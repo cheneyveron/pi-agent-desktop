@@ -5,6 +5,7 @@ import { isMcpTool } from "./mcp-read-only-policy";
 import { isSensitivePath, type ChatFileGrants } from "./chat-file-access";
 import { SAVE_TO_DOWNLOADS_TOOL_NAME } from "./chat-downloads-tool";
 import { userHome } from "./user-home";
+import { CHAT_SHELL_BLOCK_MARKER } from "./chat-shell-block";
 
 /**
  * What a chat (the non-project workspace) may and may not do.
@@ -137,7 +138,7 @@ export const CHAT_WORKSPACE_PROMPT = chatWorkspacePrompt(true);
 
 export function chatBlockedToolReason(toolName: string, hasFolder = false): string {
   if (hasFolder) {
-    return `"${toolName}" is not available in a chat: a chat has no shell. The user can let this chat use their computer from the chat's menu, or open a project to use it.`;
+    return `${CHAT_SHELL_BLOCK_MARKER} "${toolName}" is not available in a chat: a chat has no shell. The user can let this chat use their computer (a prompt is shown to them), or open a project to use it.`;
   }
   return `"${toolName}" is not available in a chat. Chats have no access to the user's files or shell; open a project to use it.`;
 }

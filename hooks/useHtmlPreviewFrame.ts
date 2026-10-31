@@ -14,7 +14,7 @@ import {
 
 type ThemeColors = NonNullable<HtmlPreviewOptions["theme"]>;
 
-function readThemeColors(dark: boolean): ThemeColors | undefined {
+export function readThemeColors(dark: boolean): ThemeColors | undefined {
   if (typeof document === "undefined" || !document.body) return undefined;
   const style = getComputedStyle(document.body);
   return { scheme: dark ? "dark" : "light", background: style.backgroundColor, text: style.color };

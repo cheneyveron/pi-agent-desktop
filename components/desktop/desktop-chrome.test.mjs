@@ -27,9 +27,12 @@ const { desktopChromeFor: chromeFor } = await jiti.import("./useDesktopChrome.ts
 
 const PLATFORMS = ["macos", "windows", "linux", null];
 
-test("drag region matches the original data-tauri-drag-region expression", () => {
+// "deep" rather than the original bare `true`: Tauri's bare drag region only
+// reacts to a press on the element itself, so the sidebar's controls row and
+// the topbar title (children covering the region) could not move the window.
+test("drag region is a deep data-tauri-drag-region on every desktop platform", () => {
   for (const platform of PLATFORMS) {
-    const legacy = platform ? true : undefined;
+    const legacy = platform ? "deep" : undefined;
     const actual = chromeFor(platform).dragRegionProps["data-tauri-drag-region"];
     assert.equal(actual, legacy, `platform ${platform}`);
   }
@@ -61,7 +64,7 @@ test("macOS keeps its native traffic lights and draws no buttons", () => {
   assert.equal(chrome.isDesktop, true);
   assert.equal(chrome.isMacOS, true);
   assert.equal(chrome.isDesktop && !chrome.isMacOS, false);
-  assert.equal(chrome.dragRegionProps["data-tauri-drag-region"], true);
+  assert.equal(chrome.dragRegionProps["data-tauri-drag-region"], "deep");
 });
 
 test("macOS traffic lights share the sidebar controls' centre line", () => {
@@ -77,6 +80,6 @@ test("windows and linux draw their own buttons", () => {
   for (const platform of ["windows", "linux"]) {
     const chrome = chromeFor(platform);
     assert.equal(chrome.isDesktop && !chrome.isMacOS, true, `platform ${platform}`);
-    assert.equal(chrome.dragRegionProps["data-tauri-drag-region"], true, `platform ${platform}`);
+    assert.equal(chrome.dragRegionProps["data-tauri-drag-region"], "deep", `platform ${platform}`);
   }
 });

@@ -315,7 +315,19 @@ const FORK_FEATURES = [
     file: "components/AppShell.tsx",
     // The page covers the chat without unmounting it. Picking a session or starting a
     // new one must close it, and the cold-start restore must not.
-    markers: ["ScheduledView", "scheduledOpen", "scheduledOpenRef", "handleOpenScheduled", "setScheduledOpen(false)", "useScheduledRunNotifications"],
+    markers: ["ScheduledView", "scheduledOpen", "pageOpenRef", "handleOpenScheduled", "setWorkspaceView(null)", "useScheduledRunNotifications"],
+  },
+  {
+    name: "Artifacts entry in the sidebar",
+    file: "components/SessionSidebar.tsx",
+    markers: ["ArtifactsSidebarRow", "onOpenArtifacts"],
+  },
+  {
+    name: "Artifacts page in AppShell",
+    file: "components/AppShell.tsx",
+    // Shares `?view=` with Scheduled; "Show in conversation" reuses the search
+    // jump (handleOpenSession with an entry id) to scroll to the version.
+    markers: ["<ArtifactsView", "handleOpenArtifacts", "parseWorkspaceView", "handleOpenSession(sessionId, entryId)"],
   },
   {
     name: "scheduled runs are tagged in the session list",

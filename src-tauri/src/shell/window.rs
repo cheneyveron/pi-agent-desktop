@@ -14,6 +14,7 @@ use crate::native_prefs::{
 #[cfg(not(target_os = "macos"))]
 use crate::native_prefs::{is_wayland, theme_background_color};
 use crate::shell::{open_external, schedule_reveal_after_page_load, WINDOW_LABEL};
+use super::webview_recovery;
 
 /// Where the macOS traffic lights go, in logical points from the window's
 /// top-left corner: X is the close button's left edge, CENTRE_Y the buttons'
@@ -42,6 +43,7 @@ pub fn launched_at_login() -> bool {
 }
 
 pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<WebviewWindow> {
+    webview_recovery::remember_main_url(&app_url);
     let navigation_origin = app_url.clone();
     let navigation_app = app.clone();
     let stored_theme = read_stored_theme(app);
@@ -138,6 +140,10 @@ pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<Webvi
             // `native-vibrancy` class tells native-theme.css to let the sidebar
             // show through; without it the page paints opaque as before.
             .transparent(true)
+            // Without this WKWebView swallows the click that activates an
+            // inactive window, so the first press on the title bar never
+            // starts a drag and has to be repeated.
+            .accept_first_mouse(true)
             .initialization_script(window_appkit::VIBRANCY_MARKER_SCRIPT);
     }
 
@@ -151,6 +157,10 @@ pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<Webvi
         app,
         &format!("window built, hidden (+{}ms)", since_process_start_ms()),
     );
+
+    // A dead renderer leaves the window black with no other signal (#169).
+    #[cfg(windows)]
+    webview_recovery::watch_process_failures(&window);
 
     #[cfg(target_os = "macos")]
     {

@@ -17,7 +17,8 @@
 
 import { htmlPreviewHasActiveContent } from "./html-preview.ts";
 
-export type ArtifactType = "html" | "svg" | "react" | "mermaid" | "markdown" | "code";
+export const ARTIFACT_TYPES = ["html", "react", "svg", "mermaid", "markdown", "code"] as const;
+export type ArtifactType = typeof ARTIFACT_TYPES[number];
 
 export interface ArtifactBlock {
   identifier: string;
@@ -299,6 +300,13 @@ export function assistantTexts(messages: readonly MessageLike[]): string[] {
 export function versionIndexOf(entry: ArtifactEntry | undefined, block: Pick<ArtifactBlock, "content" | "title">): number {
   if (!entry) return -1;
   return entry.versions.findIndex((version) => version.content === block.content && version.title === block.title);
+}
+
+/** Content that runs code when previewed: every React module, scripted HTML/SVG. */
+export function artifactHasActiveContent(version: Pick<ArtifactVersion, "type" | "content">): boolean {
+  if (version.type === "react") return true;
+  if (version.type === "html" || version.type === "svg") return htmlPreviewHasActiveContent(version.content);
+  return false;
 }
 
 /**

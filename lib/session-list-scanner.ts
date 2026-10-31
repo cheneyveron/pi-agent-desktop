@@ -12,6 +12,7 @@ import { createInterface } from "node:readline";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { attachmentAwareTitle } from "./chat-attachments";
+import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
 
 export interface ScannedSessionInfo {
 	path: string;
@@ -47,8 +48,9 @@ function isRecord(value: unknown): value is RawEntry {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-// 2: entries carry compactionCount; v1 entries would silently report none.
-const INDEX_FORMAT_VERSION = 2;
+// 3: derived first-message previews omit SDK image hints. Invalidate old cached
+// metadata, not session files or user-assigned session_info names.
+const INDEX_FORMAT_VERSION = 3;
 
 declare global {
 	var __piWebScanIndex: Map<string, IndexEntry> | undefined;
@@ -212,7 +214,9 @@ export async function scanSessionFileInfo(
 
 			const textContent = extractTextContent(message);
 			if (!textContent) continue;
-			if (!firstMessage && message.role === "user") firstMessage = attachmentAwareTitle(textContent);
+			if (!firstMessage && message.role === "user") firstMessage = attachmentAwareTitle(
+				userImageDisplayText(textContent, userMessageImageCount(message.content)),
+			);
 		}
 
 		if (!header) return null;

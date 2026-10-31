@@ -19,6 +19,7 @@ import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { parseSkillExpansion } from "@/lib/slash-display";
 import { splitAttachedFiles } from "@/lib/chat-attachments";
+import { userImageDisplayText } from "@/lib/user-image-display";
 import { AttachedFileList } from "./AttachedFileList";
 import { SavedFileCard, isSavedFileInfo } from "./SavedFileCard";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
@@ -356,19 +357,22 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   // Session files can hold `\r\n` or lone `\r` line endings (#680). Chrome renders
   // a lone `\r` as a space even in the pre-wrap command-args and raw-text views.
   // Copy uses this text too; the session file keeps the original endings.
-  const content = (
+  const imageBlocks: ImageContent[] =
+    typeof message.content === "string"
+      ? []
+      : message.content.filter((b): b is ImageContent => b.type === "image");
+
+  // SDK image normalization appends coordinate hints to persisted user text.
+  // Project those out of display/copy and newly created edit drafts. The source
+  // message and existing model context retain the exact original data.
+  const content = userImageDisplayText((
     typeof message.content === "string"
       ? message.content
       : message.content
           .filter((b): b is TextContent => b.type === "text")
           .map((b) => b.text)
           .join("\n")
-  ).replace(/\r\n?/g, "\n");
-
-  const imageBlocks: ImageContent[] =
-    typeof message.content === "string"
-      ? []
-      : message.content.filter((b): b is ImageContent => b.type === "image");
+  ).replace(/\r\n?/g, "\n"), imageBlocks.length);
 
   const skillExpansion = parseSkillExpansion(content);
   const commandText = skillExpansion?.command ?? null;
@@ -386,7 +390,12 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const time = formatTime(message.timestamp);
   const canFork = !!entryId && !!onFork;
   const copyTarget = commandText ?? content;
-  const editTarget = commandText ? replaceUserMessageText(message, commandText) : message;
+  // Editing is a new user submission, not a replay of SDK transport metadata.
+  // Build a copy with cleaned text while preserving every non-text attachment;
+  // otherwise each edit/resend can accumulate another generated image hint.
+  const editTarget = commandText || imageBlocks.length > 0
+    ? replaceUserMessageText(message, commandText ?? content)
+    : message;
 
   const imageBlocksNode = imageBlocks.length > 0 && (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>

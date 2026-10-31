@@ -39,6 +39,59 @@ try {
   console.error("[Pi Agent] compile cache unavailable:", cacheError);
 }
 
+// Startup diagnostics (#157). On some Windows logins the shell's identity
+// probe goes unanswered for over a minute after Next prints "Ready", and the
+// log showed nothing in between. These lines say which it was: the probe never
+// reaching the server, a slow first response, or the event loop being blocked
+// (module loading, antivirus scanning). Observation only, and only for the
+// first few minutes; times are seconds since this Node process started.
+const sinceStart = () => `+${process.uptime().toFixed(1)}s`;
+console.error(`[Pi Agent] launcher started ${sinceStart()} (node ${process.version})`);
+{
+  const STALL_TICK_MS = 250;
+  const STALL_REPORT_MS = 2_000;
+  const WATCH_FOR_MS = 5 * 60_000;
+  const watchUntil = Date.now() + WATCH_FOR_MS;
+  let lastTick = Date.now();
+  const stallWatch = setInterval(() => {
+    const now = Date.now();
+    const gap = now - lastTick - STALL_TICK_MS;
+    lastTick = now;
+    if (gap >= STALL_REPORT_MS) {
+      console.error(`[Pi Agent] event loop blocked for ${gap} ms (ended ${sinceStart()})`);
+    }
+    if (now > watchUntil) clearInterval(stallWatch);
+  }, STALL_TICK_MS);
+  stallWatch.unref();
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const http = require("node:http");
+  const originalEmit = http.Server.prototype.emit;
+  let sawConnection = false;
+  let sawRequest = false;
+  http.Server.prototype.emit = function emitWithStartupTiming(event, ...args) {
+    if (event === "connection" && !sawConnection) {
+      sawConnection = true;
+      console.error(`[Pi Agent] first connection accepted ${sinceStart()}`);
+    } else if (event === "request" && !sawRequest) {
+      sawRequest = true;
+      const [request, response] = args;
+      const received = Date.now();
+      const label = `${request?.method ?? "?"} ${String(request?.url ?? "?").split("?")[0]}`;
+      console.error(`[Pi Agent] first request ${label} received ${sinceStart()}`);
+      response?.once?.("finish", () => {
+        console.error(
+          `[Pi Agent] first response ${response.statusCode} sent after ${Date.now() - received} ms (${sinceStart()})`,
+        );
+      });
+    }
+    if (sawConnection && sawRequest && http.Server.prototype.emit === emitWithStartupTiming) {
+      http.Server.prototype.emit = originalEmit;
+    }
+    return originalEmit.call(this, event, ...args);
+  };
+}
+
 const expectedParentPid = Number.parseInt(process.env.PI_WEB_PARENT_PID ?? "", 10);
 
 // A normal App quit is handled by the Rust shell. This small watchdog also

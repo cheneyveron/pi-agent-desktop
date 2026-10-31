@@ -25,8 +25,6 @@ export interface SavedFileDetails {
  */
 export function createChatDownloadsExtension(options: {
   grants: ChatFileGrants;
-  /** Ask the user before every save (Settings › Chats). Read on each call. */
-  confirmBeforeSaving: () => boolean;
   downloadsDir?: () => string;
 }): InlineExtension {
   return {
@@ -45,19 +43,12 @@ export function createChatDownloadsExtension(options: {
             description: "How content is encoded. Default utf8.",
           })),
         }),
-        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        async execute(_toolCallId, params) {
           const name = checkDownloadName(params.filename);
           if (!name.ok) throw new Error(`Not saved: ${name.reason}.`);
           const data = params.encoding === "base64"
             ? Buffer.from(params.content, "base64")
             : Buffer.from(params.content, "utf8");
-          if (options.confirmBeforeSaving()) {
-            const allowed = await ctx.ui.confirm(
-              "Save a file?",
-              `Save "${name.name}" (${data.length} bytes) to your Downloads folder?`,
-            );
-            if (!allowed) throw new Error("The user declined to save the file.");
-          }
           const saved = saveDownload((options.downloadsDir ?? chatDownloadsDir)(), name.name, data);
           // So the chat can read it back, through realpath like every other grant.
           try {

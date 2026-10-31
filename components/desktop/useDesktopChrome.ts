@@ -12,8 +12,13 @@ export interface DesktopChrome {
   isDesktop: boolean;
   /** macOS keeps its native traffic lights, so the top bar insets instead of drawing controls. */
   isMacOS: boolean;
-  /** Spread onto the element that should drag the frameless window. */
-  dragRegionProps: { "data-tauri-drag-region"?: true };
+  /**
+   * Spread onto the element that should drag the frameless window. "deep"
+   * makes Tauri's own drag script accept a press on any descendant (title
+   * text, wrapper rows), not only on the element itself; buttons, links,
+   * inputs and tabs still click instead of dragging.
+   */
+  dragRegionProps: { "data-tauri-drag-region"?: "deep" };
 }
 
 /**
@@ -25,7 +30,7 @@ export function desktopChromeFor(platform: DesktopPlatform): DesktopChrome {
     platform,
     isDesktop: platform !== null,
     isMacOS: platform === "macos",
-    dragRegionProps: platform ? { "data-tauri-drag-region": true } : {},
+    dragRegionProps: platform ? { "data-tauri-drag-region": "deep" } : {},
   };
 }
 

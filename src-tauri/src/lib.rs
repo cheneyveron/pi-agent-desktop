@@ -1210,7 +1210,15 @@ pub fn run() {
     let server_api_token = desktop_api_token.clone();
     #[cfg(feature = "custom-protocol")]
     let server_instance_id = desktop_instance_id.clone();
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Must be the first plugin. Windows only: a later launch exits right after
+    // this callback runs in the primary instance, which then shows its window.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        let value = app.clone();
+        let _ = app.run_on_main_thread(move || shell::show_main_window(&value));
+    }));
+    let app = builder
         // Launch at login. The OS entry (LaunchAgent / registry Run key /
         // .desktop file) is the source of truth; the UI reads it back through
         // the plugin instead of keeping its own copy. The flag lets a login
@@ -1404,6 +1412,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == WINDOW_LABEL {
+                if let tauri::WindowEvent::Destroyed = event {
+                    shell::on_main_window_destroyed(window.app_handle());
+                }
+            }
             if window.label() == WINDOW_LABEL || window.label() == backend::REMOTE_WINDOW {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     let quit = window
@@ -1424,6 +1437,13 @@ pub fn run() {
         .expect("failed to build Pi Agent desktop app");
 
     app.run(|app_handle, event| match event {
+        // The main window is being replaced after its WebView died; the
+        // moment with no window is not a request to quit.
+        RunEvent::ExitRequested {
+            code: None, api, ..
+        } if shell::is_rebuilding_main_window() => {
+            api.prevent_exit();
+        }
         RunEvent::Exit => {
             desktop_log(app_handle, "exit");
             #[cfg(target_os = "linux")]

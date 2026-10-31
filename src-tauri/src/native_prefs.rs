@@ -65,6 +65,9 @@ fn clear_runtime_caches(app: &AppHandle) -> u64 {
     // Windows %LOCALAPPDATA%\<id>.
     if let Ok(cache_dir) = app.path().app_cache_dir() {
         for entry in fs::read_dir(&cache_dir).into_iter().flatten().flatten() {
+            if keeps_in_cache_dir(&entry.file_name()) {
+                continue;
+            }
             freed += remove_counting(&entry.path());
         }
     }
@@ -74,9 +77,10 @@ fn clear_runtime_caches(app: &AppHandle) -> u64 {
         freed += remove_counting(&data_dir.join("WebKitCache"));
     }
     // Windows WebView2: cache folders inside each profile, never the profile
-    // itself (it holds localStorage and cookies).
+    // itself (it holds localStorage and cookies). Tauri puts the profile in
+    // app_local_data_dir, not the roaming app_data_dir.
     #[cfg(target_os = "windows")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
+    if let Ok(data_dir) = app.path().app_local_data_dir() {
         for profile in fs::read_dir(data_dir.join("EBWebView"))
             .into_iter()
             .flatten()
@@ -88,6 +92,19 @@ fn clear_runtime_caches(app: &AppHandle) -> u64 {
         }
     }
     freed
+}
+
+/// On Windows app_cache_dir and app_local_data_dir are the same folder,
+/// %LOCALAPPDATA%\<id>, which also holds the WebView2 profile (localStorage)
+/// and app_log_dir. Only the caches in it may go.
+#[cfg(target_os = "windows")]
+fn keeps_in_cache_dir(name: &std::ffi::OsStr) -> bool {
+    name == "EBWebView" || name == "logs"
+}
+
+#[cfg(not(target_os = "windows"))]
+fn keeps_in_cache_dir(_name: &std::ffi::OsStr) -> bool {
+    false
 }
 
 /// Clear the webview's disk caches on demand (Settings › General).
@@ -187,9 +204,9 @@ fn clear_webview_caches(app: &AppHandle) {
             let _ = fs::remove_dir_all(&webkit_cache);
         }
     }
-    // Windows WebView2: cache partition under the app data dir.
+    // Windows WebView2: cache partition under the app local data dir.
     #[cfg(target_os = "windows")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
+    if let Ok(data_dir) = app.path().app_local_data_dir() {
         let webview2 = data_dir.join("EBWebView");
         if webview2.is_dir() {
             for entry in fs::read_dir(&webview2).into_iter().flatten().flatten() {

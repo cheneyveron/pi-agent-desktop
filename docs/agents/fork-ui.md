@@ -37,6 +37,39 @@ and screenshots go to the ignored `test-results/streaming-markdown/` directory.
 
 Fork-owned notes moved out of `AGENTS.md` to keep it short. The upstream doc on the same topic (`docs/agents/*.md` without the `fork-` prefix) may describe the same area in other words; where they disagree, these notes describe this fork. Hard rules that must survive a merge are also listed in `AGENTS.md` under **Hard rules**.
 
+## Image dimension hints in user messages
+
+The SDK appends `[Image: original … displayed at …]` coordinate notes to persisted
+image prompts after resizing. `lib/user-image-display.ts` projects a strict trailing
+note block (including MIME conversion hints) out of `UserMessageView` display/copy
+and new edit drafts, only with attached images (no more distinct hint groups than images).
+Exact repeated suffix groups from older edits count once; distinct excess groups
+and notes inside unfinished Markdown fences remain untouched.
+Edit drafts preserve attachments and do not mutate stored messages or existing model
+input. The scanner and live-runtime first-message previews use the same projection;
+index format 3 invalidates stale derived previews, never user-assigned names.
+Embedded/quoted notes and text-only messages stay visible. Exact manually appended
+SDK-shaped suffixes are indistinguishable without upstream metadata.
+Tests: `node --test lib/user-image-display.test.mjs components/MessageView.test.mjs lib/session-list-scanner.test.mjs`;
+`PLAYWRIGHT_CHANNEL=chrome node e2e/user-image-display.mjs` exercises in-place
+optimistic/delivered/history updates, real ChatInput text/attachment admission,
+cancel, edit drafts and resend without a model call.
+This is a MessageView integration replay, not a full authenticated SSE round trip.
+
+## Composer clearing and history-edit admission
+
+`ChatInput.replaceMessage()` returns whether it actually restored history. A
+nonempty draft, attached files/images or pending image processing refuses the
+replacement; `useAgentSession` sets edit state only on success. Refusal produces
+one coalesced 3-second warning (including during exit animation); unrelated
+notices keep their 5-second default and hover/focus pause behavior.
+
+The explicit clear button calls the existing draft/text/attachment cleanup and
+`onClearDraft` to leave history-edit mode. It does not send, stop the agent, remove
+history or modify the outbox. A clear-generation guard rejects late attachment
+read/conversion results and revokes discarded image preview URLs. Cancel remains
+a separate, non-destructive action that only leaves history-edit mode.
+
 ## Conversation find
 Upstream's `ConversationFind` (abcwyc 0.7.8) is declined: the chat keeps the shared `FindBar` described under "Find in page", so Ctrl/Cmd+F goes to the chat or the file panel by pointer position (`lib/find-zone.ts`). Mounting both put two document-level shortcuts on the chat, and upstream's opened even with the pointer over the file panel.
 

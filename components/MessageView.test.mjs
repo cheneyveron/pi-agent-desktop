@@ -30,6 +30,21 @@ function renderMessage(message, props = {}) {
   );
 }
 
+test("image user messages hide SDK resize hints without mutating history", () => {
+  const note = "[Image: original 2100x1180, displayed at 2000x1124. Multiply coordinates by 1.05 to map to original image.]";
+  const message = { role: "user", content: [
+    { type: "text", text: `你好\n\n${note}` },
+    { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+  ], timestamp: 1 };
+  const before = JSON.stringify(message);
+  const html = renderMessage(message);
+  assert.match(html, /你好/);
+  assert.match(html, /<img/);
+  assert.doesNotMatch(html, /Multiply coordinates/);
+  assert.equal(JSON.stringify(message), before);
+  assert.match(renderMessage({ ...message, content: [{ type: "text", text: note }] }), /Multiply coordinates/);
+});
+
 test("updates a reused message when its written files change", () => {
   const props = { message: { role: "assistant", content: [] } };
   assert.equal(MessageView.compare(props, props), true);

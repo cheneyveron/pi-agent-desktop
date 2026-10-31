@@ -29,6 +29,8 @@ declare global {
 
 const MODELS_CACHE_TTL_MS = 60_000;
 const MAX_MODELS_CACHE_ENTRIES = 32;
+/** Lets the requests of a session switch finish before a background refresh blocks the loop. */
+const STALE_REFRESH_DELAY_MS = 1_500;
 // Never interpolate the caught error here; SDK errors can contain paths and provider details.
 const SAFE_MODEL_LOAD_FAILURE_MESSAGE = "Model list is temporarily unavailable. Check your configuration and try again.";
 
@@ -58,32 +60,48 @@ export function withSafeModelLoadFailure(data: ModelsData): ModelsData {
   return { ...data, modelError: SAFE_MODEL_LOAD_FAILURE_MESSAGE };
 }
 
+/**
+ * Model lists keyed by cwd. A fresh entry is returned as is. An expired one is still
+ * returned at once, and a refresh starts a moment later in the background: building the
+ * SDK services blocks the event loop (extension imports, skill scans), and running that
+ * inside a session switch held up the session's own read by up to a second. Explicit
+ * config changes call `invalidateModelsCache()`, so the TTL only catches edits made
+ * outside the app, which the next request after the refresh then sees.
+ */
 export function loadModelsWithCache(cwd: string, loader: () => Promise<ModelsData>): Promise<ModelsData> {
   const state = getModelsCacheState();
   const cached = state.entries.get(cwd);
   if (cached) {
-    if (cached.expiresAt > Date.now()) return Promise.resolve(cached.data);
-    state.entries.delete(cwd);
+    if (cached.expiresAt <= Date.now() && !state.inFlight.has(cwd)) {
+      const generation = state.generation;
+      const timer = setTimeout(() => {
+        if (state.generation !== generation || state.inFlight.has(cwd)) return;
+        // A failed refresh keeps serving the old list; the next request tries again.
+        startLoad(state, cwd, loader).catch(() => { cached.expiresAt = 0; });
+      }, STALE_REFRESH_DELAY_MS);
+      timer.unref?.();
+      // Mark the refresh as scheduled so concurrent stale hits start only one.
+      cached.expiresAt = Number.POSITIVE_INFINITY;
+    }
+    return Promise.resolve(cached.data);
   }
 
-  const existingLoad = state.inFlight.get(cwd);
-  if (existingLoad) return existingLoad;
+  return state.inFlight.get(cwd) ?? startLoad(state, cwd, loader);
+}
 
+function startLoad(state: ModelsCacheState, cwd: string, loader: () => Promise<ModelsData>): Promise<ModelsData> {
   const generation = state.generation;
   const loadPromise: Promise<ModelsData> = Promise.resolve()
     .then(loader)
     .then((data) => {
       if (state.generation === generation && state.inFlight.get(cwd) === loadPromise) {
-        const now = Date.now();
-        for (const [key, entry] of state.entries) {
-          if (entry.expiresAt <= now) state.entries.delete(key);
-        }
+        state.entries.delete(cwd);
         while (state.entries.size >= MAX_MODELS_CACHE_ENTRIES) {
           const oldestKey = state.entries.keys().next().value;
           if (oldestKey === undefined) break;
           state.entries.delete(oldestKey);
         }
-        state.entries.set(cwd, { data, expiresAt: now + MODELS_CACHE_TTL_MS });
+        state.entries.set(cwd, { data, expiresAt: Date.now() + MODELS_CACHE_TTL_MS });
       }
       return data;
     })

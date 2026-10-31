@@ -47,6 +47,7 @@ import { ChatsSectionMenu } from "./ChatsSectionMenu";
 import { toggleId } from "@/lib/chat-groups";
 import { readPinnedSessionIds, splitPinnedFamilies } from "@/lib/pinned-sessions";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
+import { ArtifactsSidebarRow } from "./artifacts/ArtifactsSidebarRow";
 import { isScheduledRunSession } from "@/hooks/useScheduledTasks";
 import { prefetchSessionData } from "@/lib/session-data-cache";
 import { isImeComposing } from "@/lib/ime";
@@ -91,6 +92,9 @@ interface Props {
   onGenerateTitle?: (sessionId: string) => Promise<unknown>;
   /** Opens a session's exported full history (row menu). */
   onOpenFullHistory?: (sessionId: string) => void;
+  /** Opens the Artifacts page; the row under Scheduled is absent without it. */
+  onOpenArtifacts?: () => void;
+  artifactsOpen?: boolean;
 }
 
 interface WorktreeState {
@@ -274,7 +278,7 @@ function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
     : new Set();
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onGenerateTitle, onOpenFullHistory }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onGenerateTitle, onOpenFullHistory, onOpenArtifacts, artifactsOpen = false }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
@@ -1821,7 +1825,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       {/* Header */}
       <div
         className={`session-sidebar-header${desktopPlatform === "macos" ? " session-sidebar-header--mac-inset" : ""}`}
-        data-tauri-drag-region={desktopPlatform ? true : undefined}
+        data-tauri-drag-region={desktopPlatform ? "deep" : undefined}
         {...windowDrag}
         style={{
           padding: "12px 10px 10px",
@@ -1862,13 +1866,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </button>
 
         {onOpenScheduled && <ScheduledSidebarRow active={scheduledOpen} onOpen={onOpenScheduled} />}
+        {onOpenArtifacts && <ArtifactsSidebarRow active={artifactsOpen} onOpen={onOpenArtifacts} />}
       </div>
 {/* Session search — keeps the original sidebar search styling and
           narrows the project tree to matching titles / first messages. Enter is
           the confirmation for the server-side content search across every
           session; there is no mode button, so Escape (or the clear button) is
           the way back to the title filter. */}
-      <div className="sidebar-search-wrap" data-no-drag>
+      <div className="sidebar-search-wrap" data-no-drag data-tauri-drag-region={desktopPlatform ? "false" : undefined}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="sidebar-search-icon">
           <circle cx="11" cy="11" r="7" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />

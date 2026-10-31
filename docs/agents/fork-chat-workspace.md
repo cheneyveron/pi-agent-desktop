@@ -157,9 +157,12 @@ the client then re-attaches like after a tool-preset change (`handleChatAccessRe
   restart) and never while it runs. A server open to other machines (`isNetworkExposedServer`)
   never honours it: the switch is hidden, the POST fails and `startRpcSession()` ignores a
   stored unlock.
-- The switch lives in the composer's run menu (`ChatAccessRows`), with a confirmation
-  (`ChatConfirmDialog`) in both directions; locking again goes back to the folder-confined
-  loadout.
+- The switch lives in the composer's run menu (`ChatAccessRows`) and applies at once, no
+  confirmation; switching it off goes back to the folder-confined loadout.
+- When the model asks for a shell the chat does not have, the refusal starts with
+  `CHAT_SHELL_BLOCK_MARKER` (`lib/chat-shell-block.ts`). If that happened in the latest turn
+  and the chat can be unlocked, `ChatShellPrompt` shows above the composer; "Allow and
+  continue" unlocks the chat and sends a short message asking the model to carry on.
 
 ## Files on this computer: the chat folder, naming a path
 
@@ -194,9 +197,8 @@ off (and the prompt says so) when `PI_WEB_HOSTNAME` is a non-loopback address
 - **Legacy chats only: `save_to_downloads`.** (`lib/chat-downloads-tool.ts`) a bare file name
   written into Downloads without replacing anything, up to 8 MB; its result renders as a
   `SavedFileCard` (kept so old transcripts still show the card) with "Show in folder"
-  (`POST /api/chat-downloads/reveal`). "Ask before an older chat saves a file" in
-  Settings › Chats (`chats.confirmSave`) still applies there. A chat with a folder does not
-  get this tool.
+  (`POST /api/chat-downloads/reveal`). It saves without asking (the old
+  `chats.confirmSave` switch was removed). A chat with a folder does not get this tool.
 
 ## Text attachments
 

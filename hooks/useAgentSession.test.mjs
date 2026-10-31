@@ -242,7 +242,7 @@ test("history edits move the branch only when sent, so cancel or reload keeps it
   );
 
   assert.doesNotMatch(chatWindowSource, /onNavigate=/);
-  assert.match(source, /opts\.chatInputRef\?\.current\?\.replaceMessage\(message\);\s*setEdit\(entryId\)/);
+  assert.match(source, /if \(!input\.replaceMessage\(message\)\) \{[\s\S]*?return;\s*\}\s*setEdit\(entryId\)/);
   assert.match(messageViewSource, /onClick=\{onCancelEdit\}/);
   assert.match(source, /const cancelEdit = useCallback\(\(\) => setEdit\(null\)/);
   assert.match(sendSource, /setEdit\(null\);\s*if \(!\(await handleNavigateRef\.current\?\.\(entryId\)\)\) \{\s*setEdit\(entryId\);\s*restoreSubmission\(/);
@@ -868,4 +868,20 @@ test("a pending message edit follows the session when ChatWindow stays mounted",
   );
   assert.match(editSource, /useState\(\(\) => readPendingHistoryEdit\(session\?\.id\)\)/);
   assert.match(editSource, /if \(editSessionId !== session\?\.id\) \{\n\s+setEditSessionId\(session\?\.id\);\n\s+setEditEntryId\(readPendingHistoryEdit\(session\?\.id\)\);/);
+
+test("the model list is requested after the session's opening read, with a bounded wait", () => {
+  const openSource = source.slice(
+    source.indexOf("// Load session on mount and whenever the stable ChatWindow changes identity."),
+    source.indexOf("// Load the model list with bounded retries"),
+  );
+  const modelsSource = source.slice(
+    source.indexOf("// Load the model list with bounded retries"),
+    source.indexOf("}, [loadModels, modelsRefreshKey]);"),
+  );
+  // The load effect must come first: both run in the same commit, in declaration order.
+  assert.ok(openSource.includes("sessionOpenLoadRef.current = openLoad;"));
+  assert.ok(openSource.indexOf("sessionOpenLoadRef.current = null;") < openSource.indexOf("if (session) {"));
+  assert.match(modelsSource, /const openLoad = sessionOpenLoadRef\.current;/);
+  assert.match(modelsSource, /Promise\.race\(\[openLoad\.catch\(\(\) => \{\}\), delay\(MODELS_AFTER_SESSION_MAX_WAIT_MS\)\]\)/);
+  assert.ok(modelsSource.indexOf("Promise.race") < modelsSource.indexOf("await loadModels(controller.signal)"));
 });

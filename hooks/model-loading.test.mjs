@@ -18,6 +18,7 @@ function visit(node) {
 visit(source);
 const loader = nodes.find((node) => ts.isVariableDeclaration(node) && node.name.getText(source) === "loadModels");
 const schedule = nodes.find((node) => ts.isVariableDeclaration(node) && node.name.getText(source) === "MODELS_RETRY_DELAYS_MS");
+const sessionWait = nodes.find((node) => ts.isVariableDeclaration(node) && node.name.getText(source) === "MODELS_AFTER_SESSION_MAX_WAIT_MS");
 const effect = nodes.find((node) => ts.isCallExpression(node)
   && node.expression.getText(source) === "useEffect"
   && node.arguments[1]?.getText(source) === "[loadModels, modelsRefreshKey]");
@@ -28,7 +29,7 @@ function script(text) {
 const loadScript = script(`(${loader.initializer.arguments[0].getText(source)})`);
 const retryScript = script(retry.getText(source));
 
-function setup(fetchImpl) {
+function setup(fetchImpl, openLoad = null) {
   const writes = [];
   const delays = [];
   const context = {
@@ -40,6 +41,9 @@ function setup(fetchImpl) {
     asConcreteThinkingLevel: (value) => (!value || value === "auto" ? null : value),
     fetch: fetchImpl,
     MODELS_RETRY_DELAYS_MS: script(schedule.initializer.getText(source)).runInNewContext(),
+    MODELS_AFTER_SESSION_MAX_WAIT_MS: script(sessionWait.initializer.getText(source)).runInNewContext(),
+    // The session's opening read the model list waits for (null for a new session).
+    openLoad,
     delay: async (ms) => { delays.push(ms); },
   };
   for (const name of ["ModelError", "ModelNames", "ModelScopeWarnings", "ModelThinkingLevels", "ModelThinkingLevelMaps", "ModelList", "NewSessionDefaultModel", "NewSessionDefaultThinkingLevel", "SavedDefaultThinkingLevel"]) {
@@ -115,4 +119,35 @@ test("cancelling model loads prevents state writes and further retries", async (
   waiting.context.delay = async () => waiting.context.controller.abort();
   await waiting.run();
   assert.equal(attempts, 1);
+});
+
+test("the model list is requested only after the session's opening read settles", async () => {
+  const opening = Promise.withResolvers();
+  const fetched = [];
+  const state = setup(async (url) => {
+    fetched.push(url);
+    return Response.json({ models: {}, modelList: [] });
+  }, opening.promise);
+  // Hold the capped wait open so only the opening read can release it.
+  state.context.delay = (ms) => { state.delays.push(ms); return new Promise(() => {}); };
+
+  const completed = state.run();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(fetched, [], "no model request while the session read is in flight");
+  assert.deepEqual(state.delays, [state.context.MODELS_AFTER_SESSION_MAX_WAIT_MS]);
+
+  opening.reject(new Error("session read failed"));
+  await completed;
+  assert.equal(fetched.length, 1, "a failed session read still lets the model list load");
+});
+
+test("a hung session read delays the model list only up to the cap", async () => {
+  const fetched = [];
+  const state = setup(async (url) => {
+    fetched.push(url);
+    return Response.json({ models: {}, modelList: [] });
+  }, new Promise(() => {}));
+  await state.run();
+  assert.deepEqual(state.delays, [state.context.MODELS_AFTER_SESSION_MAX_WAIT_MS]);
+  assert.equal(fetched.length, 1);
 });

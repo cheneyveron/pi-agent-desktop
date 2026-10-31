@@ -23,6 +23,6 @@ test("the artifact panel fits Mermaid diagrams to its width within bounds", () =
 });
 
 test("the panel opts its Mermaid diagrams into fit mode", async () => {
-  const source = await readFile(new URL("./ArtifactPanel.tsx", import.meta.url), "utf8");
+  const source = await readFile(new URL("./ArtifactView.tsx", import.meta.url), "utf8");
   assert.match(source, /<MermaidBlock[^>]*defaultPreview fit/);
 });

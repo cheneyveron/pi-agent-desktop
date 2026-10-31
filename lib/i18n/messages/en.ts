@@ -415,6 +415,8 @@ export const enLocale: LocalePlugin = {
     "chat.expandProcess": "Expand process details",
     "chat.filesWritten": "Files changed",
     "chat.openWrittenFile": "Open {name}",
+    "chat.clearDraft": "Clear text and attachments",
+    "chat.editDraftNotEmpty": "Your draft was kept. Clear the composer and attachments (or wait for uploads) before editing a previous message.",
     "chat.findTitle": "Find in conversation",
     "chat.findPrevious": "Previous match (Shift+Enter)",
     "chat.findNext": "Next match (Enter)",

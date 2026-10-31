@@ -11,6 +11,7 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { ChatAccessRows } = await jiti.import("./ChatAccessRows.tsx");
 const { ChatConfirmDialog } = await jiti.import("./ChatConfirmDialog.tsx");
+const { ChatShellPrompt } = await jiti.import("./ChatShellPrompt.tsx");
 
 const render = (element) => renderToStaticMarkup(React.createElement(I18nProvider, null, element));
 const access = (state, extra = {}) => ({
@@ -26,7 +27,7 @@ const access = (state, extra = {}) => ({
 test("a chat with a folder shows what it can do, a way to open the folder and the computer switch", () => {
   const html = render(React.createElement(ChatAccessRows, { access: access({}), onToggleUnlocked() {} }));
   assert.match(html, />Chat</);
-  assert.match(html, /Has a folder of its own/);
+  assert.match(html, /Files stay in its own folder\. No shell\./);
   assert.match(html, /Show chat folder/);
   assert.match(html, /Let this chat use my computer/);
   assert.match(html, /aria-checked="false"/);
@@ -36,14 +37,14 @@ test("a chat with a folder shows what it can do, a way to open the folder and th
 test("an unlocked chat says so and shows the switch on", () => {
   const html = render(React.createElement(ChatAccessRows, { access: access({ unlocked: true }), onToggleUnlocked() {} }));
   assert.match(html, /Chat · computer/);
-  assert.match(html, /This chat can use your computer/);
+  assert.match(html, /Can run commands and use files anywhere\./);
   assert.match(html, /aria-checked="true"/);
   assert.match(html, /data-on/);
 });
 
 test("a legacy chat or a server open to other machines offers no folder row and no switch", () => {
   const legacy = render(React.createElement(ChatAccessRows, { access: access({ folder: null, available: false }), onToggleUnlocked() {} }));
-  assert.match(legacy, /older chat without a folder/);
+  assert.match(legacy, /Older chat without its own folder/);
   assert.doesNotMatch(legacy, /Show chat folder/);
   assert.doesNotMatch(legacy, /Let this chat use my computer/);
 
@@ -53,7 +54,7 @@ test("a legacy chat or a server open to other machines offers no folder row and 
 
   // Before the server has answered (a chat about to start) the row describes a chat with a folder.
   const unknown = render(React.createElement(ChatAccessRows, { access: null, onToggleUnlocked() {} }));
-  assert.match(unknown, /Has a folder of its own/);
+  assert.match(unknown, /Files stay in its own folder/);
   assert.doesNotMatch(unknown, /Let this chat use my computer/);
 });
 
@@ -84,4 +85,12 @@ test("the confirm dialog offers its checkbox, a danger button and the error", ()
   assert.match(html, /type="checkbox"[^>]*checked/);
   assert.match(html, /is-primary is-danger/);
   assert.match(html, /role="alert"[^>]*>boom/);
+});
+
+test("the shell prompt offers one button and shows an error", () => {
+  const html = render(React.createElement(ChatShellPrompt, { busy: false, error: "Send a message first", onAllow() {} }));
+  assert.match(html, /This needs a shell\. Allow this chat to use your computer\?/);
+  assert.match(html, /Allow and continue/);
+  assert.match(html, /role="alert"[^>]*>Send a message first/);
+  assert.match(render(React.createElement(ChatShellPrompt, { busy: true, error: null, onAllow() {} })), /disabled/);
 });
