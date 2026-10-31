@@ -171,45 +171,60 @@ jobs:
           releaseName: pi-agent-desktop v__VERSION__
           releaseCommitish: ${{ github.sha }}
           releaseBody: |
-            ## Pi Agent Desktop 0.7.15
+            ## Pi Agent Desktop 0.7.16
+
+            ### Added
+
+            - **Artifacts page.** A new Artifacts entry in the sidebar lists the artifacts and files written or edited by the agent across every session, with search and a preview. The list is kept in a persistent index, so it opens quickly even with many sessions.
+            - **Files a chat wrote.** A reply that wrote files shows a file card under it, and the right panel can open and browse them.
+            - **Conversation find** (Ctrl/Cmd+F) stays usable while a reply streams in.
+            - **Installed fonts and appearance settings.** Choose an installed font and unify control spacing in Settings.
 
             ### Improved
 
-            - **Large files open fast in the side panel.** The source and diff views now render only the lines on screen, so a file of thousands of lines no longer slows down the whole app, and switching between Source and Diff is immediate. Files up to 1 MB keep their syntax highlighting, and the diff view is highlighted too. Find (Ctrl/Cmd+F) still searches the whole file.
-            - **A calmer look.** Neutral grays, a flat window and sidebar canvas, thinner two-tier borders that stay visible on Retina screens, softer code colors and consistent corner radii. The background presets from 0.7.12 are replaced by this neutral canvas; System, Light, Dark, Mist, Rose and Pine remain.
-            - **New sessions get their name sooner.** A title is generated from the first message while the first task is still running, and it no longer depends on staying on that session.
-            - **Richer replies.** A leading YAML block is shown as a code block instead of disappearing, GitHub alerts (`> [!NOTE]`) render as callouts, long code blocks fold, and code blocks the reply says were saved to a file get an Open button.
-            - **Choose the terminal shell.** General settings lets you pick the shell used by "Open in terminal". Terminals follow the workbench's light and dark colors and start faster.
-            - Session and project menus stay inside the window, delete confirmations are shared and keyboard friendly, and title generation shows its progress with an actionable message when it fails.
+            - **Session switches are faster.** Loading the model list for a cold session no longer delays opening the session you selected.
+            - **Chat access menu is shorter** and no longer asks for confirmation when you switch access; the shell prompt is shown in the conversation.
+            - **Calmer theme.** Neutral canvas with the system accent, visible edges on Retina screens, and a softer selected sidebar row in light mode.
 
             ### Fixed
 
-            - **Copying code from the side panel no longer includes line numbers**, including selections that span lines scrolled out of view.
-            - **Notifications open their session only when clicked.** Returning to the app any other way (Cmd+Tab, the Dock, a window click) no longer jumps to the last notified session.
-            - A project that is a subfolder of a Git repository no longer shows the parent repository's worktrees in the sidebar.
+            - **Clearing caches keeps your data.** Upgrading or clearing webview caches keeps localStorage (drafts, open tabs, preferences), and on Windows keeps settings and logs.
+            - **Windows:** the app runs as a single instance, so a second launch hands over to the running window instead of starting another server; the main window recovers when its WebView2 process fails.
+            - **Dragging the window** works from the sidebar header, including on the first click.
+            - **Startup** waits longer for the server and reports a startup failure instead of crashing; startup timing is logged for diagnosis.
+            - A composer image attached after clearing the draft is no longer added to the next message; image metadata is cleaned on attach.
+            - Code selections no longer include line numbers, and a subfolder project no longer shows its parent repository's worktrees.
 
             Bundled components: pi 1.4.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.15
+            ## Pi Agent Desktop 0.7.16
+
+            ### 新增
+
+            - **Artifacts 页面。** 侧栏新增 Artifacts 入口，跨所有会话列出 Agent 写入或编辑过的产物与文件，支持搜索和预览。列表使用持久索引，会话很多时也能快速打开。
+            - **聊天写出的文件。** 写出了文件的回复下方会显示文件卡片，右侧面板可以打开和浏览这些文件。
+            - **对话内查找**（Ctrl/Cmd+F）在回复流式输出时仍可正常使用。
+            - **已安装字体与外观设置。** 可在设置中选择已安装的字体，控件间距也已统一。
 
             ### 改进
 
-            - **侧栏面板打开大文件更快。** 源码与差异视图现在只渲染屏幕上的行，数千行的文件不再拖慢整个应用，源码与差异之间切换也是即时的。1 MB 以内的文件保留语法高亮，差异视图也有高亮。查找（Ctrl/Cmd+F）仍然搜索整个文件。
-            - **更平静的外观。** 中性灰、统一的窗口与侧栏纯色底、更细的两档边线（在 Retina 屏上依然清晰）、更柔和的代码配色和统一圆角。0.7.12 的背景预设由中性底色取代；跟随系统、浅色、深色、Mist、Rose 和 Pine 保留。
-            - **新会话更早得到标题。** 第一条消息发出后、首个任务仍在运行时即生成标题，不再要求一直停留在该会话上。
-            - **更丰富的回复渲染。** 开头的 YAML 块以代码块显示而不是消失；支持 GitHub 提示块（`> [!NOTE]`）；长代码块可折叠；回复中说明已保存到文件的代码块会出现“打开”按钮。
-            - **选择终端 Shell。** “通用”设置可选择“在终端中打开”使用的 Shell。终端使用工作台的明暗配色且启动更快。
-            - 会话和项目菜单不会超出窗口，删除确认改为共用组件并支持键盘操作；标题生成会显示进度，失败时给出可操作的提示。
+            - **切换会话更快。** 冷启动会话时加载模型列表不再拖慢所选会话的打开。
+            - **聊天访问菜单更简洁**，切换访问方式不再需要确认；Shell 提示显示在对话中。
+            - **更平静的主题。** 中性底色配合系统强调色，Retina 屏上边线清晰，浅色模式下侧栏选中行更柔和。
 
             ### 修复
 
-            - **从侧栏面板复制代码不再带上行号**，包括跨越已滚出视野的行的选区。
-            - **只有点击通知才会打开对应会话。** 通过其他方式回到应用（Cmd+Tab、程序坞、点击窗口）不再跳到最后通知的会话。
-            - 作为 Git 仓库子目录的项目不再在侧栏中显示父仓库的工作树。
+            - **清理缓存时保留你的数据。** 升级或清理 WebView 缓存会保留 localStorage（草稿、打开的标签、偏好），Windows 上还会保留设置与日志。
+            - **Windows：** 应用只运行一个实例，再次启动会切换到已运行的窗口，而不是另起一个服务器；主窗口的 WebView2 进程出错后可自动恢复。
+            - **拖动窗口**可从侧栏标题区开始，首次点击即可拖动。
+            - **启动** 会等待服务器更久，并在失败时给出提示而不是崩溃；启动耗时写入日志便于排查。
+            - 清空草稿后再附加的图片不再被带入下一条消息；附加图片时会清理图片元数据。
+            - 代码选区不再包含行号；子目录项目不再显示父仓库的工作树。
 
             内置组件版本：pi 1.4.0、pi-web 0.10.0。
+
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
