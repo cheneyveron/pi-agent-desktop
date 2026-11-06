@@ -1,0 +1,1 @@
+{"mergedAt":null,"reviewDecision":"REVIEW_REQUIRED","state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","conclusion":"SUCCESS","name":"lint","status":"COMPLETED"},{"__typename":"CheckRun","conclusion":"FAILURE","name":"test","status":"COMPLETED"},{"__typename":"CheckRun","conclusion":"","name":"e2e","status":"IN_PROGRESS"}]}

@@ -1,0 +1,1 @@
+{"mergedAt":null,"reviewDecision":"","state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","conclusion":"SUCCESS","name":"lint","status":"COMPLETED"},{"__typename":"StatusContext","context":"jenkins","state":"PENDING"}]}

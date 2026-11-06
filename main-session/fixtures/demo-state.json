@@ -1,0 +1,368 @@
+{
+ "tasks": [
+  {
+   "id": "CAS-4764",
+   "aliases": [
+    "PCT-121470",
+    "branch:cheney/bug/CAS-4764-entitlement-merge-by-group"
+   ],
+   "title": "CAS-4764 修复已在本地提交（cheney/bug/CAS-4764-entitlement-merge-by-group，基于 int 3126136…",
+   "status": "need",
+   "stands": "CAS-4764 修复已在本地提交（cheney/bug/CAS-4764-entitlement-merge-by-group，基于 int 3126136），没有推送，也没合到 dev。是 P1 PCT-121470 的根因修复。",
+   "next": [
+    {
+     "text": "批准后推送并合并到 dev",
+     "run": "me"
+    },
+    {
+     "text": "部署后 force-sync group ceb0f252 应返回 200 且 licenseActive=true",
+     "run": "agent",
+     "on": "pr merged"
+    }
+   ],
+   "waits": [
+    {
+     "who": "pr",
+     "what": "部署后 force-sync group ceb0f252 应返回 200 且 licenseActive=true",
+     "since": "2026-10-30T17:51:00.000Z"
+    }
+   ],
+   "artifacts": [
+    "branch:cheney/bug/CAS-4764-entitlement-merge-by-group",
+    "commit:3f1c2ab (not pushed)"
+   ],
+   "sessions": [
+    "01a18de0-081e-764e-b56d-fd2a5877bab4"
+   ],
+   "open": [
+    {
+     "question": "修复在本地 4 天没推，推还是放弃？",
+     "who": "me",
+     "answerGoesTo": "task"
+    }
+   ],
+   "log": [
+    "e_mw57km01_c216ec14",
+    "e_mw57km01_7a4d14fa"
+   ],
+   "createdAt": "2026-10-30T17:51:00.000Z",
+   "updatedAt": "2026-11-03T15:00:00.000Z",
+   "repo": "/Users/me/gitroot/Foundation-CAS/cas-account",
+   "branch": "cheney/bug/CAS-4764-entitlement-merge-by-group",
+   "priority": "P1"
+  },
+  {
+   "id": "CAS-4685",
+   "aliases": [
+    "branch:cheney/fix/CAS-4685-lmp-clp-account-source",
+    "pr:Foundation-CAS/cas-admin#752",
+    "#752"
+   ],
+   "title": "修复已推送、合到 dev 并部署；PR #752 开到 int。",
+   "status": "watch",
+   "stands": "修复已推送、合到 dev 并部署；PR #752 开到 int。dev 上的端到端验证被 Horus 490 挡住。",
+   "next": [
+    {
+     "text": "int 部署后验证合作伙伴 impersonation 能进 CAS",
+     "run": "me",
+     "on": "pr #752"
+    }
+   ],
+   "waits": [
+    {
+     "who": "pr",
+     "what": "int 部署后验证合作伙伴 impersonation 能进 CAS",
+     "since": "2026-10-15T20:17:00.000Z",
+     "closed": true,
+     "evidence": "Foundation-CAS/cas-admin#752 merged 2026-10-16T15:30:13Z"
+    }
+   ],
+   "artifacts": [
+    "branch:cheney/fix/CAS-4685-lmp-clp-account-source",
+    "pr:https://adc.github.trendmicro.com/Foundation-CAS/cas-admin/pull/752"
+   ],
+   "sessions": [
+    "01a135e9-8bcb-7379-a370-c7533e620aeb"
+   ],
+   "open": [],
+   "log": [
+    "e_mw57km01_462a2b91",
+    "e_mw57km01_207c2d71"
+   ],
+   "createdAt": "2026-10-15T20:17:00.000Z",
+   "updatedAt": "2026-11-03T15:01:00.000Z",
+   "repo": "/Users/me/gitroot/Foundation-CAS/cas-admin",
+   "branch": "cheney/fix/CAS-4685-lmp-clp-account-source",
+   "checks": {
+    "prs": {
+     "Foundation-CAS/cas-admin#752": {
+      "ref": "Foundation-CAS/cas-admin#752",
+      "state": "MERGED",
+      "mergedAt": "2026-10-16T15:30:13Z",
+      "reviewDecision": "APPROVED",
+      "checks": "pass",
+      "at": "2026-11-03T15:01:00Z"
+     }
+    }
+   }
+  },
+  {
+   "id": "EAI-370",
+   "aliases": [
+    "#260"
+   ],
+   "title": "affectedUsers[].",
+   "status": "need",
+   "stands": "affectedUsers[].mailUniqueId 已实现，PR #260 仍在 review。CEGP 路径没测：int.eai-int-test 没有 CEGP 数据。",
+   "next": [
+    {
+     "text": "PR #260 review 通过后合到 int",
+     "run": "me",
+     "on": "pr #260"
+    }
+   ],
+   "waits": [
+    {
+     "who": "GTOC",
+     "what": "CEGP/GTOC 确认 200 的探测是否写了报告",
+     "since": "2026-10-30T15:21:00.000Z"
+    },
+    {
+     "who": "pr",
+     "what": "PR #260 review 通过后合到 int",
+     "since": "2026-10-30T15:21:00.000Z"
+    }
+   ],
+   "artifacts": [],
+   "sessions": [
+    "01a18d66-9a3f-725b-811f-e340f64db48e"
+   ],
+   "open": [
+    {
+     "question": "给一个新的 int.mywaterweed 浏览器会话来测 CEGP 路径？",
+     "who": "me",
+     "answerGoesTo": "session"
+    },
+    {
+     "question": "CEGP/GTOC 确认 200 的探测是否写了报告",
+     "who": "GTOC",
+     "answerGoesTo": "task"
+    }
+   ],
+   "log": [
+    "e_mw57km01_834efaee",
+    "e_mw57km02_543cb0db"
+   ],
+   "createdAt": "2026-10-30T15:21:00.000Z",
+   "updatedAt": "2026-11-03T15:02:00.000Z",
+   "repo": "/Users/me/gitroot/Commercial-V1EAI/xdr-portal-eai-service"
+  },
+  {
+   "id": "PCT-119276",
+   "aliases": [],
+   "title": "ProductInstanceNotFound 的根因在 SP/Poseidon 一侧；trace 1cba0fbe 的日志要在 OpenSearch 里确认。",
+   "status": "watch",
+   "stands": "ProductInstanceNotFound 的根因在 SP/Poseidon 一侧；trace 1cba0fbe 的日志要在 OpenSearch 里确认。",
+   "next": [],
+   "waits": [
+    {
+     "who": "Poseidon owner",
+     "what": "SP/Poseidon owner 确认 ProductInstanceNotFound",
+     "since": "2026-10-20T14:01:00.000Z"
+    }
+   ],
+   "artifacts": [],
+   "sessions": [
+    "01a13b78-a43d-7184-9b6f-835fc306160f"
+   ],
+   "open": [
+    {
+     "question": "SP/Poseidon owner 确认 ProductInstanceNotFound",
+     "who": "Poseidon owner",
+     "answerGoesTo": "task"
+    }
+   ],
+   "log": [
+    "e_mw57km02_fc19ac24"
+   ],
+   "createdAt": "2026-10-20T14:01:00.000Z",
+   "updatedAt": "2026-11-03T15:03:00.000Z",
+   "repo": "/Users/me/workspaces/pct/PCT-119276"
+  },
+  {
+   "id": "CAS-4739",
+   "aliases": [
+    "#944"
+   ],
+   "title": "六个 Brotli 缓解 PR 都已合并，运行时确认 zlib.",
+   "status": "done",
+   "stands": "六个 Brotli 缓解 PR 都已合并，运行时确认 zlib.BrotliDecompress 已移除。",
+   "next": [
+    {
+     "text": "确认 prod PR #944/#146",
+     "run": "me",
+     "done": true
+    }
+   ],
+   "waits": [],
+   "artifacts": [],
+   "sessions": [
+    "01a179ab-0000-7000-8000-000000000001"
+   ],
+   "open": [],
+   "log": [
+    "e_mw57km02_9c592bc0",
+    "e_mw57km02_df79484f"
+   ],
+   "createdAt": "2026-10-26T12:00:00.000Z",
+   "updatedAt": "2026-11-03T15:04:00.000Z",
+   "repo": "/Users/me/gitroot/Foundation-CAS/cas-account"
+  }
+ ],
+ "events": [
+  {
+   "task": "CAS-4764",
+   "action": "closeout",
+   "auto": true,
+   "t": "2026-11-03T15:00:00.000Z",
+   "why": "assigned via new task CAS-4764",
+   "data": {
+    "key": "01a18de0-081e-764e-b56d-fd2a5877bab4@2026-10-30T17:51:00.000Z",
+    "hash": "87abb5a9",
+    "sessionId": "01a18de0-081e-764e-b56d-fd2a5877bab4",
+    "thread": "CAS-4764",
+    "assigned": "CAS-4764",
+    "created": true
+   },
+   "id": "e_mw57km01_c216ec14"
+  },
+  {
+   "task": "CAS-4764",
+   "action": "ask",
+   "auto": true,
+   "why": "open question in close-out of 01a18de0-081e-764e-b56d-fd2a5877bab4",
+   "data": {
+    "question": "修复在本地 4 天没推，推还是放弃？",
+    "chips": [
+     "推",
+     "放弃"
+    ],
+    "write": true,
+    "key": "open:CAS-4764:2b7cf85f"
+   },
+   "t": "2026-11-03T15:00:00.000Z",
+   "id": "e_mw57km01_7a4d14fa"
+  },
+  {
+   "task": "CAS-4685",
+   "action": "closeout",
+   "auto": true,
+   "t": "2026-11-03T15:01:00.000Z",
+   "why": "assigned via new task CAS-4685",
+   "data": {
+    "key": "01a135e9-8bcb-7379-a370-c7533e620aeb@2026-10-15T20:17:00.000Z",
+    "hash": "52b0adbe",
+    "sessionId": "01a135e9-8bcb-7379-a370-c7533e620aeb",
+    "thread": "CAS-4685",
+    "assigned": "CAS-4685",
+    "created": true
+   },
+   "id": "e_mw57km01_462a2b91"
+  },
+  {
+   "task": "CAS-4685",
+   "action": "checker",
+   "auto": true,
+   "t": "2026-11-03T15:01:00.000Z",
+   "why": "PR Foundation-CAS/cas-admin#752 merged",
+   "data": {
+    "checker": "pr",
+    "changed": true,
+    "description": "PR Foundation-CAS/cas-admin#752 merged",
+    "before": null,
+    "after": {
+     "ref": "Foundation-CAS/cas-admin#752",
+     "state": "MERGED",
+     "mergedAt": "2026-10-16T15:30:13Z",
+     "reviewDecision": "APPROVED",
+     "checks": "pass",
+     "at": "2026-11-03T15:01:00Z"
+    }
+   },
+   "id": "e_mw57km01_207c2d71"
+  },
+  {
+   "task": "EAI-370",
+   "action": "closeout",
+   "auto": true,
+   "t": "2026-11-03T15:02:00.000Z",
+   "why": "assigned via new task EAI-370",
+   "data": {
+    "key": "01a18d66-9a3f-725b-811f-e340f64db48e@2026-10-30T15:21:00.000Z",
+    "hash": "74c02ceb",
+    "sessionId": "01a18d66-9a3f-725b-811f-e340f64db48e",
+    "thread": "EAI-370",
+    "assigned": "EAI-370",
+    "created": true
+   },
+   "id": "e_mw57km01_834efaee"
+  },
+  {
+   "task": "EAI-370",
+   "action": "ask",
+   "auto": true,
+   "why": "open question in close-out of 01a18d66-9a3f-725b-811f-e340f64db48e",
+   "data": {
+    "question": "给一个新的 int.mywaterweed 浏览器会话来测 CEGP 路径？",
+    "key": "open:EAI-370:698cb5f3"
+   },
+   "t": "2026-11-03T15:02:00.000Z",
+   "id": "e_mw57km02_543cb0db"
+  },
+  {
+   "task": "PCT-119276",
+   "action": "closeout",
+   "auto": true,
+   "t": "2026-11-03T15:03:00.000Z",
+   "why": "assigned via new task PCT-119276",
+   "data": {
+    "key": "01a13b78-a43d-7184-9b6f-835fc306160f@2026-10-20T14:01:00.000Z",
+    "hash": "3ed8ee9c",
+    "sessionId": "01a13b78-a43d-7184-9b6f-835fc306160f",
+    "thread": "PCT-119276",
+    "assigned": "PCT-119276",
+    "created": true
+   },
+   "id": "e_mw57km02_fc19ac24"
+  },
+  {
+   "task": "CAS-4739",
+   "action": "closeout",
+   "auto": true,
+   "t": "2026-11-03T15:04:00.000Z",
+   "why": "assigned via new task CAS-4739",
+   "data": {
+    "key": "01a179ab-0000-7000-8000-000000000001@2026-10-26T12:00:00.000Z",
+    "hash": "13c4d388",
+    "sessionId": "01a179ab-0000-7000-8000-000000000001",
+    "thread": "CAS-4739",
+    "assigned": "CAS-4739",
+    "created": true
+   },
+   "id": "e_mw57km02_9c592bc0"
+  },
+  {
+   "task": "CAS-4739",
+   "action": "archive",
+   "auto": true,
+   "why": "做完了，条件都关了",
+   "data": {
+    "suggested": true,
+    "state": "pending",
+    "effectiveAt": "2026-11-05T15:04:00.000Z"
+   },
+   "t": "2026-11-03T15:04:00.000Z",
+   "id": "e_mw57km02_df79484f"
+  }
+ ]
+}

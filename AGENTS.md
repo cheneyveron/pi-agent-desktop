@@ -27,6 +27,7 @@
 
 ```bash
 npm run dev   # port 30141
+npm run dev:all   # dev + the main-session service on 30180 (npm run main-session alone)
 ```
 
 Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
@@ -123,6 +124,7 @@ app/api/
   artifacts/route.ts              GET ?q= artifacts across all sessions (Artifacts page)
   artifacts/item/route.ts         GET ?session=&identifier= one artifact with every version
   artifacts/file/route.ts         GET ?path= one written/edited file's calls | ?session=&toolCallId= a write's content
+  main-session/[...path]/route.ts GET/POST proxy to the main-session service (127.0.0.1:30180), SSE included
 
 lib/
   agent-client.ts      typed fetch helper for /api/agent commands
@@ -188,6 +190,19 @@ hooks/
   useScheduledTasks.ts     shared store + SSE for scheduled tasks
   useKeyboardShortcuts.ts  Esc stops the running agent unless a field or nearer handler took it; Ctrl+Alt+N
   useTheme.ts              theme state
+
+main-session/            separate process (npm run main-session / dev:all), 127.0.0.1:30180, state in ~/.pi/agent/main/
+  server.mjs / server.ts   entry, loopback bind, env options, fixture seeding
+  service.ts               timers (daily tick, checkers, schedules, 48 h archives), API operations, contextPack
+  http.ts                  routes of contract §3 (+ GET /chat), SSE /stream
+  store.ts / types.ts      tasks.json, events.jsonl, closeouts/, schedules, seen; data model
+  intake.ts / aliases.ts   POST /closeouts: alias matching, task update, open-question asks, memory
+  actions.ts               the nine actions + answer / undo / archive rule
+  digest.ts / view.ts      ≤5-line digest rules; derived task.ask/last/answered for the UI
+  judge.ts / pi-runtime.ts judgment turns on rdsec haiku/luna with the action tools; prompts/judge.md
+  dispatch.ts / readonly-guard.ts  read-only dispatched sessions and their bash whitelist
+  checkers/                branch, pr, date, manual (schedules)
+  chat.ts / replay.ts / memory.ts  /chat intents, /replay simulation, write-only memhana sink
 ```
 
 ---
@@ -207,6 +222,7 @@ Read the doc for the area you touch before changing it. Upstream docs (no prefix
 - [settings-ui.md](docs/agents/settings-ui.md): Plugins and Skills routes, sidebar group switches, the shared `SettingsUi` blocks every settings panel and add pane uses. Files: `app/api/plugins/**`, `app/api/skills/**`, `lib/plugin-settings*.ts`, `components/PluginSettingsForm.tsx`, `components/SettingsUi.tsx`, `components/settings-ui-helpers.ts`, `components/SkillsConfig.tsx`, `components/PluginsConfig.tsx`; also before adding a settings section or add pane.
 - [subagents.md](docs/agents/subagents.md): the built-in subagent setting, profiles and their files, run status, completion notifications. Files: `lib/subagent*.ts`, `app/api/subagents/**`, `components/AgentsConfig.tsx`.
 - [scheduled-tasks.md](docs/agents/scheduled-tasks.md): scheduled tasks (the Scheduled page): server-side scheduler and its lease, catch-up and overlap rules, read-only default, the run index that hides runs from the project tree, why shared state is on `globalThis`. Files: `lib/scheduled-tasks/**`, `app/api/scheduled-tasks/**`, `instrumentation-node.ts`, `hooks/useScheduledTasks.ts`, `components/scheduled/**`, the Scheduled row in `components/SessionSidebar.tsx`, the page overlay in `components/AppShell.tsx`.
+- [main-session.md](docs/agents/main-session.md): the main-session service (part A of the v1 contract): process and proxy, state files, close-out intake and alias matching, the action set and the 48-hour archive rule, digest priorities and the 5-line cap, checkers, judgment turns and the model allowlist (rdsec claude-haiku-5-5 / gpt-6-luna only), the read-only dispatch whitelist, /replay, deviations from the contract. Files: `main-session/**`, `app/api/main-session/**`, `scripts/dev-with-main-session.mjs`.
 - [artifacts.md](docs/agents/artifacts.md): inline HTML/SVG/React previews and `:::artifact` blocks: what renders where, the sandbox rules and the desktop `about:srcdoc` allowance, the auto-run rule for scripted pages, the bundled React runtime (inlined, because sandboxed frames cannot reach localhost; `npm run preview-runtime` regenerates it), the fix flow and the prompt switch, the cross-session Artifacts page. Files: `lib/artifacts.ts`, `lib/artifact-store.ts`, `lib/artifact-index.ts`, `components/artifacts/**`, `lib/html-preview.ts`, `lib/artifact-settings.ts`, `lib/artifact-guide-extension.ts`, `hooks/useArtifactPublisher.ts`, `hooks/useHtmlPreviewFrame.ts`, `lib/preview-runtime.ts`, `scripts/build-preview-runtime.mjs`, `public/preview-runtime/`, `components/Artifact*.tsx`, `components/HtmlPreview*.tsx`, `components/artifact-tabs.ts`, `app/api/artifacts/**`, `is_inline_frame_document` in `src-tauri/src/lib.rs`.
 - [client-platform.md](docs/agents/client-platform.md): mobile software keyboard and viewport height, completion sound. Files: `hooks/useViewportHeight.ts`, `hooks/useAudio.ts`, the keyboard-open CSS.
 

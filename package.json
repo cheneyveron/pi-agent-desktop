@@ -37,6 +37,8 @@
   ],
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 30141",
+    "dev:all": "node scripts/dev-with-main-session.mjs",
+    "main-session": "node main-session/server.mjs",
     "web": "node scripts/web-dev.mjs",
     "dev:lan": "node scripts/lan-server.mjs dev",
     "build": "next build --webpack",
@@ -54,7 +56,7 @@
     "test:release-tools": "node --test scripts/*.test.mjs",
     "check:deps": "node scripts/check-installed-deps.mjs",
     "pretest": "npm run check:deps",
-    "test": "node --experimental-strip-types --test --test-concurrency=4 \"app/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"scripts/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"public/**/*.test.mjs\"",
+    "test": "node --experimental-strip-types --test --test-concurrency=4 \"app/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"scripts/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"public/**/*.test.mjs\" \"main-session/**/*.test.mjs\"",
     "lint": "eslint . && npm run check:branding",
     "check:branding": "node --test lib/branding.test.mjs",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
