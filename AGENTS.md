@@ -130,6 +130,8 @@ lib/
   artifact-store.ts    client store shared by ChatWindow, message cards and the artifact panel
   artifact-index.ts    server index of artifacts in every session file (Artifacts page)
   artifact-settings.ts / artifact-guide-extension.ts  prompt switch file + `<artifacts>` prompt section
+  main-session-client.ts  main-session service types + HTTP client; `?mainSessionFixture=1` switches to the fixture backend
+  main-session-fixture.ts in-memory backend with the prototype's data (dev, unit tests, e2e/main-session.mjs)
   html-preview.ts      inline HTML/SVG/React preview detection, sandbox, srcdoc bootstrap, React document
   preview-runtime.ts   loads public/preview-runtime/ (bundled React, Sucrase, Tailwind) for React previews
   app-prefs.ts         APP_PREF_KEYS + typed localStorage accessors (SSR/private-mode safe)
@@ -165,6 +167,7 @@ components/
   HtmlPreviewBlock.tsx / HtmlPreviewErrorBar.tsx  inline previews and their error strip
   ArtifactCard.tsx / ArtifactPanel.tsx / ArtifactView.tsx / artifact-tabs.ts  artifact card in messages, right-panel tab, shared viewer
   artifacts/          Artifacts page (cross-session list, search, preview) and its sidebar row
+  main-session/       主会话 page (segments, list, undo, keyboard triage, conversation), pinned sidebar row + 需要你 section, close-out card / note entries
   ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
   EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
   AgentsConfig.tsx    built-in subagent toggle + agent profile editor
@@ -186,6 +189,8 @@ hooks/
   useDragDrop.ts           shared drag/drop state
   useIsMobile.ts           responsive breakpoint
   useScheduledTasks.ts     shared store + SSE for scheduled tasks
+  useMainSession.ts        shared main-session store + SSE: lists, optimistic answer/archive/undo, visit "seen" marks, chat, task sessions
+  useMainSessionNotifications.ts  one desktop notification per daily digest (click → ?view=main)
   useKeyboardShortcuts.ts  Esc stops the running agent unless a field or nearer handler took it; Ctrl+Alt+N
   useTheme.ts              theme state
 ```

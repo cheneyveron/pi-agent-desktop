@@ -28,6 +28,12 @@ Coverage:
 - `node e2e/appearance.mjs` checks ten backgrounds in light/dark, five-column
   desktop rows, narrow wrapping, preview/canvas agreement, new-wash text contrast,
   keyboard selection, persistence and save races/errors.
+- `node e2e/main-session.mjs` drives the real main-session page, sidebar row and
+  需要你 section and the two session entries against a stub service built from the
+  fixture backend: answer → row leaves and counts move → undo, keyboard triage,
+  segment fold, drag-resize persistence, the `.app-menu` row menu, cited replies,
+  opening a task session (context message + `/sessions/:id/started`), close-out
+  re-post, a service that is down (one quiet probe), dark/English/narrow layouts.
 - `node e2e/sidebar-menu-placement.mjs` opens the session and project "…" menus
   on rows near the bottom of the window and checks that they flip upward, stay
   inside the viewport and keep their last entry reachable, in both themes and

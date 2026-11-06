@@ -29,6 +29,7 @@ import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./Lazy
 const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer), { ssr: false });
 const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileExplorer), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
+const MainSessionView = dynamic(() => import("./main-session/MainSessionView").then((m) => m.MainSessionView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel } from "./SettingsPanel";
 import { keepDocumentTitle } from "@/lib/document-title";
@@ -111,13 +112,15 @@ import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { MAIN_SESSION_NOTIFICATION_ID, MAIN_SESSION_OPEN_EVENT } from "@/lib/main-session-client";
+import { useMainSessionNotifications } from "@/hooks/useMainSessionNotifications";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
 /** A page covering the chat area, named by `?view=`. */
-type WorkspaceView = "scheduled" | "artifacts" | null;
+type WorkspaceView = "scheduled" | "artifacts" | "main" | null;
 
 function parseWorkspaceView(value: string | null | undefined): WorkspaceView {
-  return value === "scheduled" || value === "artifacts" ? value : null;
+  return value === "scheduled" || value === "artifacts" || value === "main" ? value : null;
 }
 type AutoNameStatus =
   | { kind: "idle" }
@@ -204,6 +207,9 @@ export function AppShell() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => parseWorkspaceView(searchParams?.get("view")));
   const scheduledOpen = workspaceView === "scheduled";
   const artifactsOpen = workspaceView === "artifacts";
+  const mainSessionOpen = workspaceView === "main";
+  // The task the main-session page locates (`?view=main&task=`).
+  const [mainSessionTask, setMainSessionTask] = useState<string | null>(() => searchParams?.get("task") ?? null);
   const pageOpen = workspaceView !== null;
   // Read by restoreWorkspaceContext and handleSelectSession; those identities
   // must not change when a page opens.
@@ -1403,6 +1409,23 @@ export function AppShell() {
     }
   }, [isMobile, router]);
   const handleOpenScheduled = useCallback(() => openWorkspaceView("scheduled"), [openWorkspaceView]);
+  const handleOpenMainSession = useCallback((taskId?: string) => {
+    setWorkspaceView("main");
+    setMainSessionTask(taskId ?? null);
+    if (isMobile) setSidebarOpen(false);
+    const target = `?view=main${taskId ? `&task=${encodeURIComponent(taskId)}` : ""}`;
+    if (window.location.search !== target) router.replace(target, { scroll: false });
+  }, [isMobile, router]);
+  // A note or close-out card inside a session asks for the page through a window event.
+  useEffect(() => {
+    const onOpen = (event: Event) => handleOpenMainSession((event as CustomEvent<{ task?: string }>).detail?.task);
+    window.addEventListener(MAIN_SESSION_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(MAIN_SESSION_OPEN_EVENT, onOpen);
+  }, [handleOpenMainSession]);
+  const handleMainSessionStarted = useCallback((sessionId: string) => {
+    setRefreshKey((k) => k + 1);
+    void handleOpenSession(sessionId);
+  }, [handleOpenSession]);
   const handleOpenArtifacts = useCallback(() => openWorkspaceView("artifacts"), [openWorkspaceView]);
 
   // Validated and allow-listed like any project pick, which /api/models needs for the new folder.
@@ -1505,6 +1528,10 @@ export function AppShell() {
   const openNotifiedSessionRef = useRef<(sessionId: string) => void>(() => {});
   useEffect(() => {
     openNotifiedSessionRef.current = (sessionId) => {
+      if (sessionId === MAIN_SESSION_NOTIFICATION_ID) {
+        handleOpenMainSession();
+        return;
+      }
       if (selectedSession?.id === sessionId) return;
       void resolveSessionById(sessionId).then((session) => {
         if (session) handleSelectSession(session);
@@ -1512,6 +1539,8 @@ export function AppShell() {
     };
   });
   useEffect(() => onDesktopNotificationClicked((sessionId) => openNotifiedSessionRef.current(sessionId)), []);
+  // A new daily digest from the main session: one desktop notification, opening its page.
+  useMainSessionNotifications();
 
   const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
     if (selectedSession?.relation?.kind === "subagent") return;
@@ -1913,6 +1942,8 @@ export function AppShell() {
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   const topBarTitle = scheduledOpen
     ? translate("scheduled.title")
+    : mainSessionOpen
+      ? translate("mainSession.title")
     : artifactsOpen
       ? translate("artifacts.page.title")
     : selectedSession
@@ -1925,7 +1956,9 @@ export function AppShell() {
       : showChat
         ? translate(isChatWorkspaceActive ? "sidebar.newChatTitle" : "appshell.newTask")
         : PRODUCT_NAME;
-  const topBarSubtitle = pageOpen
+  const topBarSubtitle = mainSessionOpen
+    ? translate("mainSession.subtitle")
+    : pageOpen
     ? ""
     : isChatWorkspaceActive
       ? translate("workspace.chatTitle")
@@ -2014,6 +2047,9 @@ export function AppShell() {
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
+        onOpenMainSession={handleOpenMainSession}
+        mainSessionOpen={mainSessionOpen}
+        onMainSessionStarted={handleMainSessionStarted}
         onOpenScheduled={handleOpenScheduled}
         scheduledOpen={scheduledOpen}
         onGenerateTitle={generateSessionTitleFor}
@@ -3016,6 +3052,22 @@ export function AppShell() {
             onBrowseFolder={desktopMode ? handleBrowseScheduledFolder : undefined}
             onOpenSession={async (sessionId) => {
               // handleOpenSession only logs a failure; this page has to tell the user.
+              const known = sessionCatalog.some((s) => s.id === sessionId && !s.transient);
+              if (!known) {
+                const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }).catch(() => null);
+                if (!response?.ok) return false;
+              }
+              await handleOpenSession(sessionId);
+              return true;
+            }}
+          />
+        )}
+        {mainSessionOpen && (
+          <MainSessionView
+            focusTask={mainSessionTask}
+            fallbackCwd={isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
+            onSessionStarted={handleMainSessionStarted}
+            onOpenSession={async (sessionId) => {
               const known = sessionCatalog.some((s) => s.id === sessionId && !s.transient);
               if (!known) {
                 const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }).catch(() => null);

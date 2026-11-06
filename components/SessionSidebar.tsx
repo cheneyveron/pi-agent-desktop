@@ -47,6 +47,7 @@ import { ChatsSectionMenu } from "./ChatsSectionMenu";
 import { toggleId } from "@/lib/chat-groups";
 import { readPinnedSessionIds, splitPinnedFamilies } from "@/lib/pinned-sessions";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
+import { MainSessionSidebarRow, NeedsYouSection } from "./main-session/MainSessionSidebar";
 import { ArtifactsSidebarRow } from "./artifacts/ArtifactsSidebarRow";
 import { isScheduledRunSession } from "@/hooks/useScheduledTasks";
 import { prefetchSessionData } from "@/lib/session-data-cache";
@@ -85,6 +86,11 @@ interface Props {
   onSessionsChange?: (sessions: SessionInfo[]) => void;
   onProjectsChange?: (projectRoots: string[]) => void;
   headerControls?: ReactNode;
+  /** Opens the main-session page, optionally located at a task; its pinned row and 需要你 section are absent without it. */
+  onOpenMainSession?: (taskId?: string) => void;
+  mainSessionOpen?: boolean;
+  /** A work session was started for a task from the 需要你 section. */
+  onMainSessionStarted?: (sessionId: string) => void;
   /** Opens the Scheduled page; the row under New Session is absent without it. */
   onOpenScheduled?: () => void;
   scheduledOpen?: boolean;
@@ -278,7 +284,7 @@ function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
     : new Set();
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onGenerateTitle, onOpenFullHistory, onOpenArtifacts, artifactsOpen = false }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenMainSession, mainSessionOpen = false, onMainSessionStarted, onOpenScheduled, scheduledOpen = false, onGenerateTitle, onOpenFullHistory, onOpenArtifacts, artifactsOpen = false }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
@@ -1865,6 +1871,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {t("sidebar.newChat")}
         </button>
 
+        {onOpenMainSession && <MainSessionSidebarRow active={mainSessionOpen} onOpen={() => onOpenMainSession()} />}
         {onOpenScheduled && <ScheduledSidebarRow active={scheduledOpen} onOpen={onOpenScheduled} />}
         {onOpenArtifacts && <ArtifactsSidebarRow active={artifactsOpen} onOpen={onOpenArtifacts} />}
       </div>
@@ -1936,6 +1943,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         aria-label={`${t("sidebar.chats")} / ${t("sidebar.projects")}`}
         onScroll={handleListScroll}
       >
+        {/* 需要你: the main session's open questions, above every session section. */}
+        {onOpenMainSession && (
+          <NeedsYouSection
+            mainSessionOpen={mainSessionOpen}
+            onOpenTask={(taskId) => onOpenMainSession(taskId)}
+            onSessionStarted={onMainSessionStarted}
+            fallbackCwd={selectedCwd && !selectedCwdIsChat ? selectedCwd : null}
+          />
+        )}
         {/* Pinned sits above every section and only appears while something is pinned. */}
         {pinnedFamilies.length > 0 && (
           <>

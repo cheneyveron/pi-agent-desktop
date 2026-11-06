@@ -262,6 +262,10 @@ try {
       // the fixture's relative stylesheet.
       if (/^Blocked script execution in '[^']*\/preview\.html\?type=serve[&']/.test(message)) return;
       if (message.startsWith("Failed to load resource") && event.location().url === `${base}/preview.css`) return;
+      // The main-session UI makes exactly one probe, GET /api/main-session/health. Its proxy
+      // answers 200 {ok:false} while the service is down; a checkout without the proxy route
+      // (contract §1, merged separately) answers 404, and the UI then stays quiet.
+      if (message.includes("404") && event.location().url === `${base}/api/main-session/health`) return;
       errors.push(message);
     });
     page.on("response", (response) => {
