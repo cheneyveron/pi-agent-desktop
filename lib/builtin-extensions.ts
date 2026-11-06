@@ -13,6 +13,7 @@ import {
   type LoadedMcpConfig,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { createCloseoutExtension, type CloseoutExtensionOptions } from "./closeout-extension";
 import { McpHost, type McpHostOptions } from "./mcp-host";
 import { createPiWebMcpTransportFactory } from "./mcp-transport";
 import { loadPiSdkInternals, type PiSdkInternals, type PiSdkInternalsResult } from "./pi-sdk-internals";
@@ -347,10 +348,12 @@ export interface PiWebBuiltinExtensionsOptions {
   agentDir: string;
   /** Timing overrides for tests. */
   mcpHost?: Pick<McpHostOptions, "idleMs" | "promptWaitMs">;
+  /** Overrides for the close-out extension (tests). */
+  closeout?: CloseoutExtensionOptions;
 }
 
 export interface PiWebBuiltinExtensions {
-  /** For the resource loader's `extensionFactories`, in the CLI's order, then the MCP host. */
+  /** For the resource loader's `extensionFactories`, in the CLI's order, then the MCP host and the close-out. */
   extensions: InlineExtension[];
   /** Decides which MCP servers the session connects; undefined while MCP is off. */
   mcpHost: McpHost | undefined;
@@ -389,5 +392,8 @@ export async function createPiWebBuiltinExtensions(
     ),
   ];
   if (mcpHost) extensions.push(mcpHost.extension());
+  // Pi Web's own: hands each stretch of work to the main session (lib/closeout-extension.ts).
+  // Last, so its bounded wait in session_shutdown comes after the other handlers.
+  extensions.push(builtin("closeout", createCloseoutExtension({ agentDir: options.agentDir, ...options.closeout })));
   return { extensions, mcpHost };
 }

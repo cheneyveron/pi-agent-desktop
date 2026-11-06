@@ -17,6 +17,7 @@ import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
 import { listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
 import { isChatFolderPath, isChatWorkspacePath } from "./chat-workspace";
+import { CLOSEOUT_ENTRY_TYPE, isCloseoutEntryData } from "./closeout-types";
 
 export { getAgentDir };
 
@@ -1000,6 +1001,17 @@ function entryToUiMessage(
         content: entry.content,
         display: entry.display,
         details: entry.details,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+    case "custom":
+      // A close-out card (lib/closeout-extension.ts); every other custom entry is state, not chat.
+      if (entry.customType !== CLOSEOUT_ENTRY_TYPE || !isCloseoutEntryData(entry.data)) return null;
+      return {
+        role: "custom",
+        customType: CLOSEOUT_ENTRY_TYPE,
+        content: entry.data.closeout.stands,
+        display: true,
+        details: entry.data,
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
     default:
