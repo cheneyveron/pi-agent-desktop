@@ -40,6 +40,8 @@ export const APP_PREF_KEYS = {
   diffViewMode: "pi-diff-view-mode",
   /** Last open session / cwd / file tabs for desktop cold-start restore. */
   workspace: "pi-workspace-v1",
+  /** Height in px of the main-session page's task list, set by dragging its handle. */
+  mainSessionListHeight: "pi-web:main-session-list-height",
 } as const;
 
 export type AppPrefKey = (typeof APP_PREF_KEYS)[keyof typeof APP_PREF_KEYS];

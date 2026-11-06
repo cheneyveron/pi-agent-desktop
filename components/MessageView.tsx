@@ -27,6 +27,7 @@ import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPrevie
 import { CodemodeCallList } from "./CodemodeToolView";
 import { imageSource, resultImageFileName } from "@/lib/result-image";
 import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
+import { CloseoutCard, MainSessionNote } from "./main-session/SessionEntries";
 import type {
   AgentMessage,
   UserMessage,
@@ -306,6 +307,13 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     }
     if ((message as CustomMessage).customType === "branch_summary") {
       return <CompactionMessageView message={message as CustomMessage} kind="branch_summary" />;
+    }
+    // Main-session entries (docs/proposals/2026-11-06-main-session-v1.md §4).
+    if ((message as CustomMessage).customType === "closeout") {
+      return <CloseoutCard message={message as CustomMessage} />;
+    }
+    if ((message as CustomMessage).customType === "main-session-note") {
+      return <MainSessionNote message={message as CustomMessage} />;
     }
     return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
   }
