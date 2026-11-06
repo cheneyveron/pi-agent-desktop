@@ -34,6 +34,7 @@ test("server defaults stay inside its fixture while the parent/browser environme
     assert.equal(env.NODE_ENV, "development");
     assert.equal(env.PI_WEB_PASSWORD, "");
     assert.equal(env.NEXT_TELEMETRY_DISABLED, "1");
+    assert.equal(env.PI_WEB_DISABLE_MAIN_SESSION, "1", "fixture sessions stay away from a real main session");
     assert.equal(env.PI_WEB_DESKTOP_BUILD, "1", "keep the documented isolated build selector");
     for (const key of ["PI_OFFLINE", "__NEXT_PRIVATE_ORIGIN", "__NEXT_PRIVATE_STANDALONE_CONFIG"]) {
       assert.equal(Object.hasOwn(env, key), false, key);

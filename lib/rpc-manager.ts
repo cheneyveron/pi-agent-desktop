@@ -57,6 +57,9 @@ import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createArtifactGuideExtension } from "./artifact-guide-extension";
 import { createScheduledTasksExtension } from "./scheduled-tasks-extension";
 import { createPiWebBuiltinExtensions } from "./builtin-extensions";
+import { isMainSessionDisabled, mainSessionUrl, replayCloseoutOutbox } from "./closeout-extension";
+import { MAIN_SESSION_NOTE_PREFIX, MAIN_SESSION_NOTE_TYPE, type MainSessionNoteDetails } from "./closeout-types";
+import { startMainSessionStream, type MainSessionStream } from "./main-session-insert-client";
 import type { McpHost } from "./mcp-host";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension } from "./mcp-read-only-policy";
@@ -467,6 +470,41 @@ export class AgentSessionWrapper {
     this.destroy();
     invalidateSessionListCache();
     return true;
+  }
+
+  /**
+   * Put a main-session note into this session (contract §4). The model reads it
+   * as `[主会话提醒] …` in a `main-session-note` custom message, which is also
+   * the entry the chat renders. A streaming run takes it as a steer; a session
+   * busy otherwise (compaction, retry backoff, prompt admission) holds it for
+   * its next prompt; an idle one gets it in its context now, without a turn.
+   */
+  async injectMainSessionNote(
+    text: string,
+    task?: string,
+    options: { eventId?: string } = {},
+  ): Promise<MainSessionNoteResult> {
+    const delivery: MainSessionNoteDetails["delivery"] = this.inner.isStreaming
+      ? "steer"
+      : this.isRunning() ? "next-turn" : "append";
+    const details: MainSessionNoteDetails = {
+      v: 1,
+      id: `msn_${randomUUID()}`,
+      t: new Date().toISOString(),
+      text,
+      ...(task ? { task } : {}),
+      ...(options.eventId ? { eventId: options.eventId } : {}),
+      delivery,
+    };
+    await this.inner.sendCustomMessage<MainSessionNoteDetails>({
+      customType: MAIN_SESSION_NOTE_TYPE,
+      content: [{ type: "text", text: `${MAIN_SESSION_NOTE_PREFIX}${text}` }],
+      display: true,
+      details,
+    }, delivery === "steer"
+      ? { deliverAs: "steer" }
+      : delivery === "next-turn" ? { deliverAs: "nextTurn" } : { triggerTurn: false });
+    return { delivered: true, id: details.id, delivery };
   }
 
   getPendingPromptPreview() {
@@ -2322,6 +2360,56 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
   return getRegistry().get(sessionId);
 }
 
+export type MainSessionNoteResult =
+  | { delivered: true; id: string; delivery: MainSessionNoteDetails["delivery"] }
+  | { delivered: false; reason: "empty" | "not-open" };
+
+/**
+ * Insert a main-session note into a session open in this server, running or
+ * idle (contract §4). A session that is not open is left alone: the service
+ * shows the note in the main session instead.
+ */
+export async function injectMainSessionNote(
+  sessionId: string,
+  text: string,
+  task?: string,
+  options: { eventId?: string } = {},
+): Promise<MainSessionNoteResult> {
+  const note = text.trim();
+  if (!note) return { delivered: false, reason: "empty" };
+  const session = getRpcSession(sessionId);
+  if (!session?.isAlive()) return { delivered: false, reason: "not-open" };
+  return session.injectMainSessionNote(note, task, options);
+}
+
+declare global {
+  var __piWebMainSessionStream: MainSessionStream | undefined;
+}
+
+/**
+ * Once per server process (globalThis survives hot reload): listen to the
+ * main-session service for `insert` events, and replay queued close-outs each
+ * time it comes up. Off with PI_WEB_DISABLE_MAIN_SESSION and under `node --test`.
+ */
+export function ensureMainSessionInsertClient(): void {
+  if (globalThis.__piWebMainSessionStream || isMainSessionDisabled()) return;
+  globalThis.__piWebMainSessionStream = startMainSessionStream({
+    url: mainSessionUrl(),
+    onConnect: () => {
+      void replayCloseoutOutbox().catch((error) => {
+        console.error("[pi-web] close-out outbox replay failed:", error instanceof Error ? error.message : error);
+      });
+    },
+    onInsert: async (event) => {
+      const result = await injectMainSessionNote(event.sessionId, event.text, event.task, { eventId: event.eventId });
+      if (!result.delivered && isVerboseLogging()) {
+        console.log(`[pi-web] main-session note for ${event.sessionId} not delivered: ${result.reason}`);
+      }
+    },
+    log: (message) => console.warn(`[pi-web] ${message}`),
+  });
+}
+
 export interface SetRpcSessionToolsResult {
   session: AgentSessionWrapper;
   sessionId: string;
@@ -2631,6 +2719,7 @@ export async function startRpcSession(
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const { initialModel, allowInitialModelFallback, thinkingLevel } = options;
+  ensureMainSessionInsertClient();
   const requestedToolNames = options.toolNames === undefined
     ? undefined
     : validateSessionToolSelection(options.toolNames);

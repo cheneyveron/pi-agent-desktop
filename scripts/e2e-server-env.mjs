@@ -19,6 +19,9 @@ export function createE2EServerEnv(parentEnv, agentDir, mode) {
     NODE_ENV: mode === "dev" ? "development" : "production",
     PI_WEB_PASSWORD: "",
     NEXT_TELEMETRY_DISABLED: "1",
+    // Fixture sessions must not hand close-outs to (or take notes from) a main-session
+    // service running on this machine; a run that tests it sets the variable to 0.
+    PI_WEB_DISABLE_MAIN_SESSION: parentEnv.PI_WEB_DISABLE_MAIN_SESSION ?? "1",
   };
   // Desktop shells export their serialized config; Next must read this checkout's
   // next.config.ts instead. An inherited offline flag also changes app behavior.
