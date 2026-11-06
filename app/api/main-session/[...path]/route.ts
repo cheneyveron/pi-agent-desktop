@@ -6,9 +6,11 @@ export const dynamic = "force-dynamic";
 // /api/main-session/* — forwards the request unchanged to the main-session service on
 // 127.0.0.1:30180 (MAIN_SESSION_PORT), streaming the response back so GET /stream (SSE) works.
 // No business logic lives here: the service is a separate process (main-session/server.mjs).
-// When it is not running the UI gets 503 {error, running:false} and shows "主会话未运行".
+// When it is not running, GET /health answers 200 {ok:false, running:false} so the UI's probe is
+// not an error (the UI shows "主会话未运行" and makes no other main-session request); every other
+// path answers 503 {error, running:false}.
 
-const PORT = Number(process.env.MAIN_SESSION_PORT ?? 30180);
+const port = () => Number(process.env.MAIN_SESSION_PORT ?? 30180);
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "cache-control"];
 
 type Context = { params: Promise<{ path: string[] }> };
@@ -22,7 +24,7 @@ async function forward(req: Request, { params }: Context): Promise<Response> {
   }
   const { path } = await params;
   const search = new URL(req.url).search;
-  const target = `http://127.0.0.1:${PORT}/${path.map(encodeURIComponent).join("/")}${search}`;
+  const target = `http://127.0.0.1:${port()}/${path.map(encodeURIComponent).join("/")}${search}`;
   const headers: Record<string, string> = {};
   const contentType = req.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
@@ -39,6 +41,9 @@ async function forward(req: Request, { params }: Context): Promise<Response> {
       redirect: "manual",
     });
   } catch {
+    if (method === "GET" && path.length === 1 && path[0] === "health") {
+      return NextResponse.json({ ok: false, running: false }, { headers: { "cache-control": "no-store" } });
+    }
     return NextResponse.json({ error: "main session is not running", running: false }, { status: 503 });
   }
   const responseHeaders = new Headers();
