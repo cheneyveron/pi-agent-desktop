@@ -146,6 +146,14 @@ export interface ChatReply {
   actions: MainEvent[];
 }
 
+/** One stored message of the conversation pane (GET /chat). */
+export interface ChatHistoryMessage {
+  role: "user" | "main";
+  text: string;
+  t: string;
+  cites?: ChatCite[];
+}
+
 export type MainStreamEvent =
   | { type: "task"; task: Task }
   | { type: "digest"; digest: Digest }
@@ -163,6 +171,8 @@ export interface MainSessionApi {
   seen(segment: Segment): Promise<{ seen: SeenMap }>;
   digest(date?: string): Promise<Digest>;
   chat(text: string): Promise<ChatReply>;
+  /** The conversation so far (GET /chat). */
+  chatHistory(): Promise<{ messages: ChatHistoryMessage[] }>;
   sessionStarted(sessionId: string, task: string): Promise<void>;
   postCloseout(closeout: Closeout): Promise<{ task: Task; event: MainEvent }>;
   /** Subscribe to `/stream`; returns the close function. */
@@ -207,6 +217,7 @@ export function createHttpApi(): MainSessionApi {
     seen: (segment) => post("/seen", { segment }),
     digest: (date) => request(`/digest${date ? `?date=${enc(date)}` : ""}`),
     chat: (text) => post("/chat", { text }),
+    chatHistory: () => request("/chat"),
     sessionStarted: async (sessionId, task) => { await post(`/sessions/${enc(sessionId)}/started`, { task }); },
     postCloseout: (closeout) => post("/closeouts", closeout),
     stream(onEvent, onState) {

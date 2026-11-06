@@ -125,3 +125,32 @@ test("custom entries: close-out from details or JSON content; note prefix stripp
   assert.deepEqual(h.parseMainSessionNote({ content: "[主会话提醒] 这个 case 的根因在 CAS-4764" }), { text: "这个 case 的根因在 CAS-4764", task: "CAS-4764" });
   assert.deepEqual(h.parseMainSessionNote({ content: "[主会话提醒] x", details: { text: "[主会话提醒] y", task: "EAI-1" } }), { text: "y", task: "EAI-1" });
 });
+
+test("B's close-out entry: the Closeout is details.closeout, and the re-post keeps id/trigger/range", () => {
+  const range = { afterEntryId: null, toEntryId: "e9", entries: 12 };
+  const message = {
+    customType: "closeout",
+    content: "PR open",
+    details: { v: 1, id: "co-1", t: "2026-11-03T10:00:00Z", trigger: "idle", range, delivery: { status: "sent", at: "x" }, closeout },
+  };
+  const entry = h.parseCloseoutEntry(message);
+  assert.equal(entry.id, "co-1");
+  assert.equal(entry.closeout.thread, "CAS-4764");
+  const payload = h.closeoutPayload(entry, h.applyCloseoutEdits(entry.closeout, { stands: "PR merged" }));
+  assert.equal(payload.stands, "PR merged");
+  assert.equal(payload.id, "co-1", "same id: the service records a revision, not a new close-out");
+  assert.equal(payload.trigger, "idle");
+  assert.deepEqual(payload.range, range);
+  assert.equal("delivery" in payload, false);
+  assert.equal(h.parseCloseoutMessage(message).stands, "PR open");
+});
+
+test("B's note: content is a text-block array; details.text has no prefix", () => {
+  const message = {
+    customType: "main-session-note",
+    content: [{ type: "text", text: "[主会话提醒] 根因在 CAS-4764" }],
+    details: { v: 1, id: "n1", t: "x", text: "根因在 CAS-4764", task: "CAS-4764", delivery: "steer" },
+  };
+  assert.deepEqual(h.parseMainSessionNote(message), { text: "根因在 CAS-4764", task: "CAS-4764" });
+  assert.deepEqual(h.parseMainSessionNote({ content: message.content }), { text: "根因在 CAS-4764", task: "CAS-4764" });
+});

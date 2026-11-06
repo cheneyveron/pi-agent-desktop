@@ -136,8 +136,35 @@ function scheduleRetry(): void {
   }, RETRY_MS);
 }
 
-export async function refreshMainSession(): Promise<void> {
+/**
+ * Set for the tab when /api/main-session has no route at all (404: a build without the
+ * proxy). In `next dev` each 404 compiles the not-found page and pushes an HMR reload, so
+ * probing again after that reload loops; the tab stops probing until the user retries.
+ */
+const ROUTE_MISSING_KEY = "pi-web:main-session-route-missing";
+
+function routeMissing(): boolean {
+  try { return typeof sessionStorage !== "undefined" && sessionStorage.getItem(ROUTE_MISSING_KEY) === "1"; } catch { return false; }
+}
+
+function setRouteMissing(missing: boolean): void {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    if (missing) sessionStorage.setItem(ROUTE_MISSING_KEY, "1");
+    else sessionStorage.removeItem(ROUTE_MISSING_KEY);
+  } catch {
+    // private mode: probing again is only slower
+  }
+}
+
+/** `force` (the 重试 button) probes even when this tab saw the route missing. */
+export async function refreshMainSession(force = false): Promise<void> {
   const id = ++loadId;
+  if (force) setRouteMissing(false);
+  if (routeMissing()) {
+    setState({ status: "offline", error: null });
+    return;
+  }
   if (state.status === "idle") setState({ status: "loading" });
   try {
     const client = await api();
@@ -155,15 +182,38 @@ export async function refreshMainSession(): Promise<void> {
     const tasks = { need: results[0].tasks, watch: results[1].tasks, done: results[2].tasks };
     setState({ status: "ready", error: null, tasks, seen: results[0].seen ?? EMPTY_SEEN });
     connectStream(client);
-    if (!state.digest) void loadDigest();
+    if (!state.digest) void loadHistory(client).then(loadDigest);
   } catch (error) {
     if (id !== loadId) return;
     if (isOffline(error)) {
       setState({ status: "offline", error: null });
-      if (!(error instanceof MainSessionError && error.status === 404)) scheduleRetry();
+      if (error instanceof MainSessionError && error.status === 404) setRouteMissing(true);
+      else scheduleRetry();
     } else {
       setState({ status: "error", error: message(error) });
     }
+  }
+}
+
+/** Messages the service already holds; this visit's narrative and questions follow them. */
+let historyLength = 0;
+
+async function loadHistory(client: MainSessionApi): Promise<void> {
+  if (state.chat.some((m) => m.label) || historyLength) return;
+  try {
+    const { messages } = await client.chatHistory();
+    if (!messages?.length) return;
+    const history: MainChatMessage[] = messages.map((m) => ({
+      id: `m${++seq}`,
+      who: m.role === "user" ? "you" : "main",
+      text: m.text,
+      at: m.t,
+      ...(m.cites?.length ? { cites: m.cites } : {}),
+    }));
+    historyLength = history.length;
+    setState({ chat: [...history, ...state.chat] });
+  } catch {
+    // An older service without GET /chat: start from the narrative.
   }
 }
 
@@ -183,7 +233,11 @@ function applyDigest(digest: Digest, label: "since" | "digest"): void {
     ? { id: `m${++seq}`, who: "main", text: narrative, at: new Date().toISOString(), label }
     : null;
   // "Since last time" opens the conversation even when it arrives after the first question.
-  const chat = !entry ? state.chat : label === "since" ? [entry, ...state.chat] : [...state.chat, entry];
+  const chat = !entry
+    ? state.chat
+    : label === "since"
+      ? [...state.chat.slice(0, historyLength), entry, ...state.chat.slice(historyLength)]
+      : [...state.chat, entry];
   setState({ digest, chat });
 }
 
@@ -378,6 +432,7 @@ export function resetMainSessionStore(): void {
   if (undoTimer) clearTimeout(undoTimer);
   undoTimer = null;
   state = INITIAL;
+  historyLength = 0;
   loadId++;
 }
 

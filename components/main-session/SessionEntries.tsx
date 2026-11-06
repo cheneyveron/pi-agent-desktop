@@ -9,7 +9,8 @@ import {
   applyCloseoutEdits,
   CLOSEOUT_FIELDS,
   closeoutFieldText,
-  parseCloseoutMessage,
+  closeoutPayload,
+  parseCloseoutEntry,
   parseMainSessionNote,
   shortTime,
   type CloseoutField,
@@ -42,17 +43,18 @@ type SendState = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { k
 /** The close-out card the extension records at the end of a session: every field editable, 交接 re-posts it. */
 export function CloseoutCard({ message }: { message: CustomMessage }) {
   const { t } = useI18n();
-  const closeout = parseCloseoutMessage(message);
+  const entry = parseCloseoutEntry(message);
+  const closeout = entry?.closeout ?? null;
   const [edits, setEdits] = useState<Partial<Record<CloseoutField, string>>>({});
   const [send, setSend] = useState<SendState>({ kind: "idle" });
-  if (!closeout) return null;
+  if (!entry || !closeout) return null;
   const edited = Object.keys(edits).length > 0;
   const time = closeout.t ? shortTime(closeout.t) : message.timestamp ? shortTime(new Date(message.timestamp).toISOString()) : "";
 
   const handoff = async () => {
     setSend({ kind: "sending" });
     try {
-      await postCloseoutCard(applyCloseoutEdits(closeout, edits));
+      await postCloseoutCard(closeoutPayload(entry, applyCloseoutEdits(closeout, edits)));
       setSend({ kind: "sent" });
     } catch (error) {
       const offline = error instanceof TypeError || (error instanceof MainSessionError && (error.status === 404 || error.status >= 502));

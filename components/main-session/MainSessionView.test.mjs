@@ -87,7 +87,7 @@ test("the page mounts from ?view=main (with &task=) like the other pages", () =>
 test("MessageView renders the close-out card and the main-session note", () => {
   assert.match(messageView, /customType === "closeout"\) \{\s*return <CloseoutCard/);
   assert.match(messageView, /customType === "main-session-note"\) \{\s*return <MainSessionNote/);
-  assert.match(entries, /await postCloseoutCard\(applyCloseoutEdits\(closeout, edits\)\)/);
+  assert.match(entries, /await postCloseoutCard\(closeoutPayload\(entry, applyCloseoutEdits\(closeout, edits\)\)\)/);
   assert.match(entries, /aria-expanded=\{open\}/);
   assert.match(entries, /openMainSessionPage\(note\.task\)/);
 });

@@ -354,7 +354,7 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
         <div className="ms-offline" role="status">
           <b>{state.status === "offline" ? t("mainSession.offline") : t("mainSession.error", { error: state.error ?? "" })}</b>
           {state.status === "offline" && <p>{t("mainSession.offlineHint")}</p>}
-          <button type="button" className="ms-button" onClick={() => void refreshMainSession()}>{t("mainSession.retry")}</button>
+          <button type="button" className="ms-button" onClick={() => void refreshMainSession(true)}>{t("mainSession.retry")}</button>
         </div>
       </div>
     );

@@ -54,7 +54,7 @@ async function service(req, res, path, query) {
   if (parts[0] === "tasks" && parts[2] === "archive") return send(await backend.archive(parts[1]));
   if (parts[0] === "tasks" && parts[2] === "undo") return send(await backend.undo(parts[1], payload.eventId));
   if (path === "/seen") return send(await backend.seen(payload.segment));
-  if (path === "/chat") return send(await backend.chat(payload.text));
+  if (path === "/chat") return send(req.method === "GET" ? await backend.chatHistory() : await backend.chat(payload.text));
   if (parts[0] === "sessions" && parts[2] === "started") return send(await backend.sessionStarted(parts[1], payload.task) ?? {});
   if (path === "/closeouts") {
     closeouts.push(payload);
@@ -258,6 +258,8 @@ try {
     await page.locator(".ms-closeout").getByText("已交接").waitFor();
     assert.equal(closeouts.length, 1);
     assert.equal(closeouts[0].stands, "PR #12 已合进 dev。");
+    assert.equal(closeouts[0].id, "co-cas-1", "the re-post carries the close-out id, so it revises that close-out");
+    assert.equal(closeouts[0].trigger, "idle");
     assert.deepEqual(closeouts[0].learned[0].anchors, [{ path: "dao/entitlement.js" }], "structured parts survive the edit");
     // Sidebar row actions: reply with a word from the 需要你 group.
     const item = page.locator(".ms-sidebar-item").filter({ hasText: "CAS-4766" });

@@ -295,6 +295,7 @@ export function createFixtureBackend(options: { now?: () => number } = {}): Fixt
       }
       return reply("这一句我在 fixture 里接不住。fixture 认得：任务号或 PR 号（卡在哪、等谁）、\"提醒\"、\"以后 / 记住\"、\"替我做了什么\"。", []);
     },
+    async chatHistory() { record("chatHistory"); return { messages: [] }; },
     async sessionStarted(sessionId, task) { record("sessionStarted", sessionId, task); },
     async postCloseout(closeout) {
       record("postCloseout", closeout);
@@ -325,6 +326,7 @@ export function createFixtureApi(): MainSessionApi {
     seen: wrap("seen"),
     digest: wrap("digest"),
     chat: wrap("chat"),
+    chatHistory: wrap("chatHistory"),
     sessionStarted: wrap("sessionStarted"),
     postCloseout: wrap("postCloseout"),
     stream: () => () => undefined,

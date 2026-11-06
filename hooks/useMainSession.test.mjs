@@ -139,3 +139,31 @@ test("a health probe reporting ok:false means not running, without asking for an
   assert.equal(store.getMainSessionState().status, "offline");
   assert.equal(backend.calls.filter((c) => c.method === "listTasks").length, 0);
 });
+
+test("the stored conversation (GET /chat) loads before this visit's narrative", async () => {
+  install({ chatHistory: async () => ({ messages: [
+    { role: "user", text: "CAS-4685 卡在哪", t: "2026-11-05T10:00:00Z" },
+    { role: "main", text: "等你 dev 验证", t: "2026-11-05T10:00:05Z", cites: [{ task: "CAS-4685" }] },
+  ] }) });
+  await store.refreshMainSession();
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+  const chat = store.getMainSessionState().chat;
+  assert.deepEqual(chat.map((m) => [m.who, m.label ?? null]), [["you", null], ["main", null], ["main", "since"]]);
+  assert.equal(chat[1].cites[0].task, "CAS-4685");
+});
+
+test("a missing proxy route (404) stops probing for the tab until the user retries", async () => {
+  const storage = new Map();
+  globalThis.sessionStorage = { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) };
+  let probes = 0;
+  install({ health: async () => { probes++; throw new client.MainSessionError("not found", 404); } });
+  await store.refreshMainSession();
+  await store.refreshMainSession();
+  assert.equal(probes, 1, "after a reload the tab does not probe the missing route again");
+  assert.equal(store.getMainSessionState().status, "offline");
+  install({ health: async () => { probes++; return { ok: true }; } });
+  await store.refreshMainSession(true);
+  assert.equal(probes, 2);
+  assert.equal(store.getMainSessionState().status, "ready");
+  delete globalThis.sessionStorage;
+});

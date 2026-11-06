@@ -240,18 +240,19 @@ function contentText(content: unknown): string {
   return "";
 }
 
-export function parseCloseoutMessage(message: CustomLike): Closeout | null {
-  const details = message.details as Partial<Closeout> | undefined;
-  const candidate = details && typeof details === "object" && "stands" in details
-    ? details
-    : (() => {
-      try {
-        return JSON.parse(contentText(message.content)) as Partial<Closeout>;
-      } catch {
-        return null;
-      }
-    })();
-  if (!candidate || typeof candidate !== "object") return null;
+/**
+ * The close-out entry as B's extension records it (`CloseoutEntryData` in lib/closeout-types.ts,
+ * PR #7): the Closeout sits in `details.closeout`, beside `id` / `trigger` / `range`.
+ */
+export interface CloseoutEntry {
+  closeout: Closeout;
+  /** Close-out id: the service's idempotency key, so a re-post revises this close-out. */
+  id?: string;
+  trigger?: string;
+  range?: unknown;
+}
+
+function normalizeCloseout(candidate: Partial<Closeout>): Closeout {
   return {
     sessionId: String(candidate.sessionId ?? ""),
     cwd: String(candidate.cwd ?? ""),
@@ -264,6 +265,45 @@ export function parseCloseoutMessage(message: CustomLike): Closeout | null {
     user_said: Array.isArray(candidate.user_said) ? candidate.user_said : [],
     open: Array.isArray(candidate.open) ? candidate.open : [],
     ...(Array.isArray(candidate.next_time) ? { next_time: candidate.next_time } : {}),
+  };
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+export function parseCloseoutEntry(message: CustomLike): CloseoutEntry | null {
+  const details = message.details;
+  if (isRecord(details) && isRecord(details.closeout) && typeof details.closeout.stands === "string") {
+    return {
+      closeout: normalizeCloseout(details.closeout as Partial<Closeout>),
+      ...(typeof details.id === "string" ? { id: details.id } : {}),
+      ...(typeof details.trigger === "string" ? { trigger: details.trigger } : {}),
+      ...(details.range !== undefined ? { range: details.range } : {}),
+    };
+  }
+  // A bare Closeout in details, or as JSON content.
+  const candidate = isRecord(details) && typeof details.stands === "string"
+    ? details
+    : (() => {
+      try {
+        return JSON.parse(contentText(message.content)) as unknown;
+      } catch {
+        return null;
+      }
+    })();
+  return isRecord(candidate) && typeof candidate.stands === "string" ? { closeout: normalizeCloseout(candidate as Partial<Closeout>) } : null;
+}
+
+export function parseCloseoutMessage(message: CustomLike): Closeout | null {
+  return parseCloseoutEntry(message)?.closeout ?? null;
+}
+
+/** `POST /closeouts` body for an edited entry; same shape as closeoutPayloadFromEntry() in lib/closeout-types.ts. */
+export function closeoutPayload(entry: CloseoutEntry, edited: Closeout): Closeout & { id?: string; trigger?: string; range?: unknown } {
+  return {
+    ...edited,
+    ...(entry.id ? { id: entry.id } : {}),
+    ...(entry.trigger ? { trigger: entry.trigger } : {}),
+    ...(entry.range !== undefined ? { range: entry.range } : {}),
   };
 }
 
