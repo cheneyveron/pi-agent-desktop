@@ -15,7 +15,8 @@ so under "Deviations".
 - The Next app only proxies: `app/api/main-session/[...path]/route.ts` forwards method, query,
   `content-type`/`accept` and body, and streams the response back (SSE included). Writes go
   through the same `isApiRequestAllowed` / JSON content-type guard as the other write routes.
-  Service down → `503 {error, running: false}`.
+  Service down → GET `/health` answers `200 {ok: false, running: false}` (the UI's probe), every
+  other path `503 {error, running: false}`.
 - Env: `MAIN_SESSION_DIR` (state dir), `MAIN_SESSION_MODEL` (`claude-haiku-5-5` default or
   `gpt-6-luna`; anything else refuses to start), `MAIN_SESSION_JUDGE=off` (no model turns, the
   deterministic parts still run), `MAIN_SESSION_DISPATCH=off`, `MAIN_SESSION_TICK=HH:MM` (09:00),
