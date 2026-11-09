@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkModelAvailable, envModelRef, lookupModel, parseModelRef } from "./pi-runtime.ts";
+import { checkModelAvailable, envModelRef, lookupModel, parseModelRef, parseThinkingLevel } from "./pi-runtime.ts";
 import { actionTools } from "./judge.ts";
 import { startServer } from "./server.ts";
 import { Store } from "./store.ts";
@@ -14,7 +14,7 @@ async function withServer(fn, options = {}) {
   const dispatched = [];
   const started = await startServer({
     port: 0, dir: null, timers: false, envModel: null,
-    judgeRunner: async ({ user, tools, model }) => { judged.push({ user, tools: tools.map((t) => t.name), model }); return ""; },
+    judgeRunner: async ({ user, tools, model, thinkingLevel }) => { judged.push({ user, tools: tools.map((t) => t.name), model, thinkingLevel }); return ""; },
     dispatcher: async (request) => { dispatched.push(request); return { ok: true, result: "PASS: fine" }; },
     checkModel: async () => undefined,
     memory: { write: async () => "sent" },
@@ -44,7 +44,7 @@ test("the contract's endpoints, end to end", async () => {
   await withServer(async ({ call, judged }) => {
     const health = await call("GET", "/health");
     assert.equal(health.body.ok, true);
-    assert.equal(health.body.version, "1.0.0");
+    assert.equal(health.body.version, "1.1.0");
     assert.equal((await call("POST", "/model", { model: "anthropic/claude-haiku-4-5" })).status, 200);
 
     const created = await call("POST", "/closeouts", closeout);
@@ -170,7 +170,7 @@ test("model refs are provider/modelId; the registry must still have the model", 
 test("without a chosen model no model turn runs; choosing one through POST /model takes effect at once", async () => {
   await withServer(async ({ call, judged, dispatched, service }) => {
     const health = (await call("GET", "/health")).body;
-    assert.deepEqual(health.model, { ref: null, source: null });
+    assert.deepEqual(health.model, { ref: null, source: null, thinkingLevel: "off" });
     assert.equal(health.judge.enabled, true);
     assert.equal(health.judge.available, false);
 
@@ -202,8 +202,70 @@ test("without a chosen model no model turn runs; choosing one through POST /mode
     assert.deepEqual(judged[0].model, { provider: "openai-codex", modelId: "gpt-6" });
 
     const cleared = await call("POST", "/model", { model: null });
-    assert.deepEqual(cleared.body, { ref: null, source: null });
+    assert.deepEqual(cleared.body, { ref: null, source: null, thinkingLevel: "off" });
     assert.equal((await call("GET", "/health")).body.judge.available, false);
+  });
+});
+
+test("the reasoning level is chosen with POST /model, kept across model changes, and given to every turn", async () => {
+  await withServer(async ({ call, judged }) => {
+    assert.equal((await call("POST", "/model", { thinkingLevel: "deep" })).status, 400);
+    const set = await call("POST", "/model", { thinkingLevel: "high" });
+    assert.equal(set.status, 200);
+    assert.equal(set.body.thinkingLevel, "high");
+    assert.equal((await call("GET", "/health")).body.model.thinkingLevel, "high");
+    const both = await call("POST", "/model", { model: "openai-codex/gpt-6", thinkingLevel: "low" });
+    assert.deepEqual([both.body.ref, both.body.thinkingLevel], ["openai-codex/gpt-6", "low"]);
+    await call("POST", "/model", { model: "anthropic/claude-haiku-4-5" });
+    assert.equal((await call("GET", "/model")).body.thinkingLevel, "low", "changing the model keeps the level");
+
+    await call("POST", "/closeouts", closeout);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(judged.at(-1).thinkingLevel, "low");
+
+    assert.equal((await call("POST", "/model", { thinkingLevel: null })).body.thinkingLevel, "off");
+    for (const bad of ["auto", 3, "HIGH"]) assert.throws(() => parseThinkingLevel(bad), /thinkingLevel must be one of/);
+    assert.equal(parseThinkingLevel(undefined), "off");
+  });
+});
+
+test("a chat reply streams as chat events while it is produced; the follow-up sees the conversation", async () => {
+  await withServer(async ({ call, base }) => {
+    await call("POST", "/model", { model: "anthropic/claude-haiku-4-5" });
+    await call("POST", "/closeouts", closeout);
+    await new Promise((r) => setTimeout(r, 20));
+    const controller = new AbortController();
+    const res = await fetch(`${base}/stream`, { signal: controller.signal });
+    const reader = res.body.getReader();
+    let seen = "";
+    const until = async (pattern) => {
+      while (!pattern.test(seen)) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        seen += Buffer.from(value).toString("utf8");
+      }
+    };
+    await until(/event: hello/);
+    const first = await call("POST", "/chat", { text: "CAS-4764 卡在哪" });
+    assert.equal(first.body.reply, "CAS-4764 等你决定推还是放弃。");
+    await until(/event: chat\ndata: .*"delta":"CAS-4764 等你/);
+    assert.match(seen, /"delta":"决定推还是放弃。"/, "the second delta arrived too");
+
+    const second = await call("POST", "/chat", { text: "那下一步呢" });
+    assert.equal(second.body.reply, "follow-up ok");
+    controller.abort();
+  }, {
+    judgeRunner: async ({ user, onText, thinkingLevel }) => {
+      assert.equal(thinkingLevel, "off");
+      if (/那下一步呢/.test(user)) {
+        assert.match(user, /## Recent conversation \(oldest first\)\nUser: CAS-4764 卡在哪\nMain: CAS-4764 等你决定推还是放弃。/);
+        assert.match(user, /## Task CAS-4764/, "the task the last reply cited is given in full");
+        return "follow-up ok";
+      }
+      onText("CAS-4764 等你");
+      onText("决定推还是放弃。");
+      return "CAS-4764 等你决定推还是放弃。";
+    },
   });
 });
 
@@ -218,7 +280,7 @@ test("a model the registry refuses is not saved, and the reason comes back", asy
 
 test("MAIN_SESSION_MODEL overrides the saved choice and locks it", async () => {
   await withServer(async ({ call }) => {
-    assert.deepEqual((await call("GET", "/health")).body.model, { ref: "anthropic/claude-haiku-4-5", source: "env" });
+    assert.deepEqual((await call("GET", "/health")).body.model, { ref: "anthropic/claude-haiku-4-5", source: "env", thinkingLevel: "off" });
     const locked = await call("POST", "/model", { model: "openai-codex/gpt-6" });
     assert.equal(locked.status, 409);
     assert.match(locked.body.error, /MAIN_SESSION_MODEL/);

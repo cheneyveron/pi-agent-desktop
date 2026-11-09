@@ -31,7 +31,7 @@ import {
   suggestions,
   type RowView,
 } from "./main-session-helpers";
-import { MainSessionModelPicker } from "./MainSessionModelPicker";
+import { MainSessionModelPicker, MainSessionThinkingPicker } from "./MainSessionModelPicker";
 import { MainSessionRow, type RowMenuAction } from "./MainSessionRow";
 import { TaskText } from "./TaskText";
 
@@ -420,6 +420,7 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
           <div className="ms-model">
             <span className="ms-model-label">{t("mainSession.model.label")}</span>
             <MainSessionModelPicker />
+            <MainSessionThinkingPicker />
           </div>
         )}
         <span className="ms-key-hints" aria-hidden="true">
@@ -609,8 +610,10 @@ function ChatMessage({ message, onTask, onOpenSession }: {
           {message.label && ` · ${t(message.label === "since" ? "mainSession.sinceLabel" : "mainSession.digestLabel")}`}
           {message.actions?.map((action) => <span key={action.id} className="ms-event-action">{action.action}</span>)}
         </div>
-        {message.pending ? (
+        {message.pending && !message.text ? (
           <div className="ms-thinking">{t("mainSession.thinking")}</div>
+        ) : message.pending ? (
+          <div className="ms-narrative ms-streaming"><TaskText text={message.text} onTask={onTask} /></div>
         ) : message.error ? (
           <div className="ms-error-text">{t("mainSession.chatFailed", { error: message.error })}</div>
         ) : (

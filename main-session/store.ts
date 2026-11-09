@@ -19,6 +19,8 @@ export interface ServiceSettings {
   /** `provider/modelId` of the model for judgment turns and read-only dispatches; absent = none. */
   model?: string;
   modelSetAt?: string;
+  /** Reasoning level of the turns; absent = "off". */
+  thinkingLevel?: string;
 }
 
 /** Service bookkeeping that is not part of any task. */

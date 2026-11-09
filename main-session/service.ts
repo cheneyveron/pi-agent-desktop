@@ -11,14 +11,14 @@ import { realExec, type Exec } from "./checkers/exec.ts";
 import { localClock, type DayClock } from "./dates.ts";
 import { buildDigest, defaultNarrative, storedDigest, suggestIdleArchives } from "./digest.ts";
 import { intakeCloseout, parseCloseout, type IntakeResult } from "./intake.ts";
-import { Judge, type JudgeRunner } from "./judge.ts";
+import { Judge, RECENT_CHAT_TURNS, type JudgeRunner } from "./judge.ts";
 import { createMemhanaSink, type MemorySink } from "./memory.ts";
-import { checkConfiguredModel, envModelRef, formatModelRef, ModelChoiceError, parseModelRef } from "./pi-runtime.ts";
+import { checkConfiguredModel, envModelRef, formatModelRef, ModelChoiceError, parseModelRef, parseThinkingLevel } from "./pi-runtime.ts";
 import { Store } from "./store.ts";
-import type { DigestLine, MainEvent, ModelRef, ModelSource, Segment, Task } from "./types.ts";
+import type { DigestLine, MainEvent, MainThinkingLevel, ModelRef, ModelSource, Segment, Task } from "./types.ts";
 import { decorateTask } from "./view.ts";
 
-export const SERVICE_VERSION = "1.0.0";
+export const SERVICE_VERSION = "1.1.0";
 const CHECK_INTERVAL_MS = 10 * 60_000;
 const LOOP_INTERVAL_MS = 60_000;
 
@@ -46,6 +46,8 @@ export interface ModelChoice {
   ref: string | null;
   source: ModelSource | null;
   setAt?: string;
+  /** Reasoning level of the turns ("off" by default); kept when the model changes. */
+  thinkingLevel: MainThinkingLevel;
 }
 
 export type Listener = (type: StreamType, data: unknown) => void;
@@ -96,7 +98,7 @@ export class MainSessionService {
         if (trigger.kind === "dispatch_result") void this.judge.run({ kind: "dispatch_result", ...(trigger.task ? { task: trigger.task } : {}), ...(trigger.eventId ? { eventId: trigger.eventId } : {}) });
       },
     };
-    this.judge = new Judge(this.ctx, options.judgeRunner, () => this.currentModel());
+    this.judge = new Judge(this.ctx, options.judgeRunner, () => this.currentModel(), () => this.currentThinkingLevel());
     this.chatLog = this.loadChat();
     if (!this.store.state.launchedAt) {
       this.store.state.launchedAt = this.ctx.now().toISOString();
@@ -195,11 +197,21 @@ export class MainSessionService {
     }
   }
 
+  /** The saved reasoning level, "off" when unset or unreadable. Read on every turn. */
+  currentThinkingLevel(): MainThinkingLevel {
+    try {
+      return parseThinkingLevel(this.store.settings.thinkingLevel);
+    } catch {
+      return "off";
+    }
+  }
+
   modelChoice(): ModelChoice {
     const model = this.currentModel();
-    if (!model) return { ref: null, source: null };
-    if (this.envModel) return { ref: formatModelRef(model), source: "env" };
-    return { ref: formatModelRef(model), source: "settings", ...(this.store.settings.modelSetAt ? { setAt: this.store.settings.modelSetAt } : {}) };
+    const thinkingLevel = this.currentThinkingLevel();
+    if (!model) return { ref: null, source: null, thinkingLevel };
+    if (this.envModel) return { ref: formatModelRef(model), source: "env", thinkingLevel };
+    return { ref: formatModelRef(model), source: "settings", thinkingLevel, ...(this.store.settings.modelSetAt ? { setAt: this.store.settings.modelSetAt } : {}) };
   }
 
   /**
@@ -208,7 +220,7 @@ export class MainSessionService {
    * serialised so a slow check cannot land after a later choice.
    */
   setModel(value: unknown): Promise<ModelChoice> {
-    const next = this.modelWrites.then(async () => {
+    return this.writeChoice(async () => {
       if (this.envModel) throw new ModelChoiceError(`MAIN_SESSION_MODEL=${formatModelRef(this.envModel)} is set for this process; unset it to choose the model here`, 409);
       const ref = parseModelRef(value);
       if (ref) await this.checkModel(ref);
@@ -217,6 +229,25 @@ export class MainSessionService {
         const { model: _model, modelSetAt: _at, ...rest } = this.store.settings;
         this.store.settings = rest;
       }
+    });
+  }
+
+  /** POST /model {thinkingLevel}: the reasoning level of the turns; "off" or null clears it. */
+  setThinkingLevel(value: unknown): Promise<ModelChoice> {
+    return this.writeChoice(async () => {
+      const level = parseThinkingLevel(value);
+      if (level === "off") {
+        const { thinkingLevel: _level, ...rest } = this.store.settings;
+        this.store.settings = rest;
+      } else {
+        this.store.settings = { ...this.store.settings, thinkingLevel: level };
+      }
+    });
+  }
+
+  private writeChoice(change: () => Promise<void>): Promise<ModelChoice> {
+    const next = this.modelWrites.then(async () => {
+      await change();
       this.store.saveSettings();
       // The last error described the previous choice; a new (or re-saved) one starts clean.
       this.judge.lastError = undefined;
@@ -292,10 +323,16 @@ export class MainSessionService {
     return { date: day, lines: [], narrative: defaultNarrative([]) };
   }
 
+  /**
+   * One chat turn. The conversation so far goes to the judgment turn (follow-ups resolve), and
+   * the reply's text is broadcast on /stream as `chat` deltas while it is produced; the HTTP
+   * response carries the final reply.
+   */
   async chat(text: string): Promise<ChatReply> {
     const userMessage: ChatMessage = { role: "user", text, t: this.ctx.now().toISOString() };
+    const history = this.chatLog.slice(-RECENT_CHAT_TURNS);
     this.appendChat(userMessage);
-    const result = await chat(this.ctx, this.judge, text);
+    const result = await chat(this.ctx, this.judge, text, history, (delta) => this.broadcast("chat", { t: userMessage.t, delta }));
     this.appendChat({ role: "main", text: result.reply, t: this.ctx.now().toISOString(), cites: result.cites });
     return result;
   }

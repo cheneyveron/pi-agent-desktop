@@ -6,7 +6,7 @@
  * the same backend over HTTP.
  */
 import type {
-  ChatReply, Digest, EventAction, MainEvent, MainSessionApi, NextItem, SeenMap, Segment, Task, TaskDetail,
+  ChatReply, Digest, EventAction, MainEvent, MainSessionApi, MainSessionThinkingLevel, NextItem, SeenMap, Segment, Task, TaskDetail,
 } from "./main-session-client";
 
 const YEAR = 2026;
@@ -156,6 +156,7 @@ export const FIXTURE_MODEL = "anthropic/claude-haiku-4-5";
 export function createFixtureBackend(options: { now?: () => number; model?: string | null } = {}): FixtureBackend {
   const now = options.now ?? (() => Date.now());
   let model: string | null = options.model === undefined ? FIXTURE_MODEL : options.model;
+  let thinkingLevel: MainSessionThinkingLevel = "off";
   const tasks = new Map(fixtureTasks().map((task) => [task.id, task]));
   const seen: SeenMap = { need: FIXTURE_SEEN, watch: FIXTURE_SEEN, done: FIXTURE_SEEN };
   const events: MainEvent[] = [];
@@ -184,7 +185,7 @@ export function createFixtureBackend(options: { now?: () => number; model?: stri
       record("health");
       return {
         ok: true, since: FIXTURE_SEEN, version: "fixture",
-        model: { ref: model, source: model ? "settings" as const : null },
+        model: { ref: model, source: model ? "settings" as const : null, thinkingLevel },
         judge: { enabled: true, available: model !== null, turns: 0 },
       };
     },
@@ -192,7 +193,12 @@ export function createFixtureBackend(options: { now?: () => number; model?: stri
       record("setModel", ref);
       if (ref !== null && !/^[^/\s]+\/\S+$/.test(ref)) throw Object.assign(new Error(`model "${ref}" must be written as provider/modelId`), { status: 400 });
       model = ref;
-      return { ref: model, source: model ? "settings" as const : null };
+      return { ref: model, source: model ? "settings" as const : null, thinkingLevel };
+    },
+    async setThinkingLevel(level) {
+      record("setThinkingLevel", level);
+      thinkingLevel = level;
+      return { ref: model, source: model ? "settings" as const : null, thinkingLevel };
     },
     async listTasks(status) {
       record("listTasks", status);
@@ -336,6 +342,7 @@ export function createFixtureApi(): MainSessionApi {
     fixture: true,
     health: wrap("health"),
     setModel: wrap("setModel"),
+    setThinkingLevel: wrap("setThinkingLevel"),
     listTasks: wrap("listTasks"),
     getTask: wrap("getTask"),
     answer: wrap("answer"),

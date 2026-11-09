@@ -184,7 +184,7 @@ test("choosing a model posts provider/modelId and shows it at once; a refusal is
   await store.refreshMainSession();
   assert.equal(store.getMainSessionState().service.model.ref, null);
   assert.equal(await store.setMainSessionModel("openai-codex/gpt-6"), true);
-  assert.deepEqual(store.getMainSessionState().service.model, { ref: "openai-codex/gpt-6", source: "settings" });
+  assert.deepEqual(store.getMainSessionState().service.model, { ref: "openai-codex/gpt-6", source: "settings", thinkingLevel: "off" });
   assert.deepEqual(fresh.calls.filter((c) => c.method === "setModel").map((c) => c.args[0]), ["openai-codex/gpt-6"]);
   assert.equal(await store.setMainSessionModel("gpt-6"), false);
   assert.match(store.getMainSessionState().modelError, /provider\/modelId/);

@@ -10579,6 +10579,7 @@ html.dark .terminal-panel {
   white-space: nowrap;
 }
 .ms-model .app-select-trigger.ms-model-select,
+.ms-model .app-select-trigger.ms-thinking-select,
 .ms-model-bar .app-select-trigger.ms-model-select {
   width: auto;
   max-width: 240px;
@@ -10601,6 +10602,7 @@ html.dark .terminal-panel {
 }
 .ms-model-bar-text { flex: 1 1 260px; min-width: 0; }
 .ms-model-bar .app-select-trigger.ms-model-select { background: var(--bg); color: var(--text); }
+.ms-streaming { opacity: 0.85; }
 @media (max-width: 1100px) { .ms-model-label { display: none; } }
 
 /* Undo bar: in the document flow under the band, 5 seconds. */

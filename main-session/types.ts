@@ -168,3 +168,7 @@ export interface ModelRef {
 
 /** Where the model in effect comes from: MAIN_SESSION_MODEL, or the choice saved in settings.json. */
 export type ModelSource = "env" | "settings";
+
+/** Reasoning levels a main-session turn can run at (Pi's thinking levels, without "auto"). */
+export const MAIN_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type MainThinkingLevel = (typeof MAIN_THINKING_LEVELS)[number];

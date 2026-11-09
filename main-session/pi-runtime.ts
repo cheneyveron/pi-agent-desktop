@@ -8,7 +8,7 @@
 // built-in default: without a choice the service runs no model turns at all.
 
 import type { InlineExtension, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { ModelRef } from "./types.ts";
+import { MAIN_THINKING_LEVELS, type MainThinkingLevel, type ModelRef } from "./types.ts";
 
 export class ModelChoiceError extends Error {
   status: number;
@@ -34,6 +34,15 @@ export function parseModelRef(value: unknown): ModelRef | null {
 
 export function formatModelRef(ref: ModelRef): string {
   return `${ref.provider}/${ref.modelId}`;
+}
+
+/** A reasoning level for the main session's turns; "off" (the default) when unset or empty. */
+export function parseThinkingLevel(value: unknown): MainThinkingLevel {
+  if (value === null || value === undefined || value === "") return "off";
+  if (typeof value !== "string" || !(MAIN_THINKING_LEVELS as readonly string[]).includes(value)) {
+    throw new ModelChoiceError(`thinkingLevel must be one of ${MAIN_THINKING_LEVELS.join(", ")}`);
+  }
+  return value as MainThinkingLevel;
 }
 
 /** MAIN_SESSION_MODEL, when set, overrides the saved choice. A malformed value throws. */
@@ -102,6 +111,10 @@ export interface PiTurnOptions {
   /** Write the session to ~/.pi/agent/sessions so the user can open it. Default false. */
   persist?: boolean;
   timeoutMs?: number;
+  /** Reasoning level of the turn. Default "off". */
+  thinkingLevel?: MainThinkingLevel;
+  /** Each assistant text delta as it streams, for live display. */
+  onText?: (delta: string) => void;
 }
 
 export interface PiTurnResult {
@@ -135,17 +148,24 @@ export async function runPiTurn(options: PiTurnOptions): Promise<PiTurnResult> {
     services,
     sessionManager,
     model,
-    thinkingLevel: "off",
+    thinkingLevel: options.thinkingLevel ?? "off",
     tools: toolNames,
     customTools,
   });
   session.setActiveToolsByName(toolNames);
+  const onText = options.onText;
+  const unsubscribe = onText
+    ? session.subscribe((event) => {
+      if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") onText(event.assistantMessageEvent.delta);
+    })
+    : undefined;
   const timer = setTimeout(() => { void session.abort(); }, options.timeoutMs ?? 120_000);
   try {
     await session.prompt(options.userText);
     return { text: session.getLastAssistantText() ?? "", sessionId: session.sessionId };
   } finally {
     clearTimeout(timer);
+    unsubscribe?.();
     session.dispose();
   }
 }

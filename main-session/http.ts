@@ -79,8 +79,10 @@ export function createHandler(service: MainSessionService) {
         if (method === "GET") return send(res, 200, service.modelChoice());
         if (method === "POST") {
           const body = await readJson(req);
-          if (!("model" in body)) throw new HttpError(400, "model is required (\"provider/modelId\" or null)");
-          return send(res, 200, await service.setModel(body.model));
+          if (!("model" in body) && !("thinkingLevel" in body)) throw new HttpError(400, "model (\"provider/modelId\" or null) or thinkingLevel is required");
+          let choice = "model" in body ? await service.setModel(body.model) : undefined;
+          if ("thinkingLevel" in body) choice = await service.setThinkingLevel(body.thinkingLevel);
+          return send(res, 200, choice);
         }
       }
 

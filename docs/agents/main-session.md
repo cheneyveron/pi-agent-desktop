@@ -60,6 +60,10 @@ so under "Deviations".
   and saves it in `settings.json` in the state dir. The service holds it in memory, so the next turn
   uses it without a restart; a restart reads it back. 409 while `MAIN_SESSION_MODEL` is set; 400
   with the reason for a malformed or unusable ref. Saving clears `judge.lastError`.
+- The reasoning level (`POST /model {thinkingLevel}`, "off" by default, kept when the model
+  changes) is picked beside the model with `MainSessionThinkingPicker`, from the levels
+  `/api/models` reports for the chosen model (`thinkingLevels`), all of them when it reports none.
+  It is not validated against the model at save time; an unsupported level is the SDK's to clamp.
 - Every turn resolves the ref again through the session services' `modelRuntime.getModel()`
   (`lookupModel()`); a model that has since left models.json or the catalog fails the turn with
   "… is not configured in Pi any more …; choose another model", which `/health` reports as
@@ -71,7 +75,7 @@ so under "Deviations".
 changes later, such as an ask being answered, is appended again with the same id and the last copy
 wins on load), `closeouts/<sessionId>.json` (every close-out of the session, revisions included),
 `schedules.json`, `seen.json`, `state.json` (launch time, last tick day, last network check),
-`settings.json` (`{model, modelSetAt}`, the user's model choice), `chat.jsonl`, `memory-outbox.jsonl`. A `Store(null)` keeps all of it in memory (tests, replay).
+`settings.json` (`{model, modelSetAt, thinkingLevel?}`, the user's model and reasoning choices), `chat.jsonl`, `memory-outbox.jsonl`. A `Store(null)` keeps all of it in memory (tests, replay).
 
 ## Pieces
 - `intake.ts` — POST /closeouts. Deterministic so a close-out is never lost when the model is down:
@@ -116,8 +120,10 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
   returned to the model as text. `digest` is refused outside the daily tick.
 - `pi-runtime.ts` — Pi SDK sessions outside the Next registry: no extensions, skills or context
   files; exact system prompt through `lib/exact-system-prompt.ts` (do not add another path);
-  `thinkingLevel: off`; the model is the chosen `provider/modelId`, resolved through the registry on
-  every turn (see "Model choice").
+  the reasoning level is the chosen one (`settings.thinkingLevel`, default off); the model is the
+  chosen `provider/modelId`, resolved through the registry on every turn (see "Model choice").
+  `onText` receives assistant text deltas (the SDK's `message_update` / `text_delta` events) for
+  live display of chat replies.
 - `dispatch.ts` + `readonly-guard.ts` — read-only sessions get `read, grep, find, ls, bash`; a
   `tool_call` hook checks every bash command: one simple command, no shell operators outside
   quotes (and no `$`, backtick or backslash inside double quotes), only `git log/show/status/diff/ls-remote`
@@ -127,7 +133,12 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
   immediate ask. Dispatched sessions are persisted so "替你做了" can link to them.
 - `chat.ts` — "提醒我…" → schedule (`parseWhen`: 明天/后天/N天后/N小时后/周X/下周X/M月D日/ISO,
   上午/下午/晚上 and H点/H:MM; default tomorrow 09:00), "以后…" → remember, otherwise the judge
-  answers (fallback: from the store).
+  answers (fallback: from the store). A chat turn carries the stored conversation before it
+  (`RECENT_CHAT_TURNS` = 10 messages): the judge input gets a "Recent conversation" section and
+  the tasks the recent replies cited are given in full, so a follow-up ("那下一步呢") resolves;
+  "提醒我…" without a ticket targets the task the last reply cited. The reply streams to
+  `/stream` as `chat` events (`{t, delta}`, `t` = the user message's time) while it is produced;
+  the HTTP response carries the final text.
 - `view.ts` — derived row fields for the UI: `task.ask` (open ask: eventId, short, text, why,
   ifNot, chips, at, immediate, source), `task.last` (latest automatic action), `task.answered`.
   Computed on every response and `task` stream event, never stored.
@@ -136,8 +147,8 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
 ## HTTP (service; the UI calls the same paths under `/api/main-session`)
 | | |
 |---|---|
-| GET `/health` | `{ok, since, version, model: {ref, source, setAt?}, judge: {enabled, available, turns, lastError?}}`; `ref` null = no model chosen, `source` `env` \| `settings` |
-| GET `/model` / POST `/model` | `{ref, source, setAt?}` / `{model: "provider/modelId" \| null}` → the same; see "Model choice" |
+| GET `/health` | `{ok, since, version, model: {ref, source, setAt?, thinkingLevel}, judge: {enabled, available, turns, lastError?}}`; `ref` null = no model chosen, `source` `env` \| `settings` |
+| GET `/model` / POST `/model` | `{ref, source, setAt?, thinkingLevel}` / `{model?: "provider/modelId" \| null, thinkingLevel?: off…max}` → the same; see "Model choice" |
 | GET `/tasks?status=need,watch` | `{tasks: TaskView[], seen, newSince: {need, watch, done}}` (default need+watch+done) |
 | GET `/tasks/:id` | `{task, events, closeouts, openAsks, contextPack}` (id URL-encoded; aliases work) |
 | POST `/tasks/:id/answer` | `{word, eventId?}` → `{task, event}`; without eventId answers the oldest open ask |
@@ -148,7 +159,7 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
 | GET `/digest?date=` | `{date, lines, narrative, eventId}`; today before the tick time → `{lines: [], pending: true}` |
 | POST `/chat` / GET `/chat` | `{text}` → `{reply, cites, actions}` / `{messages}` |
 | GET `/events?since=` | `{events}` |
-| GET `/stream` | SSE `hello`, `task` ({task: TaskView}), `digest`, `insert` ({sessionId, text, task, eventId}), `event` |
+| GET `/stream` | SSE `hello`, `task` ({task: TaskView}), `digest`, `insert` ({sessionId, text, task, eventId}), `event`, `chat` ({t, delta}: a reply being produced) |
 | POST `/sessions/:id/started` | `{task}` → `{ok, task, event}` |
 | POST `/replay` | see below |
 

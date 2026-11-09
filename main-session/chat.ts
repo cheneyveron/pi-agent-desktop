@@ -96,12 +96,21 @@ function cleanup(text: string): string {
   return text.replace(/^[\s，,：:的]+|[\s，,。.]+$/g, "").trim();
 }
 
-function mentionedTask(ctx: Ctx, text: string): Task | undefined {
+function mentionedTask(ctx: Ctx, text: string, history: ChatMessage[] = []): Task | undefined {
   for (const ticket of extractTickets(text)) {
     const task = findByAlias(ctx.store.listTasks(), ticket);
     if (task) return task;
   }
-  return ctx.store.listTasks().find((t) => text.toLowerCase().includes(t.id.toLowerCase()));
+  const named = ctx.store.listTasks().find((t) => text.toLowerCase().includes(t.id.toLowerCase()));
+  if (named) return named;
+  // "提醒我明天跟进" right after talking about a task means that task.
+  for (let i = history.length - 1; i >= 0; i--) {
+    for (const cite of history[i].cites ?? []) {
+      const task = cite.task ? ctx.store.getTask(cite.task) : undefined;
+      if (task) return task;
+    }
+  }
+  return undefined;
 }
 
 function describeTask(ctx: Ctx, task: Task): string {
@@ -135,10 +144,15 @@ function citesFrom(ctx: Ctx, text: string, events: MainEvent[]): ChatCite[] {
   return cites;
 }
 
-export async function chat(ctx: Ctx, judge: Judge | undefined, text: string): Promise<ChatReply> {
+/**
+ * One chat turn. `history` is the stored conversation before this message (newest last); a
+ * judgment turn sees the recent part of it, so follow-ups resolve. `onText` receives the
+ * reply as it streams.
+ */
+export async function chat(ctx: Ctx, judge: Judge | undefined, text: string, history: ChatMessage[] = [], onText?: (delta: string) => void): Promise<ChatReply> {
   const question = text.trim();
   if (!question) throw new Error("text is required");
-  const task = mentionedTask(ctx, question);
+  const task = mentionedTask(ctx, question, history);
 
   if (REMIND.test(question)) {
     const body = question.replace(REMIND, "");
@@ -161,7 +175,7 @@ export async function chat(ctx: Ctx, judge: Judge | undefined, text: string): Pr
   }
 
   if (judge?.available) {
-    const outcome = await judge.run({ kind: "chat", text: question });
+    const outcome = await judge.run({ kind: "chat", text: question, history }, [], onText);
     if (outcome.reply.trim()) {
       return { reply: outcome.reply.trim(), cites: citesFrom(ctx, `${question}\n${outcome.reply}`, outcome.events), actions: outcome.events };
     }

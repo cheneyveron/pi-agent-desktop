@@ -63,6 +63,33 @@ test("without a model, questions are answered from task state", async () => {
   assert.deepEqual(general.cites, [{ task: "EAI-370" }]);
 });
 
+test("a follow-up resolves against the recent conversation; 提醒我 without a ticket targets the last cited task", async () => {
+  const h = makeCtx(NOW.toISOString());
+  h.ctx.store.putTask(task("CAS-4672", { stands: "PR #949 merged" }));
+  const history = [
+    { role: "user", text: "CAS-4672 到哪了", t: "2026-11-02T12:58:00.000Z" },
+    { role: "main", text: "CAS-4672 的 PR #949 已合并，int 上还没验证。", t: "2026-11-02T12:58:05.000Z", cites: [{ task: "CAS-4672" }] },
+  ];
+  const seen = [];
+  const runner = async ({ user, onText }) => {
+    seen.push(user);
+    onText?.("等 ");
+    return "等 int 上的验证，没有人在等你。";
+  };
+  const deltas = [];
+  const judge = new Judge(h.ctx, runner, () => ({ provider: "anthropic", modelId: "claude-haiku-4-5" }));
+  const result = await chat(h.ctx, judge, "那它在等谁", history, (d) => deltas.push(d));
+  assert.equal(result.reply, "等 int 上的验证，没有人在等你。");
+  assert.deepEqual(deltas, ["等 "]);
+  assert.match(seen[0], /## Recent conversation \(oldest first\)\nUser: CAS-4672 到哪了\nMain: CAS-4672 的 PR #949/);
+  assert.match(seen[0], /## Task CAS-4672/, "the cited task is given in full although the question does not name it");
+  assert.ok(seen[0].indexOf("## Recent conversation") < seen[0].indexOf("## Event: the user asks"));
+
+  const reminder = await chat(h.ctx, judge, "提醒我明天跟进", history);
+  assert.match(reminder.reply, /提醒你：跟进/);
+  assert.equal(reminder.actions[0].task, "CAS-4672");
+});
+
 test("with a model, the judge's reply and its actions come back with cites", async () => {
   const h = makeCtx(NOW.toISOString());
   h.ctx.store.putTask(task("CAS-4672", { stands: "PR #949 merged" }));

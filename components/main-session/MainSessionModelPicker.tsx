@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { setMainSessionModel, useMainSession } from "@/hooks/useMainSession";
+import { setMainSessionModel, setMainSessionThinkingLevel, useMainSession } from "@/hooks/useMainSession";
+import { MAIN_SESSION_THINKING_LEVELS, type MainSessionThinkingLevel } from "@/lib/main-session-client";
 import { AppSelect } from "../AppSelect";
-import { modelPickerOptions, type PickerModel } from "./main-session-helpers";
+import { modelPickerOptions, thinkingPickerOptions, type PickerModel } from "./main-session-helpers";
 
 /**
  * The models the app offers for selection (GET /api/models, scoped by enabledModels like the
@@ -14,21 +15,46 @@ import { modelPickerOptions, type PickerModel } from "./main-session-helpers";
  * global (project-free) model scope, so the list is taken from there, as the Chats settings
  * picker does.
  */
-function useConfiguredModels(): { models: PickerModel[]; loading: boolean } {
+interface ConfiguredModels {
+  models: PickerModel[];
+  /** Supported thinking levels per `provider/id`, as /api/models reports them. */
+  thinkingLevels: Record<string, string[]>;
+  loading: boolean;
+}
+
+let cached: Promise<Omit<ConfiguredModels, "loading">> | undefined;
+
+function loadConfiguredModels(): Promise<Omit<ConfiguredModels, "loading">> {
+  cached ??= fetch("/api/chat-workspace", { cache: "no-store" })
+    .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+    .then((data: { cwd?: string }) => fetch(`/api/models${data.cwd ? `?cwd=${encodeURIComponent(data.cwd)}` : ""}`, { cache: "no-store" }))
+    .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+    .then((data: { modelList?: PickerModel[]; thinkingLevels?: Record<string, string[]> }) => ({
+      models: Array.isArray(data.modelList) ? data.modelList : [],
+      thinkingLevels: data.thinkingLevels && typeof data.thinkingLevels === "object" ? data.thinkingLevels : {},
+    }))
+    .catch(() => {
+      cached = undefined; // the picker then offers only "none" and the current choice; retry next mount
+      return { models: [], thinkingLevels: {} };
+    });
+  return cached;
+}
+
+function useConfiguredModels(): ConfiguredModels {
   const [models, setModels] = useState<PickerModel[]>([]);
+  const [thinkingLevels, setThinkingLevels] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/chat-workspace", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
-      .then((data: { cwd?: string }) => fetch(`/api/models${data.cwd ? `?cwd=${encodeURIComponent(data.cwd)}` : ""}`, { cache: "no-store" }))
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
-      .then((data: { modelList?: PickerModel[] }) => { if (!cancelled) setModels(Array.isArray(data.modelList) ? data.modelList : []); })
-      .catch(() => { /* the picker then offers only "none" and the current choice */ })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    void loadConfiguredModels().then((data) => {
+      if (cancelled) return;
+      setModels(data.models);
+      setThinkingLevels(data.thinkingLevels);
+      setLoading(false);
+    });
     return () => { cancelled = true; };
   }, []);
-  return { models, loading };
+  return { models, thinkingLevels, loading };
 }
 
 interface Props {
@@ -59,6 +85,35 @@ export function MainSessionModelPicker({ id, className }: Props) {
       placeholder={loading ? t("mainSession.model.loading") : undefined}
       onValueChange={(value) => { void setMainSessionModel(value || null); }}
       options={modelPickerOptions(models, choice.ref, t)}
+    />
+  );
+}
+
+/**
+ * The reasoning level of the main session's turns, beside the model picker. Offers the levels
+ * /api/models reports for the chosen model (all of them when it reports none); hidden until a
+ * model is chosen, and for services older than 1.1.0, which always ran with reasoning off.
+ */
+export function MainSessionThinkingPicker({ id, className }: Props) {
+  const { t } = useI18n();
+  const state = useMainSession();
+  const { thinkingLevels } = useConfiguredModels();
+  const choice = state.service?.model;
+  if (!choice?.ref || !choice.thinkingLevel) return null;
+  const supported = thinkingLevels[choice.ref];
+  const levels = supported?.length
+    ? MAIN_SESSION_THINKING_LEVELS.filter((level) => level === "off" || supported.includes(level))
+    : MAIN_SESSION_THINKING_LEVELS;
+  return (
+    <AppSelect
+      id={id}
+      className={["ms-thinking-select", className].filter(Boolean).join(" ")}
+      aria-label={t("mainSession.thinking.label")}
+      title={t("mainSession.thinking.label")}
+      value={choice.thinkingLevel}
+      disabled={state.modelSaving}
+      onValueChange={(value) => { void setMainSessionThinkingLevel((value || "off") as MainSessionThinkingLevel); }}
+      options={thinkingPickerOptions(levels, choice.thinkingLevel, t)}
     />
   );
 }

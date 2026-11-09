@@ -12,7 +12,8 @@ import {
 } from "./actions.ts";
 import { daysBetween } from "./dates.ts";
 import { applyDigestWording, lastActivity } from "./digest.ts";
-import type { MainEvent, ModelRef, NextItem, Task, Wait } from "./types.ts";
+import type { ChatMessage } from "./chat.ts";
+import type { MainEvent, MainThinkingLevel, ModelRef, NextItem, Task, Wait } from "./types.ts";
 
 export interface JudgeTool {
   name: string;
@@ -27,6 +28,10 @@ export interface JudgeRunInput {
   tools: JudgeTool[];
   /** The model chosen for the main session at the moment the turn starts. */
   model: ModelRef;
+  /** The reasoning level chosen with it. */
+  thinkingLevel: MainThinkingLevel;
+  /** Assistant text as it streams (chat turns), for live display. */
+  onText?: (delta: string) => void;
 }
 
 /** Runs one model turn with the tools; returns the model's final text. */
@@ -37,7 +42,7 @@ export type Trigger =
   | { kind: "checker"; task?: string; eventId: string }
   | { kind: "dispatch_result"; task?: string; eventId?: string }
   | { kind: "daily_tick"; date: string; digestEventId?: string }
-  | { kind: "chat"; text: string };
+  | { kind: "chat"; text: string; history?: ChatMessage[] };
 
 export interface JudgeOutcome {
   reply: string;
@@ -248,12 +253,22 @@ function taskDetail(ctx: Ctx, task: Task): string {
   return JSON.stringify({ ...rest, openAsks: asks, recentEvents: recent }, null, 1).slice(0, 6000);
 }
 
+/** How many stored chat messages a chat turn sees (user and main alike). */
+export const RECENT_CHAT_TURNS = 10;
+
 /** The user message of a judgment turn: event, involved tasks in full, board of recent tasks. */
 export function buildJudgeInput(ctx: Ctx, trigger: Trigger, alreadyDone: MainEvent[] = []): string {
   const today = ctx.clock.day(ctx.now());
   const involved = new Set<string>();
   const parts: string[] = [`Now: ${ctx.now().toISOString()} (local day ${today})`];
   if (trigger.kind === "chat") {
+    const history = (trigger.history ?? []).slice(-RECENT_CHAT_TURNS);
+    if (history.length) {
+      // Follow-ups ("那下一步呢") only make sense against what was just said; the tasks the last
+      // replies cited are the ones a pronoun refers to, so they are given in full below.
+      parts.push(`## Recent conversation (oldest first)\n${history.map((m) => `${m.role === "user" ? "User" : "Main"}: ${m.text.replace(/\s+/g, " ").slice(0, 600)}`).join("\n")}`);
+      for (const m of history) for (const cite of m.cites ?? []) if (cite.task) involved.add(cite.task);
+    }
     parts.push(`## Event: the user asks\n${trigger.text}`);
   } else if (trigger.kind === "daily_tick") {
     const digest = trigger.digestEventId ? ctx.store.getEvent(trigger.digestEventId) : undefined;
@@ -301,11 +316,13 @@ export class Judge {
   private ctx: Ctx;
   private runner: JudgeRunner | undefined;
   private model: () => ModelRef | null;
+  private thinking: () => MainThinkingLevel;
 
-  constructor(ctx: Ctx, runner: JudgeRunner | undefined, model: () => ModelRef | null = () => null) {
+  constructor(ctx: Ctx, runner: JudgeRunner | undefined, model: () => ModelRef | null = () => null, thinking: () => MainThinkingLevel = () => "off") {
     this.ctx = ctx;
     this.runner = runner;
     this.model = model;
+    this.thinking = thinking;
   }
 
   /** Model turns are switched on for this process (a runner exists), model chosen or not. */
@@ -318,19 +335,22 @@ export class Judge {
     return Boolean(this.runner) && this.model() !== null;
   }
 
-  run(trigger: Trigger, alreadyDone: MainEvent[] = []): Promise<JudgeOutcome> {
-    const next = this.chain.then(() => this.runNow(trigger, alreadyDone));
+  run(trigger: Trigger, alreadyDone: MainEvent[] = [], onText?: (delta: string) => void): Promise<JudgeOutcome> {
+    const next = this.chain.then(() => this.runNow(trigger, alreadyDone, onText));
     this.chain = next.catch(() => undefined);
     return next;
   }
 
-  private async runNow(trigger: Trigger, alreadyDone: MainEvent[]): Promise<JudgeOutcome> {
+  private async runNow(trigger: Trigger, alreadyDone: MainEvent[], onText?: (delta: string) => void): Promise<JudgeOutcome> {
     const model = this.model();
     if (!this.runner || !model) return { reply: "", events: [] };
     const events: MainEvent[] = [];
     const tools = actionTools(this.ctx, trigger, events);
     try {
-      const reply = await this.runner({ system: judgePrompt(), user: buildJudgeInput(this.ctx, trigger, alreadyDone), tools, model });
+      const reply = await this.runner({
+        system: judgePrompt(), user: buildJudgeInput(this.ctx, trigger, alreadyDone), tools, model,
+        thinkingLevel: this.thinking(), ...(onText ? { onText } : {}),
+      });
       this.turns++;
       this.lastError = undefined;
       return { reply, events };
@@ -344,7 +364,7 @@ export class Judge {
 
 /** Production runner: a Pi SDK session on the chosen model with the action tools only. */
 export function createSdkJudgeRunner(): JudgeRunner {
-  return async ({ system, user, tools, model }) => {
+  return async ({ system, user, tools, model, thinkingLevel, onText }) => {
     const { runPiTurn } = await import("./pi-runtime.ts");
     const { defineTool } = await import("@earendil-works/pi-coding-agent");
     const customTools = tools.map((tool) => defineTool({
@@ -357,7 +377,7 @@ export function createSdkJudgeRunner(): JudgeRunner {
         return { content: [{ type: "text", text }], details: undefined };
       },
     }));
-    const result = await runPiTurn({ cwd: homedir(), systemPrompt: system, userText: user, customTools, model, timeoutMs: 120_000 });
+    const result = await runPiTurn({ cwd: homedir(), systemPrompt: system, userText: user, customTools, model, thinkingLevel, timeoutMs: 120_000, ...(onText ? { onText } : {}) });
     return result.text;
   };
 }

@@ -158,7 +158,13 @@ export type MainStreamEvent =
   | { type: "task"; task: Task }
   | { type: "digest"; digest: Digest }
   | { type: "insert"; sessionId: string; text: string; task?: string }
-  | { type: "event"; event: MainEvent };
+  | { type: "event"; event: MainEvent }
+  /** A piece of the reply to the chat message sent at `t`, while it is produced. */
+  | { type: "chat"; t: string; delta: string };
+
+/** Reasoning levels the service accepts for its turns. */
+export const MAIN_SESSION_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type MainSessionThinkingLevel = (typeof MAIN_SESSION_THINKING_LEVELS)[number];
 
 /** The model the service runs its turns on (GET/POST /model; `model` in /health). */
 export interface MainSessionModelChoice {
@@ -167,6 +173,8 @@ export interface MainSessionModelChoice {
   /** "env": MAIN_SESSION_MODEL, which locks the choice; "settings": picked in the UI. */
   source: "env" | "settings" | null;
   setAt?: string;
+  /** Absent from services older than 1.1.0, which always ran with reasoning off. */
+  thinkingLevel?: MainSessionThinkingLevel;
 }
 
 export interface MainSessionHealth {
@@ -183,6 +191,8 @@ export interface MainSessionApi {
   health(): Promise<MainSessionHealth>;
   /** Choose the model for judgment turns and read-only checks (`provider/modelId`), or none. */
   setModel(ref: string | null): Promise<MainSessionModelChoice>;
+  /** Choose the reasoning level of the turns; "off" clears it. */
+  setThinkingLevel(level: MainSessionThinkingLevel): Promise<MainSessionModelChoice>;
   listTasks(status: Segment): Promise<{ tasks: Task[]; seen: SeenMap }>;
   getTask(id: string): Promise<TaskDetail>;
   answer(id: string, word: string, eventId?: string): Promise<{ task: Task; event: MainEvent }>;
@@ -230,6 +240,7 @@ export function createHttpApi(): MainSessionApi {
     fixture: false,
     health: () => request("/health"),
     setModel: (ref) => post("/model", { model: ref }),
+    setThinkingLevel: (level) => post("/model", { thinkingLevel: level }),
     listTasks: (status) => request(`/tasks?status=${status}`),
     getTask: (id) => request(`/tasks/${enc(id)}`),
     answer: (id, word, eventId) => post(`/tasks/${enc(id)}/answer`, { word, ...(eventId ? { eventId } : {}) }),

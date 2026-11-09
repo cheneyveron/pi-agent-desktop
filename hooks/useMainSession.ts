@@ -12,6 +12,7 @@ import {
   type MainSessionApi,
   type MainSessionHealth,
   type MainSessionModelChoice,
+  type MainSessionThinkingLevel,
   type MainStreamEvent,
   type SeenMap,
   type Segment,
@@ -178,7 +179,9 @@ function setRouteMissing(missing: boolean): void {
 
 export function serviceInfo(health: MainSessionHealth): MainSessionServiceInfo {
   return {
-    model: health.model && typeof health.model === "object" ? { ref: health.model.ref ?? null, source: health.model.source ?? null } : null,
+    model: health.model && typeof health.model === "object"
+      ? { ref: health.model.ref ?? null, source: health.model.source ?? null, ...(health.model.thinkingLevel ? { thinkingLevel: health.model.thinkingLevel } : {}) }
+      : null,
     judgeEnabled: health.judge?.enabled ?? Boolean(health.judge?.available),
     lastError: health.judge?.lastError ?? null,
   };
@@ -199,6 +202,22 @@ export async function setMainSessionModel(ref: string | null): Promise<boolean> 
   setState({ modelSaving: true, modelError: null });
   try {
     const model = await (await api()).setModel(ref);
+    setState({
+      modelSaving: false,
+      service: { judgeEnabled: true, ...state.service, model, lastError: null },
+    });
+    return true;
+  } catch (error) {
+    setState({ modelSaving: false, modelError: message(error) });
+    return false;
+  }
+}
+
+/** Choose the reasoning level of the service's turns (POST /model {thinkingLevel}). */
+export async function setMainSessionThinkingLevel(level: MainSessionThinkingLevel): Promise<boolean> {
+  setState({ modelSaving: true, modelError: null });
+  try {
+    const model = await (await api()).setThinkingLevel(level);
     setState({
       modelSaving: false,
       service: { judgeEnabled: true, ...state.service, model, lastError: null },
@@ -298,6 +317,10 @@ function applyDigest(digest: Digest, label: "since" | "digest"): void {
 function handleStreamEvent(event: MainStreamEvent): void {
   if (event.type === "task") {
     setState({ tasks: upsert(state.tasks, event.task) });
+  } else if (event.type === "chat") {
+    // The reply to the message in flight, as the model produces it; the HTTP reply finalises it.
+    const waiting = state.chat.find((m) => m.pending);
+    if (waiting) setState({ chat: state.chat.map((m) => (m.id === waiting.id ? { ...m, text: m.text + event.delta } : m)) });
   } else if (event.type === "digest") {
     applyDigest(event.digest, "digest");
     for (const handler of digestHandlers) {

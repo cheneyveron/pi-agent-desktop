@@ -196,6 +196,17 @@ export function modelPickerOptions(models: readonly PickerModel[], current: stri
   ];
 }
 
+const THINKING_LABEL_KEYS: Record<string, string> = {
+  off: "chat.thinkingOff", minimal: "chat.thinkingMinimal", low: "chat.thinkingLow", medium: "chat.thinkingMedium",
+  high: "chat.thinkingHigh", xhigh: "chat.thinkingXhigh", max: "chat.thinkingMax",
+};
+
+/** Options of the reasoning-level picker: the supported levels, plus the current one if unsupported. */
+export function thinkingPickerOptions(levels: readonly string[], current: string, t: Translate): { value: string; label: string }[] {
+  const list = levels.includes(current) ? [...levels] : [...levels, current];
+  return list.map((level) => ({ value: level, label: THINKING_LABEL_KEYS[level] ? t(THINKING_LABEL_KEYS[level]) : level }));
+}
+
 /** What the page shows about the model: nothing, the "choose one" notice, or the last turn's error. */
 export function modelNotice(service: { model: { ref: string | null } | null; judgeEnabled: boolean; lastError: string | null } | null): "none" | "missing" | "failed" {
   if (!service?.model || !service.judgeEnabled) return "none";

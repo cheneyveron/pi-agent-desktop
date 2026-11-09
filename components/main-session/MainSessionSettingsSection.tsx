@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { refreshMainSessionHealth, useMainSession } from "@/hooks/useMainSession";
-import { MainSessionModelPicker } from "./MainSessionModelPicker";
+import { MainSessionModelPicker, MainSessionThinkingPicker } from "./MainSessionModelPicker";
 
 /**
  * Settings › General › Main session: the same model picker the 主会话 page shows, beside the
@@ -32,6 +32,7 @@ export function MainSessionSettingsSection() {
         <div className="settings-chat-option settings-chats-field">
           <label htmlFor="settings-main-session-model">{t("settings.mainSessionModel")}</label>
           <MainSessionModelPicker id="settings-main-session-model" className="settings-chats-control" />
+          <MainSessionThinkingPicker id="settings-main-session-thinking" className="settings-chats-control" />
           <span className="settings-chats-hint" role={state.modelError ? "alert" : undefined}>
             {state.modelError ? t("mainSession.model.saveFailed", { error: state.modelError }) : hint}
           </span>
