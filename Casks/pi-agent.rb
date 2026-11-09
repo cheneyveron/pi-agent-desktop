@@ -22,12 +22,13 @@ cask "pi-agent" do
   app "Pi Agent.app"
 
   # Sessions, models and credentials live in ~/.pi and are shared with the pi
-  # CLI, so they are deliberately not part of zap.
+  # CLI, so they are deliberately not part of zap. The pre-rename
+  # com.abcwyc.pi-agent paths are left alone: upstream Pi Agent still uses them.
   zap trash: [
-    "~/Library/Application Support/com.abcwyc.pi-agent",
-    "~/Library/Caches/com.abcwyc.pi-agent",
-    "~/Library/Preferences/com.abcwyc.pi-agent.plist",
-    "~/Library/Saved Application State/com.abcwyc.pi-agent.savedState",
-    "~/Library/WebKit/com.abcwyc.pi-agent",
+    "~/Library/Application Support/com.solidtensor.pi-agent",
+    "~/Library/Caches/com.solidtensor.pi-agent",
+    "~/Library/Preferences/com.solidtensor.pi-agent.plist",
+    "~/Library/Saved Application State/com.solidtensor.pi-agent.savedState",
+    "~/Library/WebKit/com.solidtensor.pi-agent",
   ]
 end

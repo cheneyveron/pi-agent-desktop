@@ -18,6 +18,7 @@ use std::os::windows::process::CommandExt as _;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Url};
 
 mod backend;
+mod legacy_identifier;
 mod logging;
 mod native_prefs;
 mod shell;
@@ -1064,7 +1065,7 @@ fn instance_lock_path() -> Option<PathBuf> {
                 .filter(|value| !value.is_empty())
                 .map(|value| PathBuf::from(value).join(".config"))
         });
-    base.map(|value| value.join("com.abcwyc.pi-agent").join("pi-agent.lock"))
+    base.map(|value| value.join(legacy_identifier::IDENTIFIER).join("pi-agent.lock"))
 }
 
 #[cfg(target_os = "linux")]
@@ -1192,6 +1193,9 @@ fn spawn_focus_monitor(app: AppHandle) {
 pub fn run() {
     mark_process_start();
     install_panic_hook();
+    // Before anything reads or creates the app's dirs (the Linux lock below,
+    // plugin init, the webview): copy data over from the pre-rename identifier.
+    let legacy_migration_notes = legacy_identifier::migrate();
 
     // Become the single instance (Linux). If another live instance owns the
     // lock, focus it and exit without starting a second server/window.
@@ -1314,6 +1318,9 @@ pub fn run() {
                     env::consts::OS
                 ),
             );
+            for note in &legacy_migration_notes {
+                desktop_log(app.handle(), &format!("legacy identifier migration: {note}"));
+            }
             // The updater public key is embedded at compile time by the release
             // workflow. Local development builds intentionally omit it, which
             // keeps unsigned builds from accepting production updates.

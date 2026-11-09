@@ -55,7 +55,7 @@ src-tauri/target/release/bundle/deb/pi-agent-desktop_<version>_amd64.deb
 内置服务的 stdout/stderr 写入：
 
 ```text
-~/Library/Logs/com.abcwyc.pi-agent/server.log
+~/Library/Logs/com.solidtensor.pi-agent/server.log
 ```
 
 App 会把登录 shell 的 `PATH` 传给内置服务，以便从 Finder 启动时仍能找到用户通过 Homebrew、nvm、Volta 等方式安装的命令行工具。
