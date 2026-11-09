@@ -20,6 +20,7 @@ import { SEGMENTS, type Segment, type Task } from "@/lib/main-session-client";
 import {
   clampListHeight,
   focusAfterRemoval,
+  modelNotice,
   moveFocus,
   newCount,
   resolveTask,
@@ -30,6 +31,7 @@ import {
   suggestions,
   type RowView,
 } from "./main-session-helpers";
+import { MainSessionModelPicker } from "./MainSessionModelPicker";
 import { MainSessionRow, type RowMenuAction } from "./MainSessionRow";
 import { TaskText } from "./TaskText";
 
@@ -372,6 +374,9 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
       })
     : "";
   const sug = state.chat.length < 6 ? suggestions(rowsBySegment.need, t) : [];
+  // No model chosen (or its last turn failed): a notice with the picker under the band.
+  // Otherwise the picker sits in the band, so the choice can be changed from here.
+  const notice = modelNotice(state.service);
   const listStyle = listHeight ? { height: listHeight, maxHeight: "none", flex: `0 0 ${listHeight}px` } : undefined;
 
   return (
@@ -411,6 +416,12 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
           })}
         </div>
         {state.fixture && <span className="ms-fixture-tag">{t("mainSession.fixtureBadge")}</span>}
+        {notice === "none" && state.service?.model?.ref && (
+          <div className="ms-model">
+            <span className="ms-model-label">{t("mainSession.model.label")}</span>
+            <MainSessionModelPicker />
+          </div>
+        )}
         <span className="ms-key-hints" aria-hidden="true">
           <kbd>j</kbd><kbd>k</kbd><span className="ms-key-label"> {t("mainSession.keys.move")} ·</span>{" "}
           <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><span className="ms-key-label"> {t("mainSession.keys.answer")} ·</span>{" "}
@@ -425,6 +436,17 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
           <UndoCountdown until={undo.until} onDone={dismissUndo} />
           <button type="button" className="ms-button ms-undo-button" onClick={() => void undoLast()}>{t("mainSession.undo.button")}</button>
         </div>
+      )}
+      {notice !== "none" && (
+        <div className={`ms-model-bar ms-model-bar--${notice}`} role="status">
+          <span className="ms-model-bar-text">
+            {notice === "missing" ? t("mainSession.model.needs") : t("mainSession.model.failed", { error: state.service?.lastError ?? "" })}
+          </span>
+          <MainSessionModelPicker />
+        </div>
+      )}
+      {state.modelError && (
+        <div className="ms-error" role="alert">{t("mainSession.model.saveFailed", { error: state.modelError })}</div>
       )}
       {(state.actionError || openError) && (
         <div className="ms-error" role="alert">

@@ -36,18 +36,42 @@ so under "Deviations".
   through the same `isApiRequestAllowed` / JSON content-type guard as the other write routes.
   Service down → GET `/health` answers `200 {ok: false, running: false}` (the UI's probe), every
   other path `503 {error, running: false}`.
-- Env: `MAIN_SESSION_DIR` (state dir), `MAIN_SESSION_MODEL` (`claude-haiku-5-5` default or
-  `gpt-6-luna`; anything else refuses to start), `MAIN_SESSION_JUDGE=off` (no model turns, the
-  deterministic parts still run), `MAIN_SESSION_DISPATCH=off`, `MAIN_SESSION_TICK=HH:MM` (09:00),
+- Env: `MAIN_SESSION_DIR` (state dir), `MAIN_SESSION_MODEL` (`provider/modelId`; overrides and locks the
+  choice made in the UI; a value without a provider refuses to start; unset by default),
+  `MAIN_SESSION_JUDGE=off` (no model turns, the deterministic parts still run),
+  `MAIN_SESSION_DISPATCH=off`, `MAIN_SESSION_TICK=HH:MM` (09:00),
   `MAIN_SESSION_FIXTURE=<file>` (seed an empty state dir, e.g. `main-session/fixtures/demo-state.json`),
   `MEMHANA_URL` / `MEMHANA_BANK` / `MAIN_SESSION_MEMHANA=off`, `MAIN_SESSION_TICKET_PREFIXES`.
+
+## Model choice (no default)
+- The model for judgment turns and read-only dispatches is the user's: there is no built-in default
+  and no provider allowlist. Until one is chosen the service runs **no model turns**: triggers are
+  dropped (`Judge.available` is false), `/chat` answers from the store, and a dispatch finishes at
+  once with "no model is chosen…" as its result; intake, digest, checkers, schedules and the archive
+  rule are deterministic and keep working.
+- Chosen in the UI with `components/main-session/MainSessionModelPicker.tsx` (an `AppSelect`):
+  under the band of the 主会话 page with a notice while none is chosen or the last turn failed, in
+  the band once one is, and in Settings › General › Main session
+  (`MainSessionSettingsSection.tsx`). It lists `GET /api/models?cwd=<home>`'s `modelList` — the
+  same enabledModels-scoped set the composer offers, for the folder the turns run in — plus "none".
+- `POST /model {model: "provider/modelId" | null}` (through the proxy and its write guards) checks
+  the ref against the Pi registry (`checkConfiguredModel()`: the model exists and
+  `getAvailable(provider)` lists it, i.e. the provider is signed in; offline runtime, no extensions)
+  and saves it in `settings.json` in the state dir. The service holds it in memory, so the next turn
+  uses it without a restart; a restart reads it back. 409 while `MAIN_SESSION_MODEL` is set; 400
+  with the reason for a malformed or unusable ref. Saving clears `judge.lastError`.
+- Every turn resolves the ref again through the session services' `modelRuntime.getModel()`
+  (`lookupModel()`); a model that has since left models.json or the catalog fails the turn with
+  "… is not configured in Pi any more …; choose another model", which `/health` reports as
+  `judge.lastError` and the page shows with the picker. The service loads no extensions, so a
+  provider only an extension registers cannot be used (the save is refused).
 
 ## State (`~/.pi/agent/main/`, `store.ts`)
 `tasks.json` (`{version: 1, tasks}`, atomic write), `events.jsonl` (append-only; an event that
 changes later, such as an ask being answered, is appended again with the same id and the last copy
 wins on load), `closeouts/<sessionId>.json` (every close-out of the session, revisions included),
 `schedules.json`, `seen.json`, `state.json` (launch time, last tick day, last network check),
-`chat.jsonl`, `memory-outbox.jsonl`. A `Store(null)` keeps all of it in memory (tests, replay).
+`settings.json` (`{model, modelSetAt}`, the user's model choice), `chat.jsonl`, `memory-outbox.jsonl`. A `Store(null)` keeps all of it in memory (tests, replay).
 
 ## Pieces
 - `intake.ts` — POST /closeouts. Deterministic so a close-out is never lost when the model is down:
@@ -92,7 +116,8 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
   returned to the model as text. `digest` is refused outside the daily tick.
 - `pi-runtime.ts` — Pi SDK sessions outside the Next registry: no extensions, skills or context
   files; exact system prompt through `lib/exact-system-prompt.ts` (do not add another path);
-  `thinkingLevel: off`; model from `resolveModelId()` only.
+  `thinkingLevel: off`; the model is the chosen `provider/modelId`, resolved through the registry on
+  every turn (see "Model choice").
 - `dispatch.ts` + `readonly-guard.ts` — read-only sessions get `read, grep, find, ls, bash`; a
   `tool_call` hook checks every bash command: one simple command, no shell operators outside
   quotes (and no `$`, backtick or backslash inside double quotes), only `git log/show/status/diff/ls-remote`
@@ -111,7 +136,8 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
 ## HTTP (service; the UI calls the same paths under `/api/main-session`)
 | | |
 |---|---|
-| GET `/health` | `{ok, since, version, judge: {available, turns, lastError?}}` |
+| GET `/health` | `{ok, since, version, model: {ref, source, setAt?}, judge: {enabled, available, turns, lastError?}}`; `ref` null = no model chosen, `source` `env` \| `settings` |
+| GET `/model` / POST `/model` | `{ref, source, setAt?}` / `{model: "provider/modelId" \| null}` → the same; see "Model choice" |
 | GET `/tasks?status=need,watch` | `{tasks: TaskView[], seen, newSince: {need, watch, done}}` (default need+watch+done) |
 | GET `/tasks/:id` | `{task, events, closeouts, openAsks, contextPack}` (id URL-encoded; aliases work) |
 | POST `/tasks/:id/answer` | `{word, eventId?}` → `{task, event}`; without eventId answers the oldest open ask |

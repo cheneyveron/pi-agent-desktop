@@ -14,6 +14,13 @@ export function defaultStateDir(): string {
   return join(agentDir, "main");
 }
 
+/** What the user chose for the service (settings.json). Written only through POST /model. */
+export interface ServiceSettings {
+  /** `provider/modelId` of the model for judgment turns and read-only dispatches; absent = none. */
+  model?: string;
+  modelSetAt?: string;
+}
+
 /** Service bookkeeping that is not part of any task. */
 export interface ServiceState {
   launchedAt?: string;
@@ -48,6 +55,7 @@ export class Store {
   schedules: Schedule[] = [];
   seen: Seen = {};
   state: ServiceState = {};
+  settings: ServiceSettings = {};
 
   constructor(dir: string | null) {
     this.dir = dir;
@@ -77,6 +85,8 @@ export class Store {
     this.schedules = readJson<Schedule[]>(join(dir, "schedules.json"), []);
     this.seen = readJson<Seen>(join(dir, "seen.json"), {});
     this.state = readJson<ServiceState>(join(dir, "state.json"), {});
+    const settings = readJson<ServiceSettings | null>(join(dir, "settings.json"), {});
+    this.settings = settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {};
   }
 
   private indexEvent(event: MainEvent): void {
@@ -190,6 +200,10 @@ export class Store {
 
   saveState(): void {
     if (this.dir) writeJsonAtomic(join(this.dir, "state.json"), this.state);
+  }
+
+  saveSettings(): void {
+    if (this.dir) writeJsonAtomic(join(this.dir, "settings.json"), this.settings);
   }
 
   /** Append a line to a side file (memory outbox); dropped when the store is in memory. */

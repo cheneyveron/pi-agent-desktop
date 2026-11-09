@@ -172,6 +172,37 @@ export function suggestions(needRows: RowView[], t: Translate): string[] {
   return list;
 }
 
+/* ---------- model picker ---------- */
+
+/** One row of GET /api/models' `modelList`: the models the app offers for selection. */
+export interface PickerModel {
+  provider: string;
+  id: string;
+  name: string;
+}
+
+/**
+ * Options of the main session's model picker: "none" first (no model turns), the current
+ * choice when the app's list no longer has it (so the picker can still show what is set),
+ * then the configured models as `provider/modelId` values.
+ */
+export function modelPickerOptions(models: readonly PickerModel[], current: string | null, t: Translate): { value: string; label: string }[] {
+  const value = (model: PickerModel) => `${model.provider}/${model.id}`;
+  const known = !current || models.some((model) => value(model) === current);
+  return [
+    { value: "", label: t("mainSession.model.none") },
+    ...(!known && current ? [{ value: current, label: t("mainSession.model.unlisted", { model: current }) }] : []),
+    ...models.map((model) => ({ value: value(model), label: `${model.name || model.id} · ${model.provider}` })),
+  ];
+}
+
+/** What the page shows about the model: nothing, the "choose one" notice, or the last turn's error. */
+export function modelNotice(service: { model: { ref: string | null } | null; judgeEnabled: boolean; lastError: string | null } | null): "none" | "missing" | "failed" {
+  if (!service?.model || !service.judgeEnabled) return "none";
+  if (!service.model.ref) return "missing";
+  return service.lastError ? "failed" : "none";
+}
+
 /* ---------- close-out card fields ---------- */
 
 export const CLOSEOUT_FIELDS = ["thread", "stands", "next", "produced", "learned", "user_said", "open", "next_time"] as const;

@@ -75,6 +75,14 @@ export function createHandler(service: MainSessionService) {
       const [head, id, sub] = parts;
       if (method === "GET" && head === "health" && parts.length === 1) return send(res, 200, service.health());
       if (method === "GET" && head === "stream" && parts.length === 1) return openStream(service, req, res);
+      if (head === "model" && parts.length === 1) {
+        if (method === "GET") return send(res, 200, service.modelChoice());
+        if (method === "POST") {
+          const body = await readJson(req);
+          if (!("model" in body)) throw new HttpError(400, "model is required (\"provider/modelId\" or null)");
+          return send(res, 200, await service.setModel(body.model));
+        }
+      }
 
       if (head === "tasks") {
         if (method === "GET" && parts.length === 1) return send(res, 200, service.listTasks(url.searchParams.get("status") ?? undefined));

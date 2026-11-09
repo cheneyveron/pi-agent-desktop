@@ -10540,6 +10540,8 @@ html.dark .terminal-panel {
   white-space: nowrap;
 }
 .ms-key-hints {
+  /* Gives up its width before the model picker beside it does. */
+  flex: 0 100 auto;
   min-width: 0;
   margin-left: auto;
   overflow: hidden;
@@ -10564,6 +10566,42 @@ html.dark .terminal-panel {
   .ms-key-hints { display: none; }
   .ms-band { overflow-x: auto; }
 }
+
+/* Model picker: in the band once a model is chosen; with a notice under the band while none is. */
+.ms-model {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+.ms-model .app-select-trigger.ms-model-select,
+.ms-model-bar .app-select-trigger.ms-model-select {
+  width: auto;
+  max-width: 240px;
+  min-height: 0;
+  padding: 2px 8px;
+  gap: 6px;
+}
+.ms-model-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 6px 16px;
+  border-bottom: var(--hairline) solid var(--border);
+  background: var(--ms-need-soft);
+  color: var(--ms-need);
+  font-size: 12.5px;
+}
+.ms-model-bar-text { flex: 1 1 260px; min-width: 0; }
+.ms-model-bar .app-select-trigger.ms-model-select { background: var(--bg); color: var(--text); }
+@media (max-width: 1100px) { .ms-model-label { display: none; } }
 
 /* Undo bar: in the document flow under the band, 5 seconds. */
 .ms-undo {

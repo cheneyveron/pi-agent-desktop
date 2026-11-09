@@ -318,6 +318,12 @@ const FORK_FEATURES = [
     markers: ["node scripts/verify-packaged-main-session.mjs"],
   },
   {
+    name: "main-session model picker in General settings",
+    file: "components/SettingsPanel.tsx",
+    // Fork-only: the second place to choose the main session's model (the 主会话 page is the first).
+    markers: ["<MainSessionSettingsSection />"],
+  },
+  {
     name: "app info and desktop preferences live in General settings",
     file: "components/SettingsPanel.tsx",
     markers: ["AppUpdatesSection", "DesktopAppSection", "settings-general-intro"],

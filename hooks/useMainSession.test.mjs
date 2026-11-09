@@ -167,3 +167,29 @@ test("a missing proxy route (404) stops probing for the tab until the user retri
   assert.equal(store.getMainSessionState().status, "ready");
   delete globalThis.sessionStorage;
 });
+
+test("health carries the model state; a service without a model reports none", async () => {
+  install({ health: async () => ({ ok: true, model: { ref: null, source: null }, judge: { enabled: true, available: false, turns: 0 } }) });
+  await store.refreshMainSession();
+  assert.deepEqual(store.getMainSessionState().service, { model: { ref: null, source: null }, judgeEnabled: true, lastError: null });
+  install({ health: async () => ({ ok: true }) });
+  await store.refreshMainSession();
+  assert.equal(store.getMainSessionState().service.model, null, "an older service says nothing about its model");
+});
+
+test("choosing a model posts provider/modelId and shows it at once; a refusal is reported", async () => {
+  const fresh = createFixtureBackend({ model: null });
+  client.setMainSessionApi({ fixture: true, stream: () => () => undefined, ...Object.fromEntries(Object.keys(fresh).filter((k) => typeof fresh[k] === "function").map((k) => [k, fresh[k]])) });
+  store.resetMainSessionStore();
+  await store.refreshMainSession();
+  assert.equal(store.getMainSessionState().service.model.ref, null);
+  assert.equal(await store.setMainSessionModel("openai-codex/gpt-6"), true);
+  assert.deepEqual(store.getMainSessionState().service.model, { ref: "openai-codex/gpt-6", source: "settings" });
+  assert.deepEqual(fresh.calls.filter((c) => c.method === "setModel").map((c) => c.args[0]), ["openai-codex/gpt-6"]);
+  assert.equal(await store.setMainSessionModel("gpt-6"), false);
+  assert.match(store.getMainSessionState().modelError, /provider\/modelId/);
+  assert.equal(store.getMainSessionState().service.model.ref, "openai-codex/gpt-6", "a refused choice changes nothing");
+  assert.equal(await store.setMainSessionModel(null), true);
+  assert.equal(store.getMainSessionState().service.model.ref, null);
+  assert.equal(store.getMainSessionState().modelError, null);
+});

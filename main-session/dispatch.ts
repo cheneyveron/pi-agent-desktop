@@ -36,8 +36,10 @@ export function dispatchPrompt(request: DispatchRequest): string {
   ].filter((line) => line !== "").join("\n");
 }
 
-export function createSdkDispatcher(options: { modelId?: string; timeoutMs?: number } = {}): (request: DispatchRequest) => Promise<DispatchResult> {
+/** Production dispatcher: a guarded Pi session on the model the service passes with the request. */
+export function createSdkDispatcher(options: { timeoutMs?: number } = {}): (request: DispatchRequest) => Promise<DispatchResult> {
   return async (request) => {
+    if (!request.model) return { ok: false, result: "no model is chosen for the main session; read-only checks are paused" };
     const { runPiTurn } = await import("./pi-runtime.ts");
     const blocked: string[] = [];
     const guard = {
@@ -68,7 +70,7 @@ export function createSdkDispatcher(options: { modelId?: string; timeoutMs?: num
       extensions: [guard as unknown as import("@earendil-works/pi-coding-agent").InlineExtension],
       persist: true,
       timeoutMs: options.timeoutMs ?? 5 * 60_000,
-      ...(options.modelId ? { modelId: options.modelId as "claude-haiku-5-5" } : {}),
+      model: request.model,
     });
     const verdict = parseVerdict(result.text);
     return {

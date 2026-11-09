@@ -21,6 +21,10 @@ const css = (await Promise.all(["app/globals.css", "app/settings.css", "app/nati
 const jiti = createJiti(import.meta.url, { alias: { "@": new URL("..", import.meta.url).pathname.replace(/\/$/, "") } });
 const { createFixtureBackend } = await jiti.import("../lib/main-session-fixture.ts");
 
+const E2E_MODELS = [
+  { provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+  { provider: "openai-codex", id: "gpt-6", name: "GPT-6" },
+];
 let backend = createFixtureBackend();
 let serviceDown = false;
 const agentRequests = [];
@@ -54,6 +58,7 @@ async function service(req, res, path, query) {
   if (parts[0] === "tasks" && parts[2] === "archive") return send(await backend.archive(parts[1]));
   if (parts[0] === "tasks" && parts[2] === "undo") return send(await backend.undo(parts[1], payload.eventId));
   if (path === "/seen") return send(await backend.seen(payload.segment));
+  if (path === "/model") return send(await backend.setModel(payload.model ?? null));
   if (path === "/chat") return send(req.method === "GET" ? await backend.chatHistory() : await backend.chat(payload.text));
   if (parts[0] === "sessions" && parts[2] === "started") return send(await backend.sessionStarted(parts[1], payload.task) ?? {});
   if (path === "/closeouts") {
@@ -67,7 +72,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
     if (url.pathname === "/__reset") {
-      backend = createFixtureBackend();
+      backend = createFixtureBackend(url.searchParams.has("nomodel") ? { model: null } : {});
       serviceDown = url.searchParams.has("down");
       agentRequests.length = 0;
       closeouts.length = 0;
@@ -78,6 +83,9 @@ const server = createServer(async (req, res) => {
       agentRequests.push(await body(req));
       return json(res, 200, { success: true, sessionId: "e2e-session" });
     }
+    // The main session's model picker lists the models the app offers (home folder scope).
+    if (url.pathname === "/api/home") return json(res, 200, { home: "/home/e2e" });
+    if (url.pathname === "/api/models") return json(res, 200, { modelList: E2E_MODELS });
     if (url.pathname.startsWith("/api/")) return json(res, 200, {});
     res.setHeader("Content-Type", url.pathname === "/fixture.js" ? "text/javascript" : "text/html; charset=utf-8");
     res.end(url.pathname === "/fixture.js" ? js : `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
@@ -92,8 +100,8 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
 
-async function open({ theme = "light", locale = "zh-CN", width = 1280, height = 820, search = "", down = false } = {}) {
-  await fetch(`${base}/__reset${down ? "?down" : ""}`);
+async function open({ theme = "light", locale = "zh-CN", width = 1280, height = 820, search = "", down = false, noModel = false } = {}) {
+  await fetch(`${base}/__reset${down ? "?down" : noModel ? "?nomodel" : ""}`);
   const page = await browser.newPage({ viewport: { width, height }, colorScheme: theme });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -281,6 +289,23 @@ try {
     assert.equal(await page.locator(".ms-sidebar-section").count(), 0);
     assert.equal(await page.locator(".sidebar-main-session-row").count(), 1, "the pinned row stays so the page is reachable");
     await page.screenshot({ path: `${out}/main-offline.png` });
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+
+  // 9b. No model chosen: a notice with the picker; choosing one moves the picker into the band.
+  {
+    const { page, errors } = await open({ noModel: true });
+    await page.locator(".ms-model-bar").waitFor();
+    assert.match(await page.locator(".ms-model-bar-text").textContent(), /给主会话选一个模型/);
+    assert.equal(await page.locator(".ms-band .ms-model").count(), 0);
+    await page.screenshot({ path: `${out}/main-needs-model.png` });
+    await page.locator(".ms-model-bar .ms-model-select").click();
+    await page.getByRole("option", { name: "GPT-6 · openai-codex" }).click();
+    await page.locator(".ms-band .ms-model").waitFor();
+    assert.equal(await page.locator(".ms-model-bar").count(), 0);
+    assert.match(await page.locator(".ms-band .ms-model-select").textContent(), /GPT-6/);
+    assert.deepEqual(backend.calls.filter((c) => c.method === "setModel").map((c) => c.args[0]), ["openai-codex/gpt-6"]);
     assert.deepEqual(errors, []);
     await page.close();
   }

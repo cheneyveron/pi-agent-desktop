@@ -12,7 +12,7 @@ import {
 } from "./actions.ts";
 import { daysBetween } from "./dates.ts";
 import { applyDigestWording, lastActivity } from "./digest.ts";
-import type { MainEvent, NextItem, Task, Wait } from "./types.ts";
+import type { MainEvent, ModelRef, NextItem, Task, Wait } from "./types.ts";
 
 export interface JudgeTool {
   name: string;
@@ -25,6 +25,8 @@ export interface JudgeRunInput {
   system: string;
   user: string;
   tools: JudgeTool[];
+  /** The model chosen for the main session at the moment the turn starts. */
+  model: ModelRef;
 }
 
 /** Runs one model turn with the tools; returns the model's final text. */
@@ -287,21 +289,33 @@ export function buildJudgeInput(ctx: Ctx, trigger: Trigger, alreadyDone: MainEve
   return parts.join("\n\n");
 }
 
-/** Serialises judgment turns: one model turn at a time, in arrival order. */
+/**
+ * Serialises judgment turns: one model turn at a time, in arrival order. A turn needs both a
+ * runner (MAIN_SESSION_JUDGE is not off) and a model the user chose; without either the
+ * trigger is dropped and the deterministic parts carry on alone.
+ */
 export class Judge {
   private chain: Promise<unknown> = Promise.resolve();
   lastError?: string;
   turns = 0;
   private ctx: Ctx;
   private runner: JudgeRunner | undefined;
+  private model: () => ModelRef | null;
 
-  constructor(ctx: Ctx, runner: JudgeRunner | undefined) {
+  constructor(ctx: Ctx, runner: JudgeRunner | undefined, model: () => ModelRef | null = () => null) {
     this.ctx = ctx;
     this.runner = runner;
+    this.model = model;
   }
 
-  get available(): boolean {
+  /** Model turns are switched on for this process (a runner exists), model chosen or not. */
+  get enabled(): boolean {
     return Boolean(this.runner);
+  }
+
+  /** A trigger would run a model turn now. */
+  get available(): boolean {
+    return Boolean(this.runner) && this.model() !== null;
   }
 
   run(trigger: Trigger, alreadyDone: MainEvent[] = []): Promise<JudgeOutcome> {
@@ -311,11 +325,12 @@ export class Judge {
   }
 
   private async runNow(trigger: Trigger, alreadyDone: MainEvent[]): Promise<JudgeOutcome> {
-    if (!this.runner) return { reply: "", events: [] };
+    const model = this.model();
+    if (!this.runner || !model) return { reply: "", events: [] };
     const events: MainEvent[] = [];
     const tools = actionTools(this.ctx, trigger, events);
     try {
-      const reply = await this.runner({ system: judgePrompt(), user: buildJudgeInput(this.ctx, trigger, alreadyDone), tools });
+      const reply = await this.runner({ system: judgePrompt(), user: buildJudgeInput(this.ctx, trigger, alreadyDone), tools, model });
       this.turns++;
       this.lastError = undefined;
       return { reply, events };
@@ -327,12 +342,11 @@ export class Judge {
   }
 }
 
-/** Production runner: a Pi SDK session on rdsec haiku (or luna) with the action tools only. */
-export function createSdkJudgeRunner(options: { modelId?: string } = {}): JudgeRunner {
-  return async ({ system, user, tools }) => {
-    const { runPiTurn, resolveModelId } = await import("./pi-runtime.ts");
+/** Production runner: a Pi SDK session on the chosen model with the action tools only. */
+export function createSdkJudgeRunner(): JudgeRunner {
+  return async ({ system, user, tools, model }) => {
+    const { runPiTurn } = await import("./pi-runtime.ts");
     const { defineTool } = await import("@earendil-works/pi-coding-agent");
-    const modelId = resolveModelId(options.modelId);
     const customTools = tools.map((tool) => defineTool({
       name: tool.name,
       label: tool.name,
@@ -343,7 +357,7 @@ export function createSdkJudgeRunner(options: { modelId?: string } = {}): JudgeR
         return { content: [{ type: "text", text }], details: undefined };
       },
     }));
-    const result = await runPiTurn({ cwd: homedir(), systemPrompt: system, userText: user, customTools, modelId, timeoutMs: 120_000 });
+    const result = await runPiTurn({ cwd: homedir(), systemPrompt: system, userText: user, customTools, model, timeoutMs: 120_000 });
     return result.text;
   };
 }

@@ -150,8 +150,12 @@ export interface FixtureBackend extends Omit<MainSessionApi, "stream" | "fixture
   snapshot(): Task[];
 }
 
-export function createFixtureBackend(options: { now?: () => number } = {}): FixtureBackend {
+/** The fixture's model, so the band shows the picker as it looks once a model is chosen. */
+export const FIXTURE_MODEL = "anthropic/claude-haiku-4-5";
+
+export function createFixtureBackend(options: { now?: () => number; model?: string | null } = {}): FixtureBackend {
   const now = options.now ?? (() => Date.now());
+  let model: string | null = options.model === undefined ? FIXTURE_MODEL : options.model;
   const tasks = new Map(fixtureTasks().map((task) => [task.id, task]));
   const seen: SeenMap = { need: FIXTURE_SEEN, watch: FIXTURE_SEEN, done: FIXTURE_SEEN };
   const events: MainEvent[] = [];
@@ -176,7 +180,20 @@ export function createFixtureBackend(options: { now?: () => number } = {}): Fixt
   return {
     calls,
     snapshot: () => [...tasks.values()].map((t) => structuredClone(t)),
-    async health() { record("health"); return { ok: true, since: FIXTURE_SEEN, version: "fixture" }; },
+    async health() {
+      record("health");
+      return {
+        ok: true, since: FIXTURE_SEEN, version: "fixture",
+        model: { ref: model, source: model ? "settings" as const : null },
+        judge: { enabled: true, available: model !== null, turns: 0 },
+      };
+    },
+    async setModel(ref) {
+      record("setModel", ref);
+      if (ref !== null && !/^[^/\s]+\/\S+$/.test(ref)) throw Object.assign(new Error(`model "${ref}" must be written as provider/modelId`), { status: 400 });
+      model = ref;
+      return { ref: model, source: model ? "settings" as const : null };
+    },
     async listTasks(status) {
       record("listTasks", status);
       const list = [...tasks.values()].filter((t) => segmentOf(t) === status).map((t) => structuredClone(t));
@@ -318,6 +335,7 @@ export function createFixtureApi(): MainSessionApi {
   return {
     fixture: true,
     health: wrap("health"),
+    setModel: wrap("setModel"),
     listTasks: wrap("listTasks"),
     getTask: wrap("getTask"),
     answer: wrap("answer"),

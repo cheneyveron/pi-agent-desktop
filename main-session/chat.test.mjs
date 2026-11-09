@@ -43,6 +43,16 @@ test("以后 is remembered", async () => {
   assert.equal(h.memory.records[0].speaker, "user");
 });
 
+test("a runner without a chosen model runs no turn", async () => {
+  const h = makeCtx(NOW.toISOString());
+  let turns = 0;
+  const judge = new Judge(h.ctx, async () => { turns++; return "x"; });
+  assert.equal(judge.enabled, true);
+  assert.equal(judge.available, false);
+  assert.deepEqual(await judge.run({ kind: "chat", text: "hi" }), { reply: "", events: [] });
+  assert.equal(turns, 0);
+});
+
 test("without a model, questions are answered from task state", async () => {
   const h = makeCtx(NOW.toISOString());
   h.ctx.store.putTask(task("EAI-370", { status: "need", stands: "PR #260 open", next: [{ text: "live-verify CEGP", run: "me" }] }));
@@ -56,13 +66,14 @@ test("without a model, questions are answered from task state", async () => {
 test("with a model, the judge's reply and its actions come back with cites", async () => {
   const h = makeCtx(NOW.toISOString());
   h.ctx.store.putTask(task("CAS-4672", { stands: "PR #949 merged" }));
-  const runner = async ({ user, tools }) => {
+  const runner = async ({ user, tools, model }) => {
+    assert.deepEqual(model, { provider: "anthropic", modelId: "claude-haiku-4-5" });
     assert.match(user, /CAS-4672 到哪了/);
     assert.match(user, /## Task CAS-4672/, "the named task is given in full");
     await tools.find((t) => t.name === "ask").execute({ task: "CAS-4672", question: "要验证 int 吗？", why: "merged, not verified" });
     return "CAS-4672 的 PR #949 已合并，int 上还没验证。";
   };
-  const result = await chat(h.ctx, new Judge(h.ctx, runner), "CAS-4672 到哪了");
+  const result = await chat(h.ctx, new Judge(h.ctx, runner, () => ({ provider: "anthropic", modelId: "claude-haiku-4-5" })), "CAS-4672 到哪了");
   assert.equal(result.reply, "CAS-4672 的 PR #949 已合并，int 上还没验证。");
   assert.equal(result.actions[0].action, "ask");
   assert.deepEqual(result.cites.map((c) => c.task), ["CAS-4672", "CAS-4672"]);

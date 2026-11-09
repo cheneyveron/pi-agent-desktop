@@ -8,13 +8,15 @@ import { addAliases, findByAlias } from "./aliases.ts";
 import type { DayClock } from "./dates.ts";
 import type { MemoryRecord, MemorySink } from "./memory.ts";
 import type { Store } from "./store.ts";
-import type { AskData, MainEvent, NextItem, Schedule, Task, TaskStatus, Wait } from "./types.ts";
+import type { AskData, MainEvent, ModelRef, NextItem, Schedule, Task, TaskStatus, Wait } from "./types.ts";
 
 export type StreamType = "task" | "digest" | "insert" | "event";
 
 export interface DispatchRequest {
   task: Task;
   step: string;
+  /** Set by the service: the main session's chosen model when the dispatch starts. */
+  model?: ModelRef;
 }
 
 export interface DispatchResult {

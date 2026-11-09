@@ -41,6 +41,7 @@ import { ArtifactsSettingRow, AutoTitleSettingRow } from "./ArtifactsSettingRow"
 import { RemoteAccessSection } from "./RemoteAccessSection";
 import { RelaySection } from "./RelaySection";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
+import { MainSessionSettingsSection } from "./main-session/MainSessionSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
 
@@ -323,6 +324,7 @@ function GeneralSettings({
             </div>
           </section>
           <ChatsSettingsSection />
+          <MainSessionSettingsSection />
         </div>
 
         <div className="settings-general-col">

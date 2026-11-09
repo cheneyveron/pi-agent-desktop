@@ -154,3 +154,25 @@ test("B's note: content is a text-block array; details.text has no prefix", () =
   assert.deepEqual(h.parseMainSessionNote(message), { text: "根因在 CAS-4764", task: "CAS-4764" });
   assert.deepEqual(h.parseMainSessionNote({ content: message.content }), { text: "根因在 CAS-4764", task: "CAS-4764" });
 });
+
+test("the model picker offers none, the configured models, and a current choice the list lost", () => {
+  const models = [{ provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5" }, { provider: "openrouter", id: "qwen/qwen3-coder", name: "" }];
+  assert.deepEqual(h.modelPickerOptions(models, null, t), [
+    { value: "", label: "mainSession.model.none" },
+    { value: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5 · anthropic" },
+    { value: "openrouter/qwen/qwen3-coder", label: "qwen/qwen3-coder · openrouter" },
+  ]);
+  const lost = h.modelPickerOptions(models, "rdsec/claude-haiku-5-5", t);
+  assert.deepEqual(lost[1], { value: "rdsec/claude-haiku-5-5", label: 'mainSession.model.unlisted{"model":"rdsec/claude-haiku-5-5"}' });
+  assert.equal(h.modelPickerOptions(models, "anthropic/claude-haiku-4-5", t).length, 3);
+});
+
+test("the page asks for a model only when the service runs model turns and has none", () => {
+  const svc = (ref, extra = {}) => ({ model: { ref, source: ref ? "settings" : null }, judgeEnabled: true, lastError: null, ...extra });
+  assert.equal(h.modelNotice(null), "none");
+  assert.equal(h.modelNotice({ model: null, judgeEnabled: true, lastError: null }), "none", "an older service");
+  assert.equal(h.modelNotice(svc(null)), "missing");
+  assert.equal(h.modelNotice(svc(null, { judgeEnabled: false })), "none", "MAIN_SESSION_JUDGE=off");
+  assert.equal(h.modelNotice(svc("anthropic/claude-haiku-4-5")), "none");
+  assert.equal(h.modelNotice(svc("anthropic/claude-haiku-4-5", { lastError: "boom" })), "failed");
+});

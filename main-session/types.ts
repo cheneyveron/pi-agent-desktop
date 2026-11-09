@@ -159,3 +159,12 @@ export interface AskData {
 
 export type DigestCategory =
   | "immediate" | "post_merge_verify" | "fresh" | "waiting" | "did_for_you" | "archive_suggest" | "backlog";
+
+/** A Pi model the user chose for the main session's turns; `provider/modelId` in files and on the wire. */
+export interface ModelRef {
+  provider: string;
+  modelId: string;
+}
+
+/** Where the model in effect comes from: MAIN_SESSION_MODEL, or the choice saved in settings.json. */
+export type ModelSource = "env" | "settings";

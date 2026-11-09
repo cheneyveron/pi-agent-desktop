@@ -160,9 +160,29 @@ export type MainStreamEvent =
   | { type: "insert"; sessionId: string; text: string; task?: string }
   | { type: "event"; event: MainEvent };
 
+/** The model the service runs its turns on (GET/POST /model; `model` in /health). */
+export interface MainSessionModelChoice {
+  /** `provider/modelId`, or null: no model turns run until the user picks one. */
+  ref: string | null;
+  /** "env": MAIN_SESSION_MODEL, which locks the choice; "settings": picked in the UI. */
+  source: "env" | "settings" | null;
+  setAt?: string;
+}
+
+export interface MainSessionHealth {
+  ok: boolean;
+  since?: string;
+  version?: string;
+  /** Absent from services that predate the model picker. */
+  model?: MainSessionModelChoice;
+  judge?: { enabled?: boolean; available?: boolean; turns?: number; lastError?: string };
+}
+
 export interface MainSessionApi {
   readonly fixture: boolean;
-  health(): Promise<{ ok: boolean; since?: string; version?: string }>;
+  health(): Promise<MainSessionHealth>;
+  /** Choose the model for judgment turns and read-only checks (`provider/modelId`), or none. */
+  setModel(ref: string | null): Promise<MainSessionModelChoice>;
   listTasks(status: Segment): Promise<{ tasks: Task[]; seen: SeenMap }>;
   getTask(id: string): Promise<TaskDetail>;
   answer(id: string, word: string, eventId?: string): Promise<{ task: Task; event: MainEvent }>;
@@ -209,6 +229,7 @@ export function createHttpApi(): MainSessionApi {
   return {
     fixture: false,
     health: () => request("/health"),
+    setModel: (ref) => post("/model", { model: ref }),
     listTasks: (status) => request(`/tasks?status=${status}`),
     getTask: (id) => request(`/tasks/${enc(id)}`),
     answer: (id, word, eventId) => post(`/tasks/${enc(id)}/answer`, { word, ...(eventId ? { eventId } : {}) }),

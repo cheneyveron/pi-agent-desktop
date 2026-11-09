@@ -6,7 +6,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { createHandler } from "./http.ts";
 import { createSdkDispatcher } from "./dispatch.ts";
 import { createSdkJudgeRunner } from "./judge.ts";
-import { resolveModelId } from "./pi-runtime.ts";
 import { MainSessionService, type ServiceOptions } from "./service.ts";
 import { Store, defaultStateDir } from "./store.ts";
 import type { MainEvent, Task } from "./types.ts";
@@ -40,13 +39,14 @@ export async function startServer(options: StartOptions = {}): Promise<Started> 
   const store = options.store ?? new Store(options.dir === undefined ? defaultStateDir() : options.dir);
   const fixture = options.fixture ?? process.env.MAIN_SESSION_FIXTURE;
   if (fixture) seed(store, fixture);
+  // Model turns need a runner (on unless MAIN_SESSION_JUDGE=off) *and* a chosen model (POST
+  // /model or MAIN_SESSION_MODEL), which the service reads on every turn; there is no default.
   const modelOn = process.env.MAIN_SESSION_JUDGE !== "off";
-  const modelId = modelOn ? resolveModelId() : undefined;
   const service = new MainSessionService({
     ...options,
     store,
-    ...(options.judgeRunner || !modelOn ? {} : { judgeRunner: createSdkJudgeRunner({ modelId }) }),
-    ...(options.dispatcher || !modelOn || process.env.MAIN_SESSION_DISPATCH === "off" ? {} : { dispatcher: createSdkDispatcher({ modelId }) }),
+    ...(options.judgeRunner || !modelOn ? {} : { judgeRunner: createSdkJudgeRunner() }),
+    ...(options.dispatcher || !modelOn || process.env.MAIN_SESSION_DISPATCH === "off" ? {} : { dispatcher: createSdkDispatcher() }),
   });
   const server = createServer(createHandler(service));
   await new Promise<void>((resolve, reject) => {

@@ -10,6 +10,8 @@ import {
   type Digest,
   type MainEvent,
   type MainSessionApi,
+  type MainSessionHealth,
+  type MainSessionModelChoice,
   type MainStreamEvent,
   type SeenMap,
   type Segment,
@@ -38,6 +40,16 @@ export interface MainUndo {
   until: number;
 }
 
+/** What the service says about its model turns (from /health). */
+export interface MainSessionServiceInfo {
+  /** null: the service predates the model picker and says nothing about its model. */
+  model: MainSessionModelChoice | null;
+  /** Model turns are on for the process (MAIN_SESSION_JUDGE is not off). */
+  judgeEnabled: boolean;
+  /** The last model turn's error, cleared by the next good turn or a new model. */
+  lastError: string | null;
+}
+
 export interface MainSessionState {
   status: "idle" | "loading" | "ready" | "offline" | "error";
   error: string | null;
@@ -55,6 +67,10 @@ export interface MainSessionState {
   /** A failed action, shown until the next one. */
   actionError: string | null;
   chatBusy: boolean;
+  service: MainSessionServiceInfo | null;
+  modelSaving: boolean;
+  /** Why the last model choice was refused, until the next one. */
+  modelError: string | null;
 }
 
 const EMPTY_SEEN: SeenMap = { need: "", watch: "", done: "" };
@@ -71,6 +87,9 @@ const INITIAL: MainSessionState = {
   lastAnswer: null,
   actionError: null,
   chatBusy: false,
+  service: null,
+  modelSaving: false,
+  modelError: null,
 };
 
 export const UNDO_MS = 5000;
@@ -157,6 +176,40 @@ function setRouteMissing(missing: boolean): void {
   }
 }
 
+export function serviceInfo(health: MainSessionHealth): MainSessionServiceInfo {
+  return {
+    model: health.model && typeof health.model === "object" ? { ref: health.model.ref ?? null, source: health.model.source ?? null } : null,
+    judgeEnabled: health.judge?.enabled ?? Boolean(health.judge?.available),
+    lastError: health.judge?.lastError ?? null,
+  };
+}
+
+/** Re-read /health for the model state (after a chat reply, when the settings section opens). */
+export async function refreshMainSessionHealth(): Promise<void> {
+  try {
+    const health = await (await api()).health();
+    if (health?.ok) setState({ service: serviceInfo(health) });
+  } catch {
+    // The next full refresh reports the service's state.
+  }
+}
+
+/** Choose the main session's model (`provider/modelId`) or none; the service takes it at once. */
+export async function setMainSessionModel(ref: string | null): Promise<boolean> {
+  setState({ modelSaving: true, modelError: null });
+  try {
+    const model = await (await api()).setModel(ref);
+    setState({
+      modelSaving: false,
+      service: { judgeEnabled: true, ...state.service, model, lastError: null },
+    });
+    return true;
+  } catch (error) {
+    setState({ modelSaving: false, modelError: message(error) });
+    return false;
+  }
+}
+
 /** `force` (the 重试 button) probes even when this tab saw the route missing. */
 export async function refreshMainSession(force = false): Promise<void> {
   const id = ++loadId;
@@ -173,10 +226,11 @@ export async function refreshMainSession(force = false): Promise<void> {
     const health = await client.health();
     if (id !== loadId) return;
     if (!health?.ok) {
-      setState({ status: "offline", error: null });
+      setState({ status: "offline", error: null, service: null });
       scheduleRetry();
       return;
     }
+    setState({ service: serviceInfo(health) });
     const results = await Promise.all(SEGMENTS.map((segment) => client.listTasks(segment)));
     if (id !== loadId) return;
     const tasks = { need: results[0].tasks, watch: results[1].tasks, done: results[2].tasks };
@@ -186,7 +240,7 @@ export async function refreshMainSession(force = false): Promise<void> {
   } catch (error) {
     if (id !== loadId) return;
     if (isOffline(error)) {
-      setState({ status: "offline", error: null });
+      setState({ status: "offline", error: null, service: null });
       if (error instanceof MainSessionError && error.status === 404) setRouteMissing(true);
       else scheduleRetry();
     } else {
@@ -393,6 +447,7 @@ export async function sendMainChat(text: string): Promise<void> {
     const done: MainChatMessage = { ...waiting, text: reply.reply, cites: reply.cites, actions: reply.actions, pending: false, at: new Date().toISOString() };
     setState({ chat: state.chat.map((m) => (m.id === waiting.id ? done : m)), chatBusy: false });
     if (reply.actions?.length) void refreshMainSession();
+    else void refreshMainSessionHealth();
   } catch (error) {
     setState({ chat: state.chat.map((m) => (m.id === waiting.id ? { ...m, pending: false, error: message(error) } : m)), chatBusy: false });
   }

@@ -6,7 +6,12 @@ import { startServer } from "./server.ts";
 
 try {
   const { port, service, close } = await startServer();
-  const judge = service.judge.available ? `judge on rdsec/${process.env.MAIN_SESSION_MODEL ?? "claude-haiku-5-5"}` : "judge off";
+  const choice = service.modelChoice();
+  const judge = !service.judge.enabled
+    ? "judge off"
+    : choice.ref
+      ? `judge on ${choice.ref}${choice.source === "env" ? " (MAIN_SESSION_MODEL)" : ""}`
+      : "no model chosen: model turns paused until one is picked on the 主会话 page";
   process.stdout.write(`[main-session] listening on http://127.0.0.1:${port} (state ${service.store.dir}, ${judge})\n`);
   const stop = () => {
     // A connection or turn that will not close must not keep the process alive.

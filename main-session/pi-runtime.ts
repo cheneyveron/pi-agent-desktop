@@ -3,29 +3,98 @@
 // session registry, with no extensions, skills or context files, and an exact system prompt sent
 // through lib/exact-system-prompt.ts (the one supported way to replace Pi's prompt).
 //
-// Models: only rdsec's claude-haiku-5-5 (default) or gpt-6-luna. MAIN_SESSION_MODEL may pick
-// between the two; anything else refuses to start a turn.
+// Model: whatever the user chose (POST /model, saved in settings.json) or MAIN_SESSION_MODEL,
+// as `provider/modelId`, resolved through the Pi model registry on every turn. There is no
+// built-in default: without a choice the service runs no model turns at all.
 
 import type { InlineExtension, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ModelRef } from "./types.ts";
 
-export const MODEL_PROVIDER = "rdsec";
-export const ALLOWED_MODELS = ["claude-haiku-5-5", "gpt-6-luna"] as const;
-export type AllowedModel = (typeof ALLOWED_MODELS)[number];
-export const DEFAULT_MODEL: AllowedModel = "claude-haiku-5-5";
-
-export function resolveModelId(requested: string | undefined = process.env.MAIN_SESSION_MODEL): AllowedModel {
-  const id = (requested ?? DEFAULT_MODEL).trim().replace(/^rdsec\//, "");
-  if (!(ALLOWED_MODELS as readonly string[]).includes(id)) {
-    throw new Error(`model ${id} is not allowed for the main session; use one of ${ALLOWED_MODELS.join(", ")}`);
+export class ModelChoiceError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "ModelChoiceError";
+    this.status = status;
   }
-  return id as AllowedModel;
+}
+
+/** `provider/modelId` → ref. The model id may itself contain slashes (OpenRouter ids). Empty → null. */
+export function parseModelRef(value: unknown): ModelRef | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") throw new ModelChoiceError("model must be a \"provider/modelId\" string or null");
+  const text = value.trim();
+  if (!text) return null;
+  const slash = text.indexOf("/");
+  const provider = slash > 0 ? text.slice(0, slash).trim() : "";
+  const modelId = slash > 0 ? text.slice(slash + 1).trim() : "";
+  if (!provider || !modelId) throw new ModelChoiceError(`model "${text}" must be written as provider/modelId`);
+  return { provider, modelId };
+}
+
+export function formatModelRef(ref: ModelRef): string {
+  return `${ref.provider}/${ref.modelId}`;
+}
+
+/** MAIN_SESSION_MODEL, when set, overrides the saved choice. A malformed value throws. */
+export function envModelRef(value: string | undefined = process.env.MAIN_SESSION_MODEL): ModelRef | null {
+  try {
+    return parseModelRef(value);
+  } catch (error) {
+    throw new Error(`MAIN_SESSION_MODEL: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** The part of Pi's ModelRuntime the lookups need. */
+export interface ModelLookup<M = unknown> {
+  getModel(provider: string, modelId: string): M | undefined;
+}
+
+/** The registry's model for a ref, or an error that says what to do about it. */
+export function lookupModel<M>(runtime: ModelLookup<M>, ref: ModelRef): M {
+  const model = runtime.getModel(ref.provider, ref.modelId);
+  if (!model) {
+    throw new ModelChoiceError(`${formatModelRef(ref)} is not configured in Pi any more (no such provider/model in the catalog or models.json); choose another model for the main session`);
+  }
+  return model;
+}
+
+/** The part of Pi's ModelRuntime the save-time check needs. */
+export interface AvailabilityLookup extends ModelLookup {
+  getAvailable(provider?: string): Promise<readonly { provider: string; id: string }[]>;
+}
+
+/**
+ * Save-time check: the model exists in the registry and its provider has a credential, i.e.
+ * it is one the app's own model lists offer. Turns re-resolve it, so a later sign-out or
+ * models.json edit is reported by the turn, not silently ignored.
+ */
+export async function checkModelAvailable(runtime: AvailabilityLookup, ref: ModelRef): Promise<void> {
+  lookupModel(runtime, ref);
+  const available = await runtime.getAvailable(ref.provider);
+  if (!available.some((model) => model.provider === ref.provider && model.id === ref.modelId)) {
+    throw new ModelChoiceError(`${formatModelRef(ref)} cannot be used: provider ${ref.provider} is not signed in or has no key`);
+  }
+}
+
+/** Production save-time check against the user's Pi registry (offline: no catalog fetch). */
+export async function checkConfiguredModel(ref: ModelRef): Promise<void> {
+  const sdk = await import("@earendil-works/pi-coding-agent");
+  const { join } = await import("node:path");
+  const agentDir = sdk.getAgentDir();
+  const runtime = await sdk.ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: join(agentDir, "models.json"),
+    allowModelNetwork: false,
+  });
+  await checkModelAvailable(runtime, ref);
 }
 
 export interface PiTurnOptions {
   cwd: string;
   systemPrompt: string;
   userText: string;
-  modelId?: AllowedModel;
+  model: ModelRef;
   /** Built-in tools to enable (dispatch: read-only set). Default none. */
   builtinTools?: string[];
   customTools?: ToolDefinition[];
@@ -41,7 +110,6 @@ export interface PiTurnResult {
 }
 
 export async function runPiTurn(options: PiTurnOptions): Promise<PiTurnResult> {
-  const modelId = resolveModelId(options.modelId);
   const sdk = await import("@earendil-works/pi-coding-agent");
   const { createExactSystemPromptExtension } = await import("../lib/exact-system-prompt.ts");
   const agentDir = sdk.getAgentDir();
@@ -59,8 +127,7 @@ export async function runPiTurn(options: PiTurnOptions): Promise<PiTurnResult> {
       extensionFactories: [createExactSystemPromptExtension(() => options.systemPrompt), ...(options.extensions ?? [])],
     },
   });
-  const model = services.modelRuntime.getModel(MODEL_PROVIDER, modelId);
-  if (!model) throw new Error(`${MODEL_PROVIDER}/${modelId} is not configured in models.json`);
+  const model = lookupModel(services.modelRuntime, options.model);
   const sessionManager = options.persist ? sdk.SessionManager.create(options.cwd) : sdk.SessionManager.inMemory(options.cwd);
   const customTools = options.customTools ?? [];
   const toolNames = [...(options.builtinTools ?? []), ...customTools.map((t) => t.name)];

@@ -13,8 +13,9 @@ import { buildDigest, defaultNarrative, storedDigest, suggestIdleArchives } from
 import { intakeCloseout, parseCloseout, type IntakeResult } from "./intake.ts";
 import { Judge, type JudgeRunner } from "./judge.ts";
 import { createMemhanaSink, type MemorySink } from "./memory.ts";
+import { checkConfiguredModel, envModelRef, formatModelRef, ModelChoiceError, parseModelRef } from "./pi-runtime.ts";
 import { Store } from "./store.ts";
-import type { DigestLine, MainEvent, Segment, Task } from "./types.ts";
+import type { DigestLine, MainEvent, ModelRef, ModelSource, Segment, Task } from "./types.ts";
 import { decorateTask } from "./view.ts";
 
 export const SERVICE_VERSION = "1.0.0";
@@ -33,6 +34,18 @@ export interface ServiceOptions {
   tickAt?: { hour: number; minute: number };
   /** Disable the timers (tests drive ticks directly). */
   timers?: boolean;
+  /** MAIN_SESSION_MODEL (`provider/modelId`): overrides the saved choice. Default: the env var. */
+  envModel?: string | null;
+  /** Save-time check of a chosen model. Default: the Pi registry has it and its provider is signed in. */
+  checkModel?: (ref: ModelRef) => Promise<void>;
+}
+
+/** The model in effect for judgment turns and dispatches (GET/POST /model, part of /health). */
+export interface ModelChoice {
+  /** `provider/modelId`, or null: no model turns run until one is chosen. */
+  ref: string | null;
+  source: ModelSource | null;
+  setAt?: string;
 }
 
 export type Listener = (type: StreamType, data: unknown) => void;
@@ -53,9 +66,16 @@ export class MainSessionService {
   private loop?: ReturnType<typeof setInterval>;
   private checking = false;
   private chatLog: ChatMessage[] = [];
+  private envModel: ModelRef | null;
+  private checkModel: (ref: ModelRef) => Promise<void>;
+  private modelWrites: Promise<unknown> = Promise.resolve();
 
   constructor(options: ServiceOptions) {
     this.store = options.store;
+    // A malformed MAIN_SESSION_MODEL refuses to start; an unset one leaves the saved choice in charge.
+    this.envModel = envModelRef(options.envModel === undefined ? process.env.MAIN_SESSION_MODEL : options.envModel ?? undefined);
+    this.checkModel = options.checkModel ?? checkConfiguredModel;
+    const dispatcher = options.dispatcher;
     this.exec = options.exec ?? realExec;
     this.tickAt = options.tickAt ?? parseTickAt(process.env.MAIN_SESSION_TICK);
     this.ctx = {
@@ -64,12 +84,19 @@ export class MainSessionService {
       clock: options.clock ?? localClock,
       emit: (type, data) => this.broadcast(type, data),
       memory: options.memory ?? createMemhanaSink(this.store),
-      ...(options.dispatcher ? { dispatch: options.dispatcher } : {}),
+      ...(dispatcher ? {
+        dispatch: (request: DispatchRequest) => {
+          const model = this.currentModel();
+          return model
+            ? dispatcher({ ...request, model })
+            : Promise.resolve({ ok: false, result: "no model is chosen for the main session; read-only checks are paused" });
+        },
+      } : {}),
       onTrigger: (trigger) => {
         if (trigger.kind === "dispatch_result") void this.judge.run({ kind: "dispatch_result", ...(trigger.task ? { task: trigger.task } : {}), ...(trigger.eventId ? { eventId: trigger.eventId } : {}) });
       },
     };
-    this.judge = new Judge(this.ctx, options.judgeRunner);
+    this.judge = new Judge(this.ctx, options.judgeRunner, () => this.currentModel());
     this.chatLog = this.loadChat();
     if (!this.store.state.launchedAt) {
       this.store.state.launchedAt = this.ctx.now().toISOString();
@@ -156,12 +183,59 @@ export class MainSessionService {
     return digest;
   }
 
+  // ── model choice ───────────────────────────────────────────────────────
+
+  /** MAIN_SESSION_MODEL, else the saved choice, else null (no model turns). Read on every turn. */
+  currentModel(): ModelRef | null {
+    if (this.envModel) return this.envModel;
+    try {
+      return parseModelRef(this.store.settings.model);
+    } catch {
+      return null;
+    }
+  }
+
+  modelChoice(): ModelChoice {
+    const model = this.currentModel();
+    if (!model) return { ref: null, source: null };
+    if (this.envModel) return { ref: formatModelRef(model), source: "env" };
+    return { ref: formatModelRef(model), source: "settings", ...(this.store.settings.modelSetAt ? { setAt: this.store.settings.modelSetAt } : {}) };
+  }
+
+  /**
+   * POST /model: save `provider/modelId` (checked against the Pi registry first) or null. The
+   * next turn uses it; nothing restarts. Refused while MAIN_SESSION_MODEL is set. Writes are
+   * serialised so a slow check cannot land after a later choice.
+   */
+  setModel(value: unknown): Promise<ModelChoice> {
+    const next = this.modelWrites.then(async () => {
+      if (this.envModel) throw new ModelChoiceError(`MAIN_SESSION_MODEL=${formatModelRef(this.envModel)} is set for this process; unset it to choose the model here`, 409);
+      const ref = parseModelRef(value);
+      if (ref) await this.checkModel(ref);
+      if (ref) this.store.settings = { ...this.store.settings, model: formatModelRef(ref), modelSetAt: this.ctx.now().toISOString() };
+      else {
+        const { model: _model, modelSetAt: _at, ...rest } = this.store.settings;
+        this.store.settings = rest;
+      }
+      this.store.saveSettings();
+      // The last error described the previous choice; a new (or re-saved) one starts clean.
+      this.judge.lastError = undefined;
+      return this.modelChoice();
+    });
+    this.modelWrites = next.catch(() => undefined);
+    return next;
+  }
+
   // ── API operations ─────────────────────────────────────────────────────
 
   health() {
     return {
       ok: true as const, since: this.since, version: SERVICE_VERSION,
-      judge: { available: this.judge.available, turns: this.judge.turns, ...(this.judge.lastError ? { lastError: this.judge.lastError } : {}) },
+      model: this.modelChoice(),
+      judge: {
+        enabled: this.judge.enabled, available: this.judge.available, turns: this.judge.turns,
+        ...(this.judge.lastError ? { lastError: this.judge.lastError } : {}),
+      },
     };
   }
 

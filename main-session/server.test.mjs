@@ -1,16 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveModelId } from "./pi-runtime.ts";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { checkModelAvailable, envModelRef, lookupModel, parseModelRef } from "./pi-runtime.ts";
 import { actionTools } from "./judge.ts";
 import { startServer } from "./server.ts";
+import { Store } from "./store.ts";
 import { makeCtx, task } from "./test-helpers.mjs";
 
 async function withServer(fn, options = {}) {
   const judged = [];
+  const dispatched = [];
   const started = await startServer({
-    port: 0, dir: null, timers: false,
-    judgeRunner: async ({ user, tools }) => { judged.push({ user, tools: tools.map((t) => t.name) }); return ""; },
-    dispatcher: async () => ({ ok: true, result: "PASS: fine" }),
+    port: 0, dir: null, timers: false, envModel: null,
+    judgeRunner: async ({ user, tools, model }) => { judged.push({ user, tools: tools.map((t) => t.name), model }); return ""; },
+    dispatcher: async (request) => { dispatched.push(request); return { ok: true, result: "PASS: fine" }; },
+    checkModel: async () => undefined,
     memory: { write: async () => "sent" },
     ...options,
   });
@@ -22,7 +28,7 @@ async function withServer(fn, options = {}) {
     return { status: res.status, body: await res.json() };
   };
   try {
-    await fn({ call, base, service: started.service, judged });
+    await fn({ call, base, service: started.service, judged, dispatched });
   } finally {
     await started.close();
   }
@@ -39,6 +45,7 @@ test("the contract's endpoints, end to end", async () => {
     const health = await call("GET", "/health");
     assert.equal(health.body.ok, true);
     assert.equal(health.body.version, "1.0.0");
+    assert.equal((await call("POST", "/model", { model: "anthropic/claude-haiku-4-5" })).status, 200);
 
     const created = await call("POST", "/closeouts", closeout);
     assert.equal(created.status, 201);
@@ -140,12 +147,98 @@ test("the judge's tools write events with their reason; digest is refused outsid
   assert.ok(h.emitted.some((e) => e.type === "insert" && e.data.sessionId === "s-9"));
 });
 
-test("only rdsec haiku or luna may run the main session's turns", () => {
-  assert.equal(resolveModelId(undefined), "claude-haiku-5-5");
-  assert.equal(resolveModelId("gpt-6-luna"), "gpt-6-luna");
-  assert.equal(resolveModelId("rdsec/claude-haiku-5-5"), "claude-haiku-5-5");
-  for (const id of ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "gemini-3.8-flash"]) {
-    assert.throws(() => resolveModelId(id), /not allowed/);
+test("model refs are provider/modelId; the registry must still have the model", async () => {
+  assert.equal(parseModelRef(undefined), null);
+  assert.equal(parseModelRef(" "), null);
+  assert.deepEqual(parseModelRef("anthropic/claude-haiku-4-5"), { provider: "anthropic", modelId: "claude-haiku-4-5" });
+  assert.deepEqual(parseModelRef("openrouter/qwen/qwen3-coder"), { provider: "openrouter", modelId: "qwen/qwen3-coder" });
+  for (const bad of ["claude-haiku-5-5", "/x", "anthropic/", 7]) assert.throws(() => parseModelRef(bad), /provider\/modelId/);
+  assert.equal(envModelRef(undefined), null);
+  assert.throws(() => envModelRef("gpt-6-luna"), /MAIN_SESSION_MODEL: .*provider\/modelId/);
+
+  const registry = {
+    getModel: (provider, id) => (provider === "anthropic" && id === "claude-haiku-4-5") || (provider === "rdsec" && id === "x") ? { provider, id } : undefined,
+    getAvailable: async (provider) => (provider === "anthropic" ? [{ provider: "anthropic", id: "claude-haiku-4-5" }] : []),
+  };
+  assert.deepEqual(lookupModel(registry, { provider: "anthropic", modelId: "claude-haiku-4-5" }), { provider: "anthropic", id: "claude-haiku-4-5" });
+  assert.throws(() => lookupModel(registry, { provider: "rdsec", modelId: "claude-haiku-5-5" }), /rdsec\/claude-haiku-5-5 is not configured in Pi any more/);
+  await checkModelAvailable(registry, { provider: "anthropic", modelId: "claude-haiku-4-5" });
+  await assert.rejects(checkModelAvailable(registry, { provider: "rdsec", modelId: "x" }), /provider rdsec is not signed in/);
+  await assert.rejects(checkModelAvailable(registry, { provider: "nope", modelId: "y" }), /not configured/);
+});
+
+test("without a chosen model no model turn runs; choosing one through POST /model takes effect at once", async () => {
+  await withServer(async ({ call, judged, dispatched, service }) => {
+    const health = (await call("GET", "/health")).body;
+    assert.deepEqual(health.model, { ref: null, source: null });
+    assert.equal(health.judge.enabled, true);
+    assert.equal(health.judge.available, false);
+
+    await call("POST", "/closeouts", closeout);
+    const chat = await call("POST", "/chat", { text: "CAS-4764 卡在哪" });
+    assert.match(chat.body.reply, /CAS-4764/, "answered from the store");
+    const askId = (await call("GET", "/tasks/CAS-4764")).body.openAsks[0].id;
+    await call("POST", "/tasks/CAS-4764/answer", { word: "派人查", eventId: askId });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(judged.length, 0, "no judgment turn without a model");
+    assert.equal(dispatched.length, 0, "no dispatched session without a model");
+    const paused = service.store.listEvents().find((e) => e.action === "dispatch_readonly" && e.data?.result);
+    assert.match(paused.data.result, /no model is chosen/);
+
+    assert.equal((await call("POST", "/model", {})).status, 400);
+    assert.equal((await call("POST", "/model", { model: "claude-haiku-5-5" })).status, 400);
+    const set = await call("POST", "/model", { model: "openai-codex/gpt-6" });
+    assert.equal(set.status, 200);
+    assert.equal(set.body.ref, "openai-codex/gpt-6");
+    assert.equal(set.body.source, "settings");
+    assert.equal((await call("GET", "/model")).body.ref, "openai-codex/gpt-6");
+    const after = (await call("GET", "/health")).body;
+    assert.equal(after.model.ref, "openai-codex/gpt-6");
+    assert.equal(after.judge.available, true);
+
+    await call("POST", "/closeouts", { ...closeout, sessionId: "sess-9", thread: "CAS-9" });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(judged.length, 1);
+    assert.deepEqual(judged[0].model, { provider: "openai-codex", modelId: "gpt-6" });
+
+    const cleared = await call("POST", "/model", { model: null });
+    assert.deepEqual(cleared.body, { ref: null, source: null });
+    assert.equal((await call("GET", "/health")).body.judge.available, false);
+  });
+});
+
+test("a model the registry refuses is not saved, and the reason comes back", async () => {
+  await withServer(async ({ call }) => {
+    const refused = await call("POST", "/model", { model: "rdsec/claude-haiku-5-5" });
+    assert.equal(refused.status, 400);
+    assert.match(refused.body.error, /rdsec\/claude-haiku-5-5 is not configured/);
+    assert.equal((await call("GET", "/model")).body.ref, null);
+  }, { checkModel: async (ref) => { lookupModel({ getModel: () => undefined }, ref); } });
+});
+
+test("MAIN_SESSION_MODEL overrides the saved choice and locks it", async () => {
+  await withServer(async ({ call }) => {
+    assert.deepEqual((await call("GET", "/health")).body.model, { ref: "anthropic/claude-haiku-4-5", source: "env" });
+    const locked = await call("POST", "/model", { model: "openai-codex/gpt-6" });
+    assert.equal(locked.status, 409);
+    assert.match(locked.body.error, /MAIN_SESSION_MODEL/);
+  }, { envModel: "anthropic/claude-haiku-4-5" });
+  await assert.rejects(startServer({ port: 0, dir: null, timers: false, envModel: "gpt-6-luna" }), /MAIN_SESSION_MODEL/);
+});
+
+test("the choice is saved in the state dir and survives a restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "main-session-model-"));
+  try {
+    await withServer(async ({ call }) => {
+      await call("POST", "/model", { model: "anthropic/claude-haiku-4-5" });
+    }, { dir });
+    assert.equal(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).model, "anthropic/claude-haiku-4-5");
+    assert.equal(new Store(dir).settings.model, "anthropic/claude-haiku-4-5");
+    await withServer(async ({ call }) => {
+      assert.equal((await call("GET", "/health")).body.model.ref, "anthropic/claude-haiku-4-5");
+    }, { dir });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
