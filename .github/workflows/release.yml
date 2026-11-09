@@ -171,31 +171,67 @@ jobs:
           releaseName: pi-agent-desktop v__VERSION__
           releaseCommitish: ${{ github.sha }}
           releaseBody: |
-            ## Pi Agent Desktop 0.7.17
+            ## Pi Agent Desktop 0.7.18
 
-            ### Changed
+            This release brings in upstream Pi Agent Desktop 0.8.0–0.8.2.
 
-            - **New app identifier: `com.solidtensor.pi-agent`.** This build can now be installed next to upstream Pi Agent without sharing its window, settings or storage. On first launch after updating, your settings, window state and webview storage (drafts, open tabs, preferences) are copied over from the old identifier; the old data is left in place. macOS asks once more for folder and notification access.
+            ### New
 
-            ### Added
+            - **Main session works in the desktop app.** The 主会话 service now starts with the app and stops with it, so the Main session entry is no longer offline.
+            - **Choose the main session's model.** Pick any configured model on the Main session page or in Settings › General. There is no default: until you pick one, the main session keeps collecting close-outs and digests but runs no model turns.
+            - **Follow and drive your sessions from a phone** through your own Tailscale network (Settings › General › Remote access), with push notifications when a run finishes, fails or waits for you. An end-to-end encrypted remote relay is available in Settings › General › Remote relay.
+            - **Tasks page.** A sidebar row lists sessions that are waiting for you, running, or recently finished or failed.
+            - **Archive projects and single sessions.** Right-click a project or session (or use its "…" menu). Archived items fold away; search still finds them and they can be restored.
+            - **Artifacts page:** favorites, a right-click menu (open the conversation that made it, open with the default app, reveal in Finder / Explorer), a resizable list, and by default only the files you asked for.
+            - **Name sessions automatically** can now be switched in Settings › General. It stays on by default here and names a session from its first message.
 
-            - **Main session (preview).** A 主会话 entry in the sidebar gathers close-outs from your sessions into one triage list. It needs the separate main-session service (`npm run main-session`); the desktop app does not start it yet, so the entry shows as offline otherwise.
+            ### Improved
 
-            Bundled components: pi 1.4.0, pi-web 0.10.0.
+            - **pi 1.5.0.** Adds GPT-6.1 Terra, handles large streamed tool calls with far less CPU and memory, and finds tools from non-English queries.
+            - A tidier topbar: Full history and Branches moved into the `···` menu.
+            - Faster start-up and session switching, lower memory, and lower GPU use in the sidebar.
+            - Clearer typography and quieter chrome; assistant messages no longer show cost and token counts.
+
+            ### Fixed
+
+            - Credential files (such as `~/.ssh` keys and `~/.pi/agent/auth.json`) can no longer be opened from the file viewer.
+            - Settings, credentials and session files are written atomically.
+            - A render error shows its details instead of a blank page.
+            - A scheduled task's time limit covers the whole run; renaming an open session updates its title right away.
+
+            Bundled components: pi 1.5.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.17
+            ## Pi Agent Desktop 0.7.18
 
-            ### 变更
-
-            - **新的应用标识：`com.solidtensor.pi-agent`。** 现在可以和上游 Pi Agent 并装，互不共用窗口、设置和存储。更新后首次启动时，会把旧标识下的设置、窗口状态和 WebView 存储（草稿、打开的标签、偏好）复制过来，旧数据保留不动。macOS 会再询问一次文件夹和通知权限。
+            本版合入了上游 Pi Agent Desktop 0.8.0–0.8.2。
 
             ### 新增
 
-            - **主会话（预览）。** 侧栏新增「主会话」入口，把各会话的交接汇总成一个待处理列表。它需要单独运行主会话服务（`npm run main-session`）；桌面版暂不自动启动该服务，未运行时入口显示为离线。
+            - **桌面版可以用主会话了。** 主会话服务随应用启动、随应用退出，侧栏的「主会话」不再显示离线。
+            - **主会话模型可选。** 在主会话页面或「设置 › 通用」里从已配置的模型中选择。没有默认模型：选择之前，主会话照常收集交接和摘要，但不调用模型。
+            - **用手机查看和操作会话**：通过你自己的 Tailscale 网络（设置 › 通用 › 远程访问），运行完成、失败或等待你时推送通知。另有端到端加密的远程中继（设置 › 通用 › 远程中继）。
+            - **Tasks 页面。** 侧栏新增一行，列出等待你、正在运行、刚完成或失败的会话。
+            - **归档项目和单个会话。** 右键项目或会话（或使用「…」菜单）。归档后折叠收起，搜索仍能找到，也可以恢复。
+            - **Artifacts 页面**：收藏、右键菜单（打开产生它的对话、用默认应用打开、在访达 / 资源管理器中显示）、可调宽度的列表，默认只显示你要的文件。
+            - **自动命名会话**可在「设置 › 通用」中开关。本版默认开启，并从第一条消息开始命名。
 
-            内置组件版本：pi 1.4.0、pi-web 0.10.0。
+            ### 改进
+
+            - **pi 1.5.0。** 新增 GPT-6.1 Terra，大型流式工具调用的 CPU 和内存占用大幅降低，工具搜索支持中文等非英文查询。
+            - 顶栏更简洁：完整历史和分支移入「···」菜单。
+            - 启动和切换会话更快，内存占用更低，侧栏 GPU 占用更低。
+            - 排版更清晰、界面更安静；助手消息不再显示费用和 token 数。
+
+            ### 修复
+
+            - 文件查看器不能再打开凭据文件（如 `~/.ssh` 密钥和 `~/.pi/agent/auth.json`）。
+            - 设置、凭据和会话文件改为原子写入。
+            - 渲染出错时显示错误详情，而不是空白页。
+            - 定时任务的时间限制覆盖整次运行；重命名打开中的会话会立即更新标题。
+
+            内置组件版本：pi 1.5.0、pi-web 0.10.0。
 
           releaseDraft: true
           prerelease: false
