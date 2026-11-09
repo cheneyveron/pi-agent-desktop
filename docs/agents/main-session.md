@@ -8,6 +8,25 @@ so under "Deviations".
 - A separate Node process: `npm run main-session` (`node main-session/server.mjs`), or
   `npm run dev:all` for `next dev` plus the service (an already running service is reused;
   `MAIN_SESSION=off` starts Next alone). Binds `127.0.0.1:30180` only (`MAIN_SESSION_PORT`).
+- **Desktop app**: the packaged server starts it by default. `desktop/server-launcher.cjs` calls
+  `desktop/main-session-launcher.cjs` right after requiring Next's `server.js`; it spawns
+  `main-session/server.mjs` on the bundled Node (`process.execPath`) as a child of the server,
+  unless `MAIN_SESSION=off`, or a service already answers `/health` with `ok: true` on the port
+  (reused, like dev:all). Output goes to `main-session.log` in `PI_DESKTOP_LOG_DIR` (the app log
+  dir beside `server.log`, passed by `src-tauri/src/lib.rs`), else to the server's own output. No
+  orphan: on Unix the child shares the server's process group, which the shell SIGTERMs on quit;
+  on every platform it holds an IPC channel to the server and `server.mjs` stops when that
+  channel closes (server crash or SIGKILL, `taskkill`, the launcher's parent watchdog). A failed
+  start is logged to `server.log` and the UI just shows offline. `scripts/stage-main-session.mjs`
+  (from `desktop:prepare`) stages the runtime files (no tests or fixtures) at
+  `resources/server/main-session/` — outside `node_modules`, where Node does not strip types —
+  plus the files they import from outside the folder (`lib/exact-system-prompt.ts`, with a
+  `lib/package.json` marking it ESM) and the closure of their bare imports (`typebox`; the Pi
+  scope is already overlaid). A new runtime import is picked up automatically, but a new
+  *computed* path is not. `scripts/verify-packaged-main-session.mjs` (part of `desktop:verify`)
+  imports the lazily loaded modules from the staged tree, starts the staged server on free ports
+  with a temp HOME and checks `/api/main-session/health` through the proxy and that the service
+  exits when the server is SIGKILLed.
 - No build step: the modules are `.ts` with explicit `.ts` imports, run by Node's native type
   stripping (Node ≥ 22.18). `main-session/package.json` marks the folder as ESM. Keep to
   strippable TypeScript (no enums, namespaces or parameter properties) and keep the `.ts`

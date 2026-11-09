@@ -79,6 +79,11 @@ const SERVER_START_POLL_INTERVAL: Duration = Duration::from_millis(25);
 /// the agent starts (tools, scripts) would inherit.
 #[cfg(feature = "custom-protocol")]
 const COMPILE_CACHE_DIR_ENV: &str = "PI_DESKTOP_COMPILE_CACHE_DIR";
+/// Env var read by `desktop/main-session-launcher.cjs` (fork-only): the app log
+/// dir, where the main-session service writes `main-session.log` beside
+/// `server.log`.
+#[cfg(feature = "custom-protocol")]
+const LOG_DIR_ENV: &str = "PI_DESKTOP_LOG_DIR";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -783,6 +788,7 @@ fn start_packaged_server(
         .env("NODE_ENV", "production")
         .env("NEXT_TELEMETRY_DISABLED", "1")
         .env("PI_WEB_PARENT_PID", std::process::id().to_string())
+        .env(LOG_DIR_ENV, &log_dir)
         .env(DESKTOP_API_TOKEN_ENV, desktop_api_token)
         .env(DESKTOP_INSTANCE_ID_ENV, desktop_instance_id)
         .stdin(Stdio::null())

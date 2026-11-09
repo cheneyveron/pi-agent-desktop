@@ -8,9 +8,21 @@ try {
   const { port, service, close } = await startServer();
   const judge = service.judge.available ? `judge on rdsec/${process.env.MAIN_SESSION_MODEL ?? "claude-haiku-5-5"}` : "judge off";
   process.stdout.write(`[main-session] listening on http://127.0.0.1:${port} (state ${service.store.dir}, ${judge})\n`);
-  const stop = () => { void close().then(() => process.exit(0)); };
+  const stop = () => {
+    // A connection or turn that will not close must not keep the process alive.
+    setTimeout(() => process.exit(0), 3_000).unref();
+    void close().then(() => process.exit(0));
+  };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  // Started by the packaged desktop server (desktop/main-session-launcher.cjs) with an IPC
+  // channel: the channel closes when that server exits for any reason, crash included.
+  if (process.channel) {
+    process.once("disconnect", () => {
+      process.stdout.write("[main-session] parent server is gone; stopping\n");
+      stop();
+    });
+  }
 } catch (error) {
   if (error && error.code === "EADDRINUSE") {
     process.stderr.write(`[main-session] port ${process.env.MAIN_SESSION_PORT ?? 30180} is in use; is the main session already running?\n`);

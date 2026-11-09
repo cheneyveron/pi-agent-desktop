@@ -295,6 +295,29 @@ const FORK_FEATURES = [
     ],
   },
   {
+    name: "packaged desktop server starts the main session",
+    file: "desktop/server-launcher.cjs",
+    // Fork-only (abcwyc has no main session): the launcher starts
+    // desktop/main-session-launcher.cjs after the Next server. An upstream merge of
+    // this file drops the call and the 主会话 row goes offline in every desktop build.
+    markers: ["main-session-launcher.cjs", "startMainSession({ serverDir: __dirname })"],
+  },
+  {
+    name: "desktop staging ships the main session",
+    file: "scripts/prepare-desktop.mjs",
+    markers: ["stageMainSession({ rootDir, serverResourcesDir })", '"main-session-launcher.cjs"'],
+  },
+  {
+    name: "desktop shell passes the log dir to the main session",
+    file: "src-tauri/src/lib.rs",
+    markers: ['LOG_DIR_ENV: &str = "PI_DESKTOP_LOG_DIR"', ".env(LOG_DIR_ENV, &log_dir)"],
+  },
+  {
+    name: "desktop:verify checks the packaged main session",
+    file: "package.json",
+    markers: ["node scripts/verify-packaged-main-session.mjs"],
+  },
+  {
     name: "app info and desktop preferences live in General settings",
     file: "components/SettingsPanel.tsx",
     markers: ["AppUpdatesSection", "DesktopAppSection", "settings-general-intro"],

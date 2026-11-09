@@ -231,3 +231,17 @@ try {
 // The standalone Next.js entrypoint is CommonJS.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require("./server.js");
+
+// Fork-only: the main-session service (desktop/main-session-launcher.cjs). It
+// runs as a child of this process so the parent watchdog above, the shell's
+// process-group kill and the child's IPC channel all take it down with the
+// server. Never allowed to affect the server's own startup.
+try {
+  const mainSessionLauncher = path.join(__dirname, "main-session-launcher.cjs");
+  if (fs.existsSync(mainSessionLauncher)) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    void require(mainSessionLauncher).startMainSession({ serverDir: __dirname });
+  }
+} catch (mainSessionError) {
+  console.error("[Pi Agent] main session launcher failed:", mainSessionError);
+}

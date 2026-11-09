@@ -8,6 +8,7 @@ import { desktopTargetTriple } from "./desktop-platform.mjs";
 import { signDesktopResources, wantsDeveloperIdSigning } from "./macos-codesign.mjs";
 import { piPackageDirNames } from "./pi-packages.mjs";
 import { dedupeNestedPackages, externalPackageSpecifiers, findNestedPiScopePackages, stageCompletePackage, stageResolvedClosure } from "./stage-package.mjs";
+import { stageMainSession } from "./stage-main-session.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const desktopBuildDir = join(rootDir, ".next-desktop");
@@ -167,6 +168,17 @@ async function assembleServer() {
   await copyFile(
     join(rootDir, "desktop", "server-launcher.cjs"),
     join(serverResourcesDir, "desktop-server.cjs"),
+  );
+
+  // Fork-only: the main-session service and the launcher that starts it beside
+  // the server (desktop/main-session-launcher.cjs, docs/agents/main-session.md).
+  await copyFile(
+    join(rootDir, "desktop", "main-session-launcher.cjs"),
+    join(serverResourcesDir, "main-session-launcher.cjs"),
+  );
+  const mainSession = await stageMainSession({ rootDir, serverResourcesDir });
+  console.log(
+    `Main session staged: ${mainSession.files.length} file(s), plus ${[...mainSession.outside, ...mainSession.packages].join(", ") || "nothing else"}`,
   );
 
   const staticSource = join(desktopBuildDir, "static");

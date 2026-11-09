@@ -318,13 +318,20 @@
     "components/AppSelect.tsx",
     "components/AppCombobox.tsx",
     "components/ProjectViewMenu.tsx",
-    "hooks/useMenuNavigation.ts"
+    "hooks/useMenuNavigation.ts",
+    "main-session/",
+    "app/api/main-session/",
+    "desktop/main-session-launcher.cjs",
+    "scripts/stage-main-session.mjs",
+    "scripts/verify-packaged-main-session.mjs",
+    "scripts/main-session-launcher.test.mjs"
   ],
   "dispositions": {
     "accepted": "Reviewed and kept. The drift is either the fork's own interaction design or a generic improvement with no desktop coupling, so it cannot be extracted into components/desktop/. Removing it would mean deleting a feature. These files stay permanent review points; that is the running cost of a UI fork, not a backlog item. Do not reopen without new information.",
     "reduce": "Drift that can be removed without losing anything — desktop-only code that belongs in components/desktop/, or fork additions sitting in an upstream file that can move to a fork-owned one. Act on these."
   },
   "decisionLog": [
+    "2026-11-08 — The packaged desktop app starts the fork-only main-session service: desktop/server-launcher.cjs (abcwyc-owned) calls desktop/main-session-launcher.cjs after requiring server.js, scripts/prepare-desktop.mjs (abcwyc-owned) stages it through scripts/stage-main-session.mjs, src-tauri/src/lib.rs passes PI_DESKTOP_LOG_DIR, and desktop:verify runs scripts/verify-packaged-main-session.mjs. Upstream has no main session; markers in components/fork-extractions.test.mjs pin the hooks in those upstream files.",
     "2026-11-03 — End-to-end encrypted relay (docs/remote-relay.md): PwaRegistration, push/subscribe and open-in-explorer gain small fork edits; lib/web-push.ts binds relay subscriptions. Markers in components/fork-extractions.test.mjs pin the relay wiring in proxy.ts, instrumentation-node.ts, desktop-api-auth.ts and SettingsPanel.tsx.",
     "2026-11-01 — Remote access (PR 194): lib/web-push.ts and lib/push-client.ts carry the phone push events and the iOS tap-to-enable path; lib/request-security.ts and proxy.ts gate the Tailscale Serve hostname on Tailscale-User-Login and refuse Funnel traffic. Markers in components/fork-extractions.test.mjs pin the wiring.",
     "2026-10-21 — MarkdownBody now integrates @lobehub/streamdown through fork-owned StreamingMarkdown and useStreamingMarkdown, retaining Pi's remark/rehype pipeline, widgets, final-text flush and document-scoped fallbacks. Stable block caching and paced word fades replace full-document parsing on every streamed snapshot; no Lobe UI theme is imported. Browser replay measures parse volume against the former 120ms strategy.",
