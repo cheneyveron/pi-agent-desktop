@@ -31,8 +31,8 @@ export function SessionMentionMenu({ loaded, matches, activeIndex, itemRefs, onP
         zIndex: 121,
         background: "var(--bg)",
         border: "var(--hairline) solid var(--border)",
-        borderRadius: 8,
-        boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
+        borderRadius: "var(--radius-md)",
+        boxShadow: "var(--shadow-popover)",
         overflow: "hidden",
         maxHeight: "min(48vh, 400px)",
       }}
@@ -44,7 +44,7 @@ export function SessionMentionMenu({ loaded, matches, activeIndex, itemRefs, onP
         alignItems: "center",
         justifyContent: "space-between",
         gap: 8,
-        fontSize: 11,
+        fontSize: "var(--fs-micro)",
         color: "var(--text-dim)",
       }}>
         <span>{loaded ? t("chat.sessions", { label: matchCountLabel }) : t("chat.loadingSessions")}</span>
@@ -52,9 +52,9 @@ export function SessionMentionMenu({ loaded, matches, activeIndex, itemRefs, onP
       </div>
       <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
         {!loaded ? (
-          <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>{t("chat.loadingSessions")}</div>
+          <div style={{ padding: "6px 8px", fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>{t("chat.loadingSessions")}</div>
         ) : matches.length === 0 ? (
-          <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>{t("chat.noMatchingSessions")}</div>
+          <div style={{ padding: "6px 8px", fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>{t("chat.noMatchingSessions")}</div>
         ) : matches.map((entry, index) => {
           const active = index === activeIndex;
           const name = entry.name?.trim() || entry.firstMessage.trim() || t("chat.untitledSession");
@@ -77,20 +77,20 @@ export function SessionMentionMenu({ loaded, matches, activeIndex, itemRefs, onP
                 gap: 8,
                 padding: "7px 8px",
                 border: "none",
-                borderRadius: 6,
+                borderRadius: "var(--radius-sm)",
                 background: active ? "var(--bg-selected)" : "none",
                 color: "var(--text)",
                 cursor: "pointer",
                 textAlign: "left",
-                fontSize: 13,
+                fontSize: "var(--fs-body)",
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
               </svg>
               <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-                <span style={{ display: "block", color: "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.firstMessage}</span>
+                <span style={{ display: "block", color: "var(--text-dim)", fontSize: "var(--fs-micro)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.firstMessage}</span>
               </span>
             </button>
           );

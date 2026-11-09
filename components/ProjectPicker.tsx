@@ -191,11 +191,11 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
         width: "max-content",
         minWidth: Math.max(dropdownRect.width, 260),
         maxWidth: 360,
-        zIndex: 650,
+        zIndex: "var(--z-popover)",
         background: "var(--bg)",
         border: "var(--hairline) solid var(--border)",
-        borderRadius: 8,
-        boxShadow: "0 -6px 20px rgba(0,0,0,0.10)",
+        borderRadius: "var(--radius-md)",
+        boxShadow: "var(--shadow-popover)",
         overflow: "hidden",
       }
     : {
@@ -206,8 +206,8 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
         zIndex: 100,
         background: "var(--bg)",
         border: "var(--hairline) solid var(--border)",
-        borderRadius: 8,
-        boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+        borderRadius: "var(--radius-md)",
+        boxShadow: "var(--shadow-popover)",
         overflow: "hidden",
       };
 
@@ -233,27 +233,27 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
           overflow: "hidden",
           background: dropdownOpen ? "var(--bg-hover)" : "none",
           border: "none",
-          borderRadius: 9,
+          borderRadius: "var(--radius-md)",
           color: "var(--text-muted)",
           cursor: disabled ? "not-allowed" : "pointer",
-          fontSize: 12,
+          fontSize: "var(--fs-caption)",
           opacity: disabled ? 0.5 : 1,
-          transition: "background 0.12s, color 0.12s",
+          transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
         } : {
           background: dropdownOpen ? "var(--bg-hover)" : undefined,
         }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: isInline ? undefined : "var(--text-muted)" }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: isInline ? undefined : "var(--text-muted)" }}>
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
         </svg>
         {isInline ? (
           selectedCwd ? (
             <PathLabel
               text={displayCwd(selectedProject ?? selectedCwd, homeDir)}
-              style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12 }}
+              style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)" }}
             />
           ) : (
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-dim)" }}>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", color: "var(--text-dim)" }}>
               Select project…
             </span>
           )
@@ -266,8 +266,8 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                fontSize: 13,
-                fontWeight: 500,
+                fontSize: "var(--fs-body)",
+                fontWeight: "var(--fw-medium)",
                 color: selectedCwd ? "var(--text)" : "var(--accent)",
               }}
             >
@@ -300,12 +300,12 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
               autoFocus
               style={{
                 width: "100%",
-                fontSize: 11,
+                fontSize: "var(--fs-micro)",
                 fontFamily: "var(--font-mono)",
                 padding: "5px 8px",
                 background: "var(--bg-panel)",
                 border: "var(--hairline) solid var(--border)",
-                borderRadius: 6,
+                borderRadius: "var(--radius-sm)",
                 color: "var(--text)",
                 outline: "none",
               }}
@@ -334,7 +334,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
                 color: project === selectedProject ? "var(--text)" : "var(--text-muted)",
                 cursor: "pointer",
                 textAlign: "left",
-                fontSize: 11,
+                fontSize: "var(--fs-micro)",
                 fontFamily: "var(--font-mono)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -346,7 +346,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
             </button>
           ))}
           {visibleProjects.length === 0 && trimmedFilter && (
-            <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>No matching projects</div>
+            <div style={{ padding: "8px 10px", fontSize: "var(--fs-micro)", color: "var(--text-dim)" }}>No matching projects</div>
           )}
         </div>
 
@@ -367,10 +367,10 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
               color: "var(--text-muted)",
               cursor: "pointer",
               textAlign: "left",
-              fontSize: 11,
+              fontSize: "var(--fs-micro)",
             }}
           >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
             </svg>
             <span>Use default directory</span>
@@ -396,10 +396,10 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
             color: "var(--text-muted)",
             cursor: "pointer",
             textAlign: "left",
-            fontSize: 11,
+            fontSize: "var(--fs-micro)",
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
+          <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
             <line x1="5" y1="1" x2="5" y2="9" />
             <line x1="1" y1="5" x2="9" y2="5" />
           </svg>
@@ -412,7 +412,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
               padding: "6px 10px 8px",
               borderTop: "var(--hairline) solid var(--border)",
               color: "var(--danger)",
-              fontSize: 11,
+              fontSize: "var(--fs-micro)",
               lineHeight: 1.35,
               overflowWrap: "anywhere",
             }}

@@ -70,8 +70,17 @@ Mist、Rose、Pine 与跟随系统 / 浅色 / 深色并列在外观页的选择�
 （`--canvas-background: var(--bg)`），`--selection`、`--sidebar-selected`、`--menu-selection-color`
 由各自的强调色派生；背景渐变只作用于浅色与深色。
 
-**形状与动效。** 圆角用 `--radius-sm/md/lg/xl`（6/8/12/16px）。控件高度是 `--control-height-sm` 28px
-或 `--control-height` 32px。层级阴影用四档 `--shadow-*`。缓动用 `--ease-native`。
+**形状与动效。** 圆角用 `--radius-xs/sm/md/lg/xl`（4/6/8/12/16px）；5px 的选项行圆角是菜单系统自己的 token。
+按钮高度用 `--control-h-sm/md/lg`（24/28/32px；`--control-height-sm` 和 `--control-height` 是 md、lg 的别名）。
+层级阴影用四档 `--shadow-*`。过渡用 `--dur-fast`（120ms，悬停与按下）或 `--dur-base`（180ms，展开与淡入），
+缓动用 `--ease-native`；只有无限循环动画保留自己的曲线。焦点环按所在表面保留各自粗细：半透明的 `--focus-ring` 在有底色的表面上是 3px；菜单用实色的 `--menu-focus-ring`（`--text`），保证焦点环在悬停行上对比度不低于 3:1（见 `e2e/option-controls.mjs`）。
+浮在其他界面之上的元素用 `--z-*` 层级（sticky 30、chrome 90、dropdown 120、popover 650、modal 1000、
+toast 1200、menu 2400）；组件内部的个位数 z-index 保持字面值。状态色用 `--danger`、`--success`、`--warning`，
+不写死红、绿、琥珀色。24 单位 viewBox 的图标描边 1.75 或 2，尺寸 12、14 或 16px。
+
+**不再新增内联字面值。** 组件新增内联 `fontSize`、`fontWeight` 或十六进制颜色时，
+`scripts/inline-style-tokens.test.mjs` 会失败。剩余的旧值按文件冻结在 `scripts/inline-style-baseline.json`；
+清理掉一部分后用 `node scripts/inline-style-tokens.mjs update` 下调基线（它不会上调计数）。
 
 **设置选项。** 子代理、模型、技能、插件、MCP 配置列表共用 8px 外留白、4px 行间距与 5px 行圆角，
 选中与相邻悬停不能贴合；鼠标移到选中项也不能覆盖选中底色。明暗模式、语言、发送快捷键、Diff、
@@ -85,7 +94,7 @@ Mist、Rose、Pine 与跟随系统 / 浅色 / 深色并列在外观页的选择�
 多行时加号仍跟随首行，发送按钮保持右下角同心圆。`e2e/composer-geometry.mjs` 验证
 12–24px 字号下的空输入、单行和多行输入。
 
-**统一的按钮样式。** 所有工具栏类控件都是安静的 28×28 小按钮，圆角 7px：悬停时是 `--bg-hover`，
+**统一的按钮样式。** 所有工具栏类控件都是安静的 28×28 小按钮，圆角 8px（`--radius-md`）：悬停时是 `--bg-hover`，
 处于开启状态时是 `--bg-selected`。开启状态故意比悬停深一档，这样"开着"不会被误认为"鼠标正停在上面"。
 适用于侧栏顶部按钮、顶栏操作按钮、面板开关、右侧面板标题行和文件面板的展开按钮。
 

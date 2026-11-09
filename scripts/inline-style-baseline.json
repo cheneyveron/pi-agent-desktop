@@ -1,0 +1,90 @@
+{
+  "note": "Legacy inline values in components/**/*.tsx. Counts may only fall; see scripts/inline-style-tokens.mjs.",
+  "files": {
+    "components/AgentSessionPanel.tsx": {
+      "fontSize": 0,
+      "fontWeight": 1,
+      "hexColor": 0
+    },
+    "components/AppShell.tsx": {
+      "fontSize": 3,
+      "fontWeight": 0,
+      "hexColor": 0
+    },
+    "components/BranchNavigator.tsx": {
+      "fontSize": 0,
+      "fontWeight": 1,
+      "hexColor": 0
+    },
+    "components/ChatInput.tsx": {
+      "fontSize": 0,
+      "fontWeight": 0,
+      "hexColor": 1
+    },
+    "components/ChatWindow.tsx": {
+      "fontSize": 2,
+      "fontWeight": 0,
+      "hexColor": 0
+    },
+    "components/ConfirmDangerButton.tsx": {
+      "fontSize": 0,
+      "fontWeight": 0,
+      "hexColor": 1
+    },
+    "components/DirectoryPicker.tsx": {
+      "fontSize": 1,
+      "fontWeight": 0,
+      "hexColor": 0
+    },
+    "components/FileExplorer.tsx": {
+      "fontSize": 0,
+      "fontWeight": 0,
+      "hexColor": 4
+    },
+    "components/FileViewer.tsx": {
+      "fontSize": 0,
+      "fontWeight": 0,
+      "hexColor": 1
+    },
+    "components/MessageView.tsx": {
+      "fontSize": 0,
+      "fontWeight": 2,
+      "hexColor": 5
+    },
+    "components/ModelsConfig.tsx": {
+      "fontSize": 1,
+      "fontWeight": 0,
+      "hexColor": 8
+    },
+    "components/PluginsConfig.tsx": {
+      "fontSize": 0,
+      "fontWeight": 0,
+      "hexColor": 2
+    },
+    "components/SelectorRow.tsx": {
+      "fontSize": 0,
+      "fontWeight": 1,
+      "hexColor": 0
+    },
+    "components/SessionSidebar.tsx": {
+      "fontSize": 0,
+      "fontWeight": 0,
+      "hexColor": 2
+    },
+    "components/TerminalPanel.tsx": {
+      "fontSize": 1,
+      "fontWeight": 0,
+      "hexColor": 0
+    },
+    "components/ThinkingIcon.tsx": {
+      "fontSize": 0,
+      "fontWeight": 0,
+      "hexColor": 1
+    },
+    "components/UpdateReminder.tsx": {
+      "fontSize": 2,
+      "fontWeight": 0,
+      "hexColor": 0
+    }
+  }
+}

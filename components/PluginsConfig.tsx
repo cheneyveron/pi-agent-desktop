@@ -152,9 +152,9 @@ function findInstalledPackage(
 
 function statusColor(status: PluginPackageInfo["status"]): string {
   if (status === "loaded") return "var(--accent)";
-  if (status === "installed") return "#f59e0b";
+  if (status === "installed") return "var(--warning)";
   if (status === "disabled") return "var(--text-dim)";
-  return "#ef4444";
+  return "var(--danger)";
 }
 
 function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
@@ -174,7 +174,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
 
   if (groups.length === 0) {
     return (
-      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+      <div style={{ fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>
         {pkg.disabled ? t("i18n.packageDisabled") : t("i18n.noResolvedResources")}
       </div>
     );
@@ -198,8 +198,8 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
         >
           <div
             style={{
-              fontSize: 10,
-              fontWeight: 700,
+              fontSize: "var(--fs-micro)",
+              fontWeight: "var(--fw-bold)",
               color: "var(--text-dim)",
               textTransform: "uppercase",
               marginBottom: 6,
@@ -212,7 +212,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
               <div key={`${resource.kind}:${resource.path}`} style={{ minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: "var(--fs-caption)",
                     color: "var(--text)",
                     fontFamily: "var(--font-mono)",
                     overflow: "hidden",
@@ -225,7 +225,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
                 </div>
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: "var(--fs-micro)",
                     color: "var(--text-dim)",
                     fontFamily: "var(--font-mono)",
                     overflow: "hidden",
@@ -369,9 +369,9 @@ function PackageDetail({
             {pkg.disabled ? (
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: "var(--fs-micro)",
                   padding: "1px 5px",
-                  borderRadius: 3,
+                  borderRadius: "var(--radius-xs)",
                   background: "rgba(120,120,120,0.12)",
                   color: "var(--text-dim)",
                 }}
@@ -381,11 +381,11 @@ function PackageDetail({
             ) : pkg.filtered && (
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: "var(--fs-micro)",
                   padding: "1px 5px",
-                  borderRadius: 3,
+                  borderRadius: "var(--radius-xs)",
                   background: "rgba(245,158,11,0.12)",
-                  color: "#d97706",
+                  color: "var(--warning)",
                 }}
               >
                 {t("i18n.filtered")}
@@ -394,7 +394,7 @@ function PackageDetail({
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: 12,
+                fontSize: "var(--fs-caption)",
                 color: "var(--text)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -500,7 +500,7 @@ function PackageDetail({
             )}
           </div>
           {updateError && (
-            <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
+            <span style={{ fontSize: "var(--fs-caption)", color: "var(--danger)" }}>{updateError}</span>
           )}
         </ConfigDetailGridRow>
         <ConfigDetailGridRow label={t("i18n.package")} mono>
@@ -534,12 +534,12 @@ function PackageDetail({
       </div>
 
       {actionMessage && (
-        <div style={{ fontSize: 12, color: "#16a34a" }}>
+        <div style={{ fontSize: "var(--fs-caption)", color: "var(--success)" }}>
           {actionMessage}
         </div>
       )}
       {actionError && (
-        <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>
+        <div style={{ fontSize: "var(--fs-caption)", color: "var(--danger)", whiteSpace: "pre-wrap" }}>
           {actionError}
         </div>
       )}
@@ -1057,7 +1057,7 @@ export function PluginsConfig({
 
         <ConfigFooter status={
             availableUpdateCount > 0 ? (
-              <span style={{ fontSize: 12, color: "var(--accent)" }}>
+              <span style={{ fontSize: "var(--fs-caption)", color: "var(--accent)" }}>
                 {availableUpdateCount}{" "}
                 {availableUpdateCount === 1 ? t("i18n.update") : t("i18n.updates")}
               </span>

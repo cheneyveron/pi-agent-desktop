@@ -73,19 +73,32 @@ test("a page thumbnail is an SVG image wrapping the document", async () => {
   assert.match(svg, /<body>Hi<\/body><\/html><\/foreignObject><\/svg>$/);
 });
 
-test("files are keyed by path and filtered as created or edited", async () => {
-  const { artifactKey, filterArtifacts, fileThumbnailKind, TYPE_ALL_ARTIFACTS, TYPE_ALL_FILES, TYPE_CREATED_FILES, TYPE_EDITED_FILES } = await jiti.import("./artifacts-helpers.ts");
+test("files are keyed by path; the default view hides process files", async () => {
+  const { artifactKey, countProcessFiles, filterArtifacts, fileThumbnailKind, TYPE_ALL_ARTIFACTS, TYPE_EVERYTHING, TYPE_OUTPUT_FILES, TYPE_PROCESS_FILES } = await jiti.import("./artifacts-helpers.ts");
   const page = item({ kind: "artifact", identifier: "page", type: "html" });
-  const created = item({ kind: "file", sessionId: "a", path: "/w/new.md", created: true });
-  const edited = item({ kind: "file", sessionId: "b", path: "/w/old.ts", created: false });
-  assert.equal(artifactKey(created), artifactKey({ ...created, sessionId: "other" }));
-  assert.notEqual(artifactKey(created), artifactKey(edited));
-  const names = (type) => filterArtifacts([page, created, edited], type, "").map((entry) => (entry.kind === "file" ? entry.path : entry.identifier));
-  assert.deepEqual(names(""), ["page", "/w/new.md", "/w/old.ts"]);
+  const output = item({ kind: "file", sessionId: "a", path: "/w/new.md", created: true, role: "output", reasons: ["created"] });
+  const processFile = item({ kind: "file", sessionId: "b", path: "/w/old.ts", created: false, role: "process", reasons: [] });
+  assert.equal(artifactKey(output), artifactKey({ ...output, sessionId: "other" }));
+  assert.notEqual(artifactKey(output), artifactKey(processFile));
+  const names = (type) => filterArtifacts([page, output, processFile], type, "").map((entry) => (entry.kind === "file" ? entry.path : entry.identifier));
+  assert.deepEqual(names(""), ["page", "/w/new.md"]);
   assert.deepEqual(names(TYPE_ALL_ARTIFACTS), ["page"]);
   assert.deepEqual(names("html"), ["page"]);
-  assert.deepEqual(names(TYPE_ALL_FILES), ["/w/new.md", "/w/old.ts"]);
-  assert.deepEqual(names(TYPE_CREATED_FILES), ["/w/new.md"]);
-  assert.deepEqual(names(TYPE_EDITED_FILES), ["/w/old.ts"]);
+  assert.deepEqual(names(TYPE_OUTPUT_FILES), ["/w/new.md"]);
+  assert.deepEqual(names(TYPE_PROCESS_FILES), ["/w/old.ts"]);
+  assert.deepEqual(names(TYPE_EVERYTHING), ["page", "/w/new.md", "/w/old.ts"]);
+  assert.equal(countProcessFiles([page, output, processFile], ""), 1);
+  assert.equal(countProcessFiles([page, output, processFile], CHATS_SCOPE), 0);
   assert.deepEqual(["a.PNG", "d.svg", "b.html", "c.md", "e.ts", "f.bin"].map(fileThumbnailKind), ["file-image", "file-image", "frame", "text", "code", "icon"]);
+});
+
+test("the favorites filter keeps starred rows, process files included", async () => {
+  const { filterArtifacts, TYPE_ALL_ARTIFACTS } = await jiti.import("./artifacts-helpers.ts");
+  const page = item({ kind: "artifact", identifier: "page", favorite: true });
+  const other = item({ kind: "artifact", identifier: "other", favorite: false });
+  const script = item({ kind: "file", path: "/w/build.py", role: "process", reasons: [], favorite: true });
+  const names = (type, favoritesOnly) => filterArtifacts([page, other, script], type, "", favoritesOnly).map((entry) => (entry.kind === "file" ? entry.path : entry.identifier));
+  assert.deepEqual(names("", false), ["page", "other"]);
+  assert.deepEqual(names("", true), ["page", "/w/build.py"]);
+  assert.deepEqual(names(TYPE_ALL_ARTIFACTS, true), ["page"]);
 });

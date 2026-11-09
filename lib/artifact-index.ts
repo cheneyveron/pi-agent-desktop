@@ -1,6 +1,8 @@
 // Artifacts across every session, for the Artifacts page: `:::artifact`
-// blocks in assistant text, and files the model wrote or edited with the
-// `write` / `edit` tools.
+// blocks in assistant text, files the model wrote or edited with the
+// `write` / `edit` tools, and deliverable files a message named (how a file a
+// shell command produced shows up). lib/file-output-role.ts sorts files into
+// outputs and process files.
 //
 // The chat's artifact store (lib/artifact-store.ts) only knows the loaded
 // window of the open conversation. This index reads session files instead, so
@@ -8,14 +10,15 @@
 // branches that are not checked out, and from chats (which have no side panel).
 //
 // It is derived, never authoritative: each file is re-parsed when its size or
-// mtime changes. A file whose bytes never mention `:::artifact` is not parsed,
-// and in one that does, only the lines that mention it go through JSON.parse.
+// mtime changes. A file whose bytes mention neither `:::artifact`, a file tool
+// nor a deliverable extension is not parsed, and in one that does, only the
+// lines that can hold one go through JSON.parse.
 // Even so, a cold pass reads every session file (hundreds of MB), so the index
 // is also kept in pi-web/artifact-index.json and reloaded after a restart; only
 // files whose fingerprint moved since then are read again.
 
 import { createHash } from "node:crypto";
-import { createReadStream, mkdirSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -23,6 +26,19 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { userHome } from "./user-home.ts";
 import { artifactHasActiveContent, splitArtifacts, type ArtifactType } from "./artifacts.ts";
+import { favoriteKey, getFavoritesPath, readFavorites } from "./artifact-favorites.ts";
+import { getFileRolesPath, readFileRoleOverrides } from "./artifact-file-roles.ts";
+import {
+  DELIVERABLE_EXTENSION_MARKERS,
+  classifyFileOutput,
+  extractFileMentions,
+  isDeliverablePath,
+  isHiddenOutputPath,
+  isInAppOrTempFolder,
+  isInDotFolder,
+  type FileOutputReason,
+  type FileOutputRole,
+} from "./file-output-role.ts";
 import type { SessionInfo, SessionWorkspaceKind } from "./types";
 
 const MARKER = ":::artifact";
@@ -30,7 +46,16 @@ const MARKER = ":::artifact";
 // of these are parsed for files; the bytes check skips files with none.
 const FILE_TOOLS = ["write", "edit"] as const;
 const FILE_TOOL_MARKERS = FILE_TOOLS.flatMap((tool) => [`"name":"${tool}"`, `"toolName":"${tool}"`]);
-const FILE_MARKERS = [MARKER, ...FILE_TOOL_MARKERS].map((marker) => Buffer.from(marker));
+const FILE_MARKERS = [MARKER, ...FILE_TOOL_MARKERS, ...DELIVERABLE_EXTENSION_MARKERS].map((marker) => Buffer.from(marker));
+const DELIVERABLE_MARKER_RE = new RegExp(`\\.(?:${DELIVERABLE_EXTENSION_MARKERS.map((marker) => marker.slice(1)).join("|")})\\b`, "i");
+/** Distinct mentions kept per session file; the newest win. */
+const MAX_MENTIONS = 500;
+/**
+ * A file only a message named counts when it was born during a conversation
+ * that named it, so a reply explaining an old document does not list it.
+ * The slack covers clock skew between the timestamp and the file system.
+ */
+const MENTION_BIRTH_SLACK_MS = 5 * 60_000;
 /** Larger files are streamed by line instead of read whole. */
 const WHOLE_READ_MAX_BYTES = 16 * 1024 * 1024;
 const READ_CONCURRENCY = 8;
@@ -39,7 +64,7 @@ const SNIPPET_CONTEXT = 80;
 // The SDK writes `type`, `id`, `parentId` first; enough for the branch walk.
 const ENTRY_PREFIX_RE = /^\{"type":"([^"\\]+)","id":"([^"\\]+)","parentId":(?:null|"([^"\\]*)")/;
 /** Bump when IndexedArtifact or the parser's output changes; older files are ignored. */
-const PERSIST_VERSION = 2;
+const PERSIST_VERSION = 3;
 const PERSIST_DELAY_MS = 2_000;
 
 export interface IndexedArtifactVersion {
@@ -78,6 +103,16 @@ export interface IndexedFileOp {
   onActiveBranch: boolean;
 }
 
+/** A deliverable file path a user message or a reply named. Only the path is kept. */
+export interface IndexedMention {
+  /** As written; relative paths resolve against the session cwd. */
+  path: string;
+  by: "user" | "assistant";
+  entryId: string;
+  timestamp: string;
+  onActiveBranch: boolean;
+}
+
 interface Fingerprint {
   size: number;
   mtimeMs: number;
@@ -87,16 +122,22 @@ interface FileIndex {
   fp: Fingerprint;
   artifacts: IndexedArtifact[];
   files: IndexedFileOp[];
+  mentions: IndexedMention[];
 }
 
 export interface ParsedSession {
   artifacts: IndexedArtifact[];
   files: IndexedFileOp[];
+  mentions: IndexedMention[];
 }
 
 interface PersistState {
   /** null turns persistence off (tests). */
   path: string | null;
+  /** The user's file role overrides; null means none (tests). */
+  rolesPath: string | null;
+  /** The user's starred outputs; null means none (tests). */
+  favoritesPath: string | null;
   loaded: Promise<void> | null;
   dirty: boolean;
   timer: ReturnType<typeof setTimeout> | null;
@@ -114,7 +155,14 @@ function cache(): Map<string, FileIndex> {
 
 function persistState(): PersistState {
   if (!globalThis.__piWebArtifactIndexPersist) {
-    globalThis.__piWebArtifactIndexPersist = { path: join(getAgentDir(), "pi-web", "artifact-index.json"), loaded: null, dirty: false, timer: null };
+    globalThis.__piWebArtifactIndexPersist = {
+      path: join(getAgentDir(), "pi-web", "artifact-index.json"),
+      rolesPath: getFileRolesPath(),
+      favoritesPath: getFavoritesPath(),
+      loaded: null,
+      dirty: false,
+      timer: null,
+    };
   }
   return globalThis.__piWebArtifactIndexPersist;
 }
@@ -130,7 +178,7 @@ function loadPersisted(): Promise<void> {
         if (data.version !== PERSIST_VERSION || !data.files || typeof data.files !== "object") return;
         const map = cache();
         for (const [file, entry] of Object.entries(data.files as Record<string, FileIndex>)) {
-          if (!map.has(file) && entry?.fp && Array.isArray(entry.artifacts) && Array.isArray(entry.files)) map.set(file, entry);
+          if (!map.has(file) && entry?.fp && Array.isArray(entry.artifacts) && Array.isArray(entry.files) && Array.isArray(entry.mentions)) map.set(file, entry);
         }
       }).catch(() => undefined)
       : Promise.resolve();
@@ -169,6 +217,19 @@ function mentionsFileTool(text: string): boolean {
   return FILE_TOOL_MARKERS.some((marker) => text.includes(marker));
 }
 
+/** A user or assistant message line that may name a deliverable file. */
+function mayMentionFile(text: string): boolean {
+  return (text.includes('"role":"user"') || text.includes('"role":"assistant"')) && DELIVERABLE_MARKER_RE.test(text);
+}
+
+function messageTexts(content: unknown): string[] {
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((block) => (
+    block && typeof block === "object" && block.type === "text" && typeof block.text === "string" ? [block.text as string] : []
+  ));
+}
+
 /** Feeds a session file line by line; `finish()` returns its artifacts and file writes. */
 function createArtifactParser() {
   const parents = new Map<string, string | null>();
@@ -176,10 +237,12 @@ function createArtifactParser() {
   const found: FoundVersion[] = [];
   const calls = new Map<string, Omit<IndexedFileOp, "onActiveBranch">>();
   const succeeded = new Set<string>();
+  /** By `by` + path; a later mention replaces an earlier one. */
+  const mentions = new Map<string, Omit<IndexedMention, "onActiveBranch">>();
 
   const line = (text: string) => {
     if (!text.trim()) return;
-    if (!text.includes(MARKER) && !mentionsFileTool(text)) {
+    if (!text.includes(MARKER) && !mentionsFileTool(text) && !mayMentionFile(text)) {
       const prefix = ENTRY_PREFIX_RE.exec(text);
       if (prefix) {
         if (prefix[1] === "session") return;
@@ -208,7 +271,18 @@ function createArtifactParser() {
       }
       return;
     }
-    if (message?.role !== "assistant") return;
+    if (message?.role !== "assistant" && message?.role !== "user") return;
+    if (mayMentionFile(text)) {
+      const by = message.role;
+      for (const body of messageTexts(message.content)) {
+        for (const path of extractFileMentions(body)) {
+          const key = `${by}\0${path}`;
+          mentions.delete(key);
+          mentions.set(key, { path, by, entryId: entry.id, timestamp });
+        }
+      }
+    }
+    if (message.role !== "assistant") return;
     if (Array.isArray(message.content) && mentionsFileTool(text)) {
       for (const block of message.content) {
         if (!block || typeof block !== "object" || block.type !== "toolCall" || typeof block.id !== "string") continue;
@@ -219,14 +293,7 @@ function createArtifactParser() {
       }
     }
     if (!text.includes(MARKER)) return;
-    const texts = typeof message.content === "string"
-      ? [message.content]
-      : Array.isArray(message.content)
-        ? message.content.flatMap((block) => (
-          block && typeof block === "object" && block.type === "text" && typeof block.text === "string" ? [block.text as string] : []
-        ))
-        : [];
-    for (const body of texts) {
+    for (const body of messageTexts(message.content)) {
       if (!body.includes(MARKER)) continue;
       for (const segment of splitArtifacts(body)) {
         if (segment.kind !== "artifact") continue;
@@ -254,7 +321,9 @@ function createArtifactParser() {
     const files = [...calls.values()]
       .filter((call) => succeeded.has(call.toolCallId))
       .map((call) => ({ ...call, onActiveBranch: active.has(call.entryId) }));
-    return { artifacts: [...byIdentifier.values()], files };
+    const kept = [...mentions.values()].slice(-MAX_MENTIONS)
+      .map((mention) => ({ ...mention, onActiveBranch: active.has(mention.entryId) }));
+    return { artifacts: [...byIdentifier.values()], files, mentions: kept };
   };
 
   return { line, finish };
@@ -302,7 +371,7 @@ async function indexFile(path: string): Promise<FileIndex | null> {
       parsed = await parseLargeFile(path);
     } else {
       const bytes = await readFile(path);
-      parsed = FILE_MARKERS.some((marker) => bytes.includes(marker)) ? parseSession(bytes.toString("utf8")) : { artifacts: [], files: [] };
+      parsed = FILE_MARKERS.some((marker) => bytes.includes(marker)) ? parseSession(bytes.toString("utf8")) : { artifacts: [], files: [], mentions: [] };
     }
   } catch {
     return null;
@@ -358,6 +427,10 @@ interface OutputSource {
   workspaceKind?: SessionWorkspaceKind;
   /** Output of a scheduled task's run. */
   scheduled: boolean;
+  /** Starred by the user. */
+  favorite: boolean;
+  /** The newest entry that produced it on a branch its conversation shows; what "open the conversation" scrolls to. */
+  conversation?: { sessionId: string; entryId: string };
 }
 
 export interface ArtifactSummary extends OutputSource {
@@ -373,7 +446,10 @@ export interface ArtifactSummary extends OutputSource {
   snippet?: ArtifactSnippet;
 }
 
-/** A file the model wrote or edited, merged across every conversation that touched it. */
+/**
+ * A file the model wrote or edited, or a deliverable a reply named that was
+ * born during that conversation, merged across every conversation that touched it.
+ */
 export interface FileOutputSummary extends OutputSource {
   kind: "file";
   /** Absolute. */
@@ -381,13 +457,19 @@ export interface FileOutputSummary extends OutputSource {
   /** Relative to the project, else `~/…` under the home folder, else absolute. */
   displayPath: string;
   title: string;
-  /** Some call wrote the whole file; otherwise it was only edited. */
+  /** Some call wrote the whole file, or it only appeared (made by a command); otherwise it was only edited. */
   created: boolean;
-  /** Successful write/edit calls. */
+  /** Successful write/edit calls; 0 for a file only a reply named. */
   versionCount: number;
   updated: string;
-  /** Gone from disk (deleted or moved since). */
+  /** Gone from disk. Always false in the list, which leaves such files out; it can turn true while one is open. */
   missing: boolean;
+  /** An output the page shows by default, or a process file it files away. */
+  role: FileOutputRole;
+  /** Why it is an output, strongest first; empty for process files. */
+  reasons: FileOutputReason[];
+  /** Set when the user moved it by hand. */
+  override?: FileOutputRole;
 }
 
 export type OutputSummary = ArtifactSummary | FileOutputSummary;
@@ -415,6 +497,7 @@ function outputSource(session: SessionInfo): OutputSource {
     projectKey: session.projectKey,
     workspaceKind: session.workspaceKind,
     scheduled: session.relation?.kind === "scheduled",
+    favorite: false,
   };
 }
 
@@ -429,28 +512,148 @@ interface FileOutputOp extends IndexedFileOp {
   session: SessionInfo;
 }
 
+interface FileMention extends IndexedMention {
+  session: SessionInfo;
+}
+
+interface FileRecord {
+  ops: FileOutputOp[];
+  mentions: FileMention[];
+}
+
 /**
- * Every file's successful calls, by absolute path. A fork repeats its
- * source's calls under the same tool-call ids; each call counts once.
+ * Every file's successful calls and mentions, by absolute path, oldest first.
+ * A fork repeats its source's entries under the same ids; each counts once.
+ * Hidden files (credentials, dependency and git internals) never get a record.
  */
-function collectFileOps(sessions: readonly SessionInfo[], files: Map<string, FileIndex>): Map<string, FileOutputOp[]> {
-  const byPath = new Map<string, FileOutputOp[]>();
+function collectFileRecords(sessions: readonly SessionInfo[], files: Map<string, FileIndex>): Map<string, FileRecord> {
+  const byPath = new Map<string, FileRecord>();
+  const record = (path: string) => {
+    let found = byPath.get(path);
+    if (!found) {
+      found = { ops: [], mentions: [] };
+      byPath.set(path, found);
+    }
+    return found;
+  };
   const seen = new Set<string>();
   for (const session of sessions) {
-    for (const op of files.get(session.id)?.files ?? []) {
+    const file = files.get(session.id);
+    for (const op of file?.files ?? []) {
       if (seen.has(op.toolCallId)) continue;
       seen.add(op.toolCallId);
       const path = resolveFileOpPath(op.path, session.cwd);
-      let ops = byPath.get(path);
-      if (!ops) {
-        ops = [];
-        byPath.set(path, ops);
-      }
-      ops.push({ ...op, session });
+      if (!isHiddenOutputPath(path)) record(path).ops.push({ ...op, session });
+    }
+    for (const mention of file?.mentions ?? []) {
+      const path = resolveFileOpPath(mention.path, session.cwd);
+      const key = `${mention.by}\0${mention.entryId}\0${path}`;
+      if (seen.has(key) || isHiddenOutputPath(path)) continue;
+      seen.add(key);
+      record(path).mentions.push({ ...mention, session });
     }
   }
-  for (const ops of byPath.values()) ops.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  for (const found of byPath.values()) {
+    found.ops.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    found.mentions.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
   return byPath;
+}
+
+/** Memoised per listing: whether a folder sits inside a git work tree. */
+function createRepoCheck(): (path: string) => boolean {
+  const known = new Map<string, boolean>();
+  const check = (dir: string): boolean => {
+    const cached = known.get(dir);
+    if (cached !== undefined) return cached;
+    const parent = dirname(dir);
+    const result = existsSync(join(dir, ".git")) || (parent !== dir && check(parent));
+    known.set(dir, result);
+    return result;
+  };
+  return (path) => check(dirname(path));
+}
+
+/**
+ * A file no write or edit recorded counts only when it is a deliverable a
+ * reply named, still on disk, and born during a conversation that named it
+ * (so a reply explaining an existing document does not list it). Returns
+ * the reply that names it last, or null.
+ */
+async function bornWhileMentioned(path: string, mentions: readonly FileMention[]): Promise<FileMention | null> {
+  const replies = mentions.filter((mention) => mention.by === "assistant");
+  if (!replies.length || !isDeliverablePath(path)) return null;
+  let born: number;
+  try {
+    const stats = await stat(path);
+    if (!stats.isFile()) return null;
+    born = stats.birthtimeMs > 0 ? stats.birthtimeMs : stats.mtimeMs;
+  } catch {
+    return null;
+  }
+  for (let index = replies.length - 1; index >= 0; index--) {
+    const reply = replies[index];
+    const start = Date.parse(reply.session.created);
+    const named = Date.parse(reply.timestamp) || Date.parse(reply.session.modified);
+    if (born >= start - MENTION_BIRTH_SLACK_MS && born <= named + MENTION_BIRTH_SLACK_MS) return reply;
+  }
+  return null;
+}
+
+function conversationOf(session: SessionInfo, entries: readonly { entryId: string; onActiveBranch: boolean }[]): Pick<OutputSource, "conversation"> {
+  const shown = entries.findLast((entry) => entry.onActiveBranch);
+  return shown ? { conversation: { sessionId: session.id, entryId: shown.entryId } } : {};
+}
+
+/** The newest call (else reply naming the file) on a branch its conversation shows. */
+function newestOnActiveBranch(record: FileRecord): Pick<OutputSource, "conversation"> {
+  const op = record.ops.findLast((entry) => entry.onActiveBranch);
+  if (op) return { conversation: { sessionId: op.session.id, entryId: op.entryId } };
+  const mention = record.mentions.findLast((entry) => entry.by === "assistant" && entry.onActiveBranch);
+  return mention ? { conversation: { sessionId: mention.session.id, entryId: mention.entryId } } : {};
+}
+
+interface ClassifiedFile {
+  path: string;
+  record: FileRecord;
+  /** Whose conversation the row names: the latest call's, else the reply that named it. */
+  session: SessionInfo;
+  created: boolean;
+  updated: string;
+  role: FileOutputRole;
+  reasons: FileOutputReason[];
+  override?: FileOutputRole;
+}
+
+async function classifyFiles(
+  records: Map<string, FileRecord>,
+  overrides: Map<string, FileOutputRole>,
+  only?: string,
+): Promise<ClassifiedFile[]> {
+  const inRepo = createRepoCheck();
+  const home = userHome();
+  const entries = only ? [...records].filter(([path]) => path === only) : [...records];
+  const classified = await Promise.all(entries.map(async ([path, record]): Promise<ClassifiedFile | null> => {
+    const latestOp = record.ops.at(-1);
+    const namedBy = latestOp ? null : await bornWhileMentioned(path, record.mentions);
+    if (!latestOp && !namedBy) return null;
+    const session = latestOp?.session ?? namedBy!.session;
+    const created = !latestOp || record.ops.some((op) => op.tool === "write");
+    const override = overrides.get(path);
+    const { role, reasons } = classifyFileOutput({
+      path,
+      created,
+      userMentioned: record.mentions.some((mention) => mention.by === "user"),
+      assistantMentioned: record.mentions.some((mention) => mention.by === "assistant"),
+      inRepo: inRepo(path),
+      inDotFolder: isInDotFolder(path, session.cwd, home),
+      inAppOrTempFolder: isInAppOrTempFolder(path, home),
+      override,
+    });
+    const updated = (latestOp ? latestOp.timestamp : namedBy!.timestamp) || session.modified;
+    return { path, record, session, created, updated, role, reasons, ...(override ? { override } : {}) };
+  }));
+  return classified.filter((file): file is ClassifiedFile => file !== null);
 }
 
 function within(parent: string, path: string): string | null {
@@ -542,38 +745,52 @@ export async function listArtifacts(
         versionCount: artifact.versions.length,
         updated: latest.timestamp || session.modified,
         activeContent: artifactHasActiveContent(latest),
+        ...conversationOf(session, artifact.versions),
         ...matched,
       });
     }
   }
   // Files match on their path; their contents are not indexed.
-  for (const [path, ops] of collectFileOps(candidates, files)) {
-    if (needle && !path.toLowerCase().includes(needle)) continue;
-    const latest = ops.at(-1)!;
+  const records = collectFileRecords(candidates, files);
+  if (needle) {
+    for (const path of [...records.keys()]) if (!path.toLowerCase().includes(needle)) records.delete(path);
+  }
+  for (const file of await classifyFiles(records, readFileRoleOverrides(persistState().rolesPath))) {
     all.push({
-      ...outputSource(latest.session),
+      ...outputSource(file.session),
       kind: "file",
-      path,
-      displayPath: displayFilePath(path, latest.session.projectRoot ?? latest.session.cwd),
-      title: basename(path),
-      created: ops.some((op) => op.tool === "write"),
-      versionCount: ops.length,
-      updated: latest.timestamp || latest.session.modified,
+      path: file.path,
+      displayPath: displayFilePath(file.path, file.session.projectRoot ?? file.session.cwd),
+      title: basename(file.path),
+      created: file.created,
+      versionCount: file.record.ops.length,
+      updated: file.updated,
       missing: false,
+      role: file.role,
+      reasons: file.reasons,
+      ...(file.override ? { override: file.override } : {}),
+      ...newestOnActiveBranch(file.record),
     });
   }
-  all.sort((a, b) => b.updated.localeCompare(a.updated) || a.title.localeCompare(b.title));
-  const shown = all.slice(0, MAX_RESULTS);
-  await Promise.all(shown.map(async (item) => {
-    if (item.kind === "file") item.missing = await isMissing(item.path);
+  // A file gone from disk (deleted, or its folder moved) cannot be opened, so it is not listed.
+  const gone = new Set<OutputSummary>();
+  await Promise.all(all.map(async (item) => {
+    if (item.kind === "file" && await isMissing(item.path)) gone.add(item);
   }));
-  return { artifacts: shown, truncated: all.length > MAX_RESULTS };
+  const present = all.filter((item) => !gone.has(item));
+  const favorites = readFavorites(persistState().favoritesPath);
+  for (const item of present) {
+    item.favorite = favorites.has(favoriteKey(item.kind === "file" ? item : { kind: "artifact", sessionId: item.sessionId, identifier: item.identifier }));
+  }
+  present.sort((a, b) => b.updated.localeCompare(a.updated) || a.title.localeCompare(b.title));
+  return { artifacts: present.slice(0, MAX_RESULTS), truncated: present.length > MAX_RESULTS };
 }
 
 export interface FileOutputOpInfo {
   sessionId: string;
   sessionTitle: string;
-  tool: FileTool;
+  /** "mention": a reply named the file (listed when no write or edit was recorded). */
+  tool: FileTool | "mention";
   toolCallId: string;
   entryId: string;
   timestamp: string;
@@ -585,17 +802,22 @@ export interface FileOutputDetail {
   missing: boolean;
   /** Oldest first. */
   ops: FileOutputOpInfo[];
+  role: FileOutputRole;
+  reasons: FileOutputReason[];
+  override?: FileOutputRole;
 }
 
-/** Every recorded write/edit of one file, or null when no conversation touched it. */
+/**
+ * Every recorded write/edit of one file (or, for a file no call recorded,
+ * the replies that named it), or null when the page would not list it.
+ */
 export async function getFileOutput(sessions: readonly SessionInfo[], path: string): Promise<FileOutputDetail | null> {
   const candidates = sessions.filter((session) => session.relation?.kind !== "subagent");
-  const ops = collectFileOps(candidates, await indexSessions(candidates)).get(path);
-  if (!ops) return null;
-  return {
-    path,
-    missing: await isMissing(path),
-    ops: ops.map((op) => ({
+  const records = collectFileRecords(candidates, await indexSessions(candidates));
+  const [file] = await classifyFiles(records, readFileRoleOverrides(persistState().rolesPath), path);
+  if (!file) return null;
+  const ops: FileOutputOpInfo[] = file.record.ops.length
+    ? file.record.ops.map((op) => ({
       sessionId: op.session.id,
       sessionTitle: sessionTitle(op.session),
       tool: op.tool,
@@ -603,7 +825,23 @@ export async function getFileOutput(sessions: readonly SessionInfo[], path: stri
       entryId: op.entryId,
       timestamp: op.timestamp,
       onActiveBranch: op.onActiveBranch,
-    })),
+    }))
+    : file.record.mentions.filter((mention) => mention.by === "assistant").map((mention) => ({
+      sessionId: mention.session.id,
+      sessionTitle: sessionTitle(mention.session),
+      tool: "mention" as const,
+      toolCallId: `${mention.session.id}:${mention.entryId}`,
+      entryId: mention.entryId,
+      timestamp: mention.timestamp,
+      onActiveBranch: mention.onActiveBranch,
+    }));
+  return {
+    path,
+    missing: await isMissing(path),
+    ops,
+    role: file.role,
+    reasons: file.reasons,
+    ...(file.override ? { override: file.override } : {}),
   };
 }
 
@@ -647,11 +885,15 @@ export async function getArtifact(session: SessionInfo, identifier: string): Pro
 }
 
 /** Test hook. Persistence stays off unless a test passes a path. */
-export function resetArtifactIndexForTests(persistPath: string | null = null): void {
+export function resetArtifactIndexForTests(
+  persistPath: string | null = null,
+  rolesPath: string | null = null,
+  favoritesPath: string | null = null,
+): void {
   const timer = globalThis.__piWebArtifactIndexPersist?.timer;
   if (timer) clearTimeout(timer);
   globalThis.__piWebArtifactIndex = undefined;
-  globalThis.__piWebArtifactIndexPersist = { path: persistPath, loaded: null, dirty: false, timer: null };
+  globalThis.__piWebArtifactIndexPersist = { path: persistPath, rolesPath, favoritesPath, loaded: null, dirty: false, timer: null };
 }
 
 /** Test hook: writes a pending index file now. */

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFileContextMenu } from "@/hooks/useFileContextMenu";
 import { useI18n } from "@/hooks/useI18n";
-import { getFileName } from "@/lib/file-paths";
+import { encodeFilePathForApi, getFileName } from "@/lib/file-paths";
 import { setTurnFilePatch } from "@/lib/turn-file-patches";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { getFileIcon } from "./FileIcons";
@@ -27,15 +27,47 @@ function Chevron({ className }: { className?: string }) {
 }
 
 /**
+ * Paths of `filePaths` the files API reports as gone. A turn's written files
+ * are history: a later command (a skill's render step cleaning its draft, a
+ * `git checkout`) can remove one, and the row should say so before it is
+ * clicked. Only a 404 counts; any other answer leaves the row as it was.
+ */
+function useMissingFiles(filePaths: string[], sessionId?: string): Set<string> {
+  const [missing, setMissing] = useState<Set<string>>(() => new Set());
+  const key = filePaths.join("\n");
+  useEffect(() => {
+    if (!key) return;
+    const controller = new AbortController();
+    Promise.all(key.split("\n").map(async (filePath) => {
+      const params = new URLSearchParams({ type: "meta" });
+      if (sessionId) params.set("sessionId", sessionId);
+      try {
+        const response = await fetch(`/api/files/${encodeFilePathForApi(filePath)}?${params}`, { signal: controller.signal });
+        return response.status === 404 ? filePath : null;
+      } catch {
+        return null;
+      }
+    })).then((results) => {
+      if (controller.signal.aborted) return;
+      setMissing(new Set(results.filter((filePath): filePath is string => filePath !== null)));
+    });
+    return () => controller.abort();
+  }, [key, sessionId]);
+  return missing;
+}
+
+/**
  * Card under a turn's reply listing the files it actually wrote, with the
  * lines each one gained and lost. A row opens the file in the preview pane;
  * right-click offers the native Open / Open With / Reveal menu. Entries come
  * from the turn's successful `write`/`edit`/`apply_patch` tool calls — the
- * reply text is never scanned for paths.
+ * reply text is never scanned for paths. Rows whose file has since been
+ * removed are marked; clicking one still opens the viewer, which explains it.
  */
-export function TurnWrittenFiles({ files, onOpenFile }: {
+export function TurnWrittenFiles({ files, onOpenFile, sessionId }: {
   files: WrittenFile[];
   onOpenFile?: (filePath: string) => void;
+  sessionId?: string;
 }) {
   const { t } = useI18n();
   // Hand the turn's own edit diff to the viewer before opening, so its Diff
@@ -47,6 +79,7 @@ export function TurnWrittenFiles({ files, onOpenFile }: {
   };
   const showFileMenu = useFileContextMenu(onOpenFile ? openFile : undefined);
   const [expanded, setExpanded] = useState(true);
+  const missing = useMissingFiles(files.map((file) => file.filePath), sessionId);
   if (files.length === 0) return null;
 
   const counted = files.filter((file) => file.added !== undefined || file.removed !== undefined);
@@ -73,18 +106,20 @@ export function TurnWrittenFiles({ files, onOpenFile }: {
       </button>
       {expanded && files.map(({ filePath, added, removed }) => {
         const name = getFileName(filePath);
+        const isMissing = missing.has(filePath);
         return (
           <button
             key={filePath}
             type="button"
-            className="turn-files-row"
-            title={filePath}
+            className={`turn-files-row${isMissing ? " is-missing" : ""}`}
+            title={isMissing ? `${filePath}\n${t("files.notFound")}` : filePath}
             aria-label={t("chat.openWrittenFile", { name })}
             onClick={() => openFile(filePath)}
             onContextMenu={(event) => showFileMenu(event, { filePath })}
           >
             <span className="turn-files-icon">{getFileIcon(name, 14)}</span>
             <span className="turn-files-name">{name}</span>
+            {isMissing && <span className="turn-files-missing">{t("chat.writtenFileMissing")}</span>}
             <LineStats added={added} removed={removed} />
             <Chevron className="turn-files-row-chevron" />
           </button>

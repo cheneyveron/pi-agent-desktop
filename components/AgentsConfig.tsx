@@ -68,10 +68,10 @@ const inputStyle: CSSProperties = {
   height: 34,
   padding: "0 9px",
   border: "var(--hairline) solid var(--border)",
-  borderRadius: 5,
+  borderRadius: "var(--radius-sm)",
   background: "var(--bg)",
   color: "var(--text)",
-  fontSize: 12,
+  fontSize: "var(--fs-caption)",
   outline: "none",
 };
 
@@ -139,7 +139,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: (checked: boolean) => void }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 7, color: disabled ? "var(--text-dim)" : "var(--text-muted)", fontSize: 12, cursor: disabled ? "default" : "pointer" }}>
+    <label style={{ display: "flex", alignItems: "center", gap: 7, color: disabled ? "var(--text-dim)" : "var(--text-muted)", fontSize: "var(--fs-caption)", cursor: disabled ? "default" : "pointer" }}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
@@ -507,7 +507,7 @@ export function AgentsConfig({
         <ConfigSidebar>
           <ConfigSidebarList>
               {loading ? (
-                <div style={{ padding: 10, color: "var(--text-dim)", fontSize: 12 }}>{t("agents.loading")}</div>
+                <div style={{ padding: 10, color: "var(--text-dim)", fontSize: "var(--fs-caption)" }}>{t("agents.loading")}</div>
               ) : (["project", "global", "workspace", "builtin"] as const).map((scope) => {
                 const scopedProfiles = profiles.filter((profile) => profile.scope === scope);
                 if (scopedProfiles.length === 0) return null;
@@ -592,7 +592,7 @@ export function AgentsConfig({
                       {creating ? (
                         <input aria-label={t("agents.name")} value={draft.name} disabled={disabled} onChange={(event) => update("name", event.target.value)} style={inputStyle} />
                       ) : (
-                        <code style={{ minHeight: 34, display: "flex", alignItems: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: 12 }}>
+                        <code style={{ minHeight: 34, display: "flex", alignItems: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: "var(--fs-caption)" }}>
                           {draft.name}
                         </code>
                       )}
@@ -638,7 +638,7 @@ export function AgentsConfig({
                           variant="field"
                           placement="auto"
                         />
-                        {modelsError && <span style={{ color: "#ef4444", fontSize: 10 }}>{modelsError}</span>}
+                        {modelsError && <span style={{ color: "var(--danger)", fontSize: "var(--fs-micro)" }}>{modelsError}</span>}
                       </div>
                     </Field>
                     <Field label={t("agents.thinking")}>
@@ -659,7 +659,7 @@ export function AgentsConfig({
           </ConfigDetailStack>
         </ConfigDetail>
       </ConfigSplitView>
-      <ConfigFooter status={(settingsError || error) && <span role="alert" style={{ color: "#ef4444" }}>{settingsError || error}</span>}>
+      <ConfigFooter status={(settingsError || error) && <span role="alert" style={{ color: "var(--danger)" }}>{settingsError || error}</span>}>
         {editing && (
           <ConfigButton
             variant="primary"
@@ -668,7 +668,7 @@ export function AgentsConfig({
             className={savedOk ? "is-success" : undefined}
           >
             {savedOk && (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="config-button-success-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="config-button-success-icon">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             )}

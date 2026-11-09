@@ -44,12 +44,24 @@ test("streams running sessions and reconnects after visibility or network change
   assert.match(source, /source\?\.close\(\)/);
 });
 
-test("re-adding a removed project clears only its sidebar marker", () => {
-  assert.match(source, /const activateProject = useCallback\(\(cwd: string\) =>/);
-  assert.match(source, /if \(!previous\.has\(projectRoot\)\) return previous;/);
-  assert.match(source, /next\.delete\(projectRoot\);/);
+test("re-adding an archived project restores it to the list", () => {
+  assert.match(source, /const activateProject = useCallback\(\(cwd: string\) => \{\s*restoreProjectRoot\(projectRootFor\(cwd\) \?\? cwd\);/);
   // Web project selection uses DirectoryPicker directly (declined upstream ProjectPicker flow).
   assert.match(source, /activateProject\(await validateProjectDirectory\(path\)\);/);
+});
+
+test("archived projects sit in a folded Archive group and need a restore before a new session", () => {
+  // New session in an archived project is refused, never a silent restore.
+  assert.match(source, /if \(archivedProjectRoots\.has\(projectRoot\)\) \{\s*appNotify\.info\([^;]*sidebar\.projectArchivedNewSession[\s\S]*?return;/);
+  // The archived row has no "+" and opens the restore menu, from "…" or a right-click.
+  assert.match(source, /\{!archived && \(\s*<button[\s\S]*?handleNewSession\(group\.projectRoot\)/);
+  assert.match(source, /onContextMenu=\{\(e\) => openProjectMenu\(e, group\.projectRoot, archived\)\}/);
+  assert.match(source, /onRestore=\{\(\) => restoreProject\(projectMenu\.root\)\}/);
+  // The group sits after the project list and unfolds for a search.
+  assert.match(source, /activeProjects\.map\(\(group\) => renderProjectGroup\(group\)\)\}\s*\{archivedProjects\.length > 0 && \(\s*<ArchivedProjectsSection/);
+  assert.match(source, /const archiveShown = archiveExpanded \|\| Boolean\(trimmedSessionQuery\)/);
+  // Unfolding an archived project must not select it (that opens a composer there).
+  assert.match(source, /if \(archived\) \{\s*setExpandedArchivedProjects\(\(prev\) => toggleId\(prev, group\.projectRoot\)\);\s*return;\s*\}/);
 });
 
 test("exposes the polled running-session set to the shell", () => {
@@ -156,19 +168,30 @@ test("Chats show five families at a time even when there are no projects", () =>
   // available when `activeProjects` is empty.
   assert.match(
     source,
-    /sidebar-chats-header[\s\S]*?\{allProjects\.length === 0 \? \(/,
+    /sidebar-chats-header[\s\S]*?\{activeProjects\.length === 0 && !\(trimmedSessionQuery && archivedProjects\.length > 0\) \? \(/,
   );
 });
 
 test("Chats fold like a project and unfold back to the first five", () => {
   // Folding drops the extra pages so the next unfold starts at five again.
-  assert.match(source, /const setChatsFolded = \(folded: boolean\) => \{\s*setChatsCollapsed\(folded\);\s*if \(folded\) setChatSessionPages\(0\);/);
+  assert.match(source, /const setChatsFolded = \(folded: boolean\) => \{\s*writeChatsCollapsed\(folded\);\s*if \(folded\) setChatSessionPages\(0\);/);
   // A search lists every match regardless of the fold.
   assert.match(source, /const chatsFolded = !trimmedSessionQuery && chatsCollapsed/);
   assert.match(source, /\{!chatsFolded && \(\s*<div className="sidebar-project-tree-children sidebar-chats-list">/);
   // The fold and the page count survive a reload.
   assert.match(source, /APP_PREF_KEYS\.collapsedChats/);
   assert.match(source, /APP_PREF_KEYS\.chatSessionPages/);
+});
+
+test("the Chats fold hydrates with the server value before reading localStorage", () => {
+  // Reading the pref in a useState initializer rendered the header collapsed on
+  // the client but expanded on the server, a hydration mismatch.
+  assert.doesNotMatch(source, /useState\(\(\) => getPref\(APP_PREF_KEYS\.collapsedChats\)/);
+  assert.match(source, /const chatsCollapsed = useSyncExternalStore\(subscribeChatsCollapsed, readChatsCollapsed, serverChatsCollapsed\)/);
+  assert.match(source, /const serverChatsCollapsed = \(\) => false;/);
+  // The pref is written by the setter, never by an effect that could store the
+  // server value over the saved one on the first commit.
+  assert.doesNotMatch(source, /if \(chatsCollapsed\) setPref\(APP_PREF_KEYS\.collapsedChats/);
 });
 
 test("the Chats header shows its menu and add buttons only on hover, like Projects", () => {
@@ -198,7 +221,21 @@ test("chats can be archived, ordered by recency with no date groups", () => {
   assert.match(source, /APP_PREF_KEYS\.archivedChats/);
   // Row menu: only chat rows (depth 0) get the action, in both the native and DOM menus.
   assert.match(source, /chatActions=\{depth === 0 \? chatActions : undefined\}/);
-  assert.match(source, /t\(chatActions\.archived \? "sidebar\.unarchiveChat" : "sidebar\.archiveChat"\)/);
+  // Archive is shared with project sessions: chats bring it with their actions.
+  assert.match(source, /const archive: SessionArchiveActions \| undefined = chatActions \?\? archiveActions;/);
+  assert.match(source, /t\(archive\.archived \? "sidebar\.unarchiveChat" : "sidebar\.archiveChat"\)/);
+});
+
+test("project sessions can be archived one by one (#200)", () => {
+  assert.match(source, /APP_PREF_KEYS\.archivedSessions/);
+  // Only top-level rows get the action, in the project tree and the chronological view.
+  assert.match(source, /archiveActions=\{depth === 0 \? archiveActions : undefined\}/);
+  assert.match(source, /archiveActions=\{sessionArchiveActions\(node\.session\.id\)\}/);
+  assert.match(source, /archiveActions=\{sessionArchiveActions\(family\.root\.id\)\}/);
+  // Archived roots leave the list for a per-project fold; a search lists them in place.
+  assert.match(source, /const archivedGroupTree = trimmedSessionQuery\s*\? \[\]\s*: fullGroupTree\.filter\(\(node\) => archivedSessions\.has\(node\.session\.id\)\)/);
+  assert.match(source, /trimmedSessionQuery \|\| !archivedSessions\.has\(family\.root\.id\)/);
+  assert.match(source, /setProjectsShowingArchived\(\(current\) => toggleId\(current, group\.projectRoot\)\)/);
 });
 
 test("sessions can be pinned to a Pinned section above every group, like Claude Desktop", () => {
@@ -219,7 +256,7 @@ test("sessions can be pinned to a Pinned section above every group, like Claude 
   assert.match(source, /rest: unpinnedSessionFamilies \} = splitPinnedFamilies\(sessionFamilies, pinnedSessionIds\)/);
   assert.match(source, /\? unpinnedSessionFamilies\.filter\(/);
   assert.match(source, /group\.sessions\.filter\(\(session\) => !pinnedSessionKeys\.has\(session\.id\)\)/);
-  assert.match(source, /const groupTree = buildSessionTree\(groupSessions\)/);
+  assert.match(source, /const fullGroupTree = buildSessionTree\(groupSessions\)/);
   // Every pinned row says where it came from.
   assert.match(source, /if \(isChat\) return renderChatFamily\(family, t\("sidebar\.chats"\)\)/);
   // Row menu: root rows of every section get Pin / Unpin (native and DOM), never subagents.

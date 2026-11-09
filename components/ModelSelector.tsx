@@ -125,11 +125,11 @@ export function ModelSelector({
         padding: "0 9px",
         overflow: "hidden",
         border: "var(--hairline) solid var(--border)",
-        borderRadius: 5,
+        borderRadius: "var(--radius-sm)",
         background: locked ? "var(--bg-panel)" : "var(--bg)",
         color: locked ? "var(--text-dim)" : "var(--text)",
         cursor: locked ? "default" : "pointer",
-        fontSize: 12,
+        fontSize: "var(--fs-caption)",
         textAlign: "left",
       }
     : {
@@ -143,13 +143,13 @@ export function ModelSelector({
         padding: isMobile ? "8px 10px" : "8px 12px",
         overflow: "hidden",
         border: "none",
-        borderRadius: 9,
+        borderRadius: "var(--radius-md)",
         background: open ? "var(--bg-hover)" : "none",
         color: "var(--text-muted)",
         cursor: locked ? "not-allowed" : "pointer",
-        fontSize: 12,
+        fontSize: "var(--fs-caption)",
         opacity: locked ? 0.5 : 1,
-        transition: "background 0.12s, color 0.12s",
+        transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
       };
 
   const choose = (option: ModelSelectorOption) => {
@@ -209,7 +209,7 @@ export function ModelSelector({
         }}
       >
         {busy ? (
-          <svg width={chipIconSize} height={chipIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }} aria-hidden="true">
+          <svg width={chipIconSize} height={chipIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }} aria-hidden="true">
             <path d="M21 12a9 9 0 1 1-2.64-6.36" />
           </svg>
         ) : (
@@ -260,9 +260,9 @@ export function ModelSelector({
               maxHeight,
               overflow: "hidden",
               border: "var(--hairline) solid var(--border)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               background: "var(--bg)",
-              boxShadow: openAbove ? "0 -4px 16px rgba(0,0,0,0.10)" : "0 4px 16px rgba(0,0,0,0.10)",
+              boxShadow: "var(--shadow-popover)",
             }}
           >
             {showFilter && (
@@ -284,12 +284,12 @@ export function ModelSelector({
                     minWidth: isMobile ? 0 : 220,
                     padding: "5px 8px",
                     border: "var(--hairline) solid var(--border)",
-                    borderRadius: 5,
+                    borderRadius: "var(--radius-sm)",
                     outline: "none",
                     background: "var(--bg)",
                     color: "var(--text)",
                     fontFamily: "var(--font-mono)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-micro)",
                   }}
                 />
               </div>
@@ -305,13 +305,13 @@ export function ModelSelector({
                 </SelectorRow>
               )}
               {modelsByProvider.length === 0 ? (
-                <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: 12, whiteSpace: "nowrap" }}>
+                <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--fs-caption)", whiteSpace: "nowrap" }}>
                   {filter.trim() ? t("chat.noMatchingModels") : "No available models"}
                 </div>
               ) : modelsByProvider.map((group, index) => (
                 <div key={group.provider}>
                   {modelsByProvider.length > 1 && (
-                    <div style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: 10, fontWeight: 600, letterSpacing: 0, textTransform: "uppercase" }}>
+                    <div style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: "var(--fs-micro)", fontWeight: "var(--fw-semibold)", letterSpacing: 0, textTransform: "uppercase" }}>
                       {group.provider}
                     </div>
                   )}

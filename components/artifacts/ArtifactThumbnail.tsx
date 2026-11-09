@@ -265,6 +265,24 @@ function itemKey(item: OutputSummary): string {
   return `${id}\u0000${item.versionCount}\u0000${item.updated}`;
 }
 
+type Tone = "web" | "doc" | "code" | "config" | "image" | "data";
+const EXTENSION_TONES: Record<string, Tone> = {
+  html: "web", htm: "web", css: "web", jsx: "web", tsx: "web", vue: "web", svelte: "web",
+  md: "doc", mdx: "doc", txt: "doc", pdf: "doc", doc: "doc", docx: "doc", rtf: "doc",
+  json: "config", yaml: "config", yml: "config", toml: "config", ini: "config", conf: "config", env: "config", plist: "config", xml: "config",
+  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", svg: "image", ico: "image",
+  csv: "data", tsv: "data", xlsx: "data", xls: "data", sql: "data", db: "data", parquet: "data",
+};
+const ARTIFACT_TONES: Record<string, Tone> = { html: "web", react: "web", svg: "image", mermaid: "image", markdown: "doc", code: "code" };
+
+/** A hue family for the icon fallback, so a list of unrendered rows is not one grey column. */
+function itemTone(item: OutputSummary): Tone {
+  if (item.kind !== "file") return ARTIFACT_TONES[item.type] ?? "code";
+  const ext = item.title.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  if (!ext) return item.title.startsWith(".") ? "config" : "code";
+  return EXTENSION_TONES[ext] ?? "code";
+}
+
 export function ArtifactThumbnail({ item, scrollRoot }: Props) {
   const kind = rowKind(item);
   const ref = useRef<HTMLSpanElement>(null);
@@ -315,7 +333,7 @@ export function ArtifactThumbnail({ item, scrollRoot }: Props) {
   }
 
   return (
-    <span ref={ref} className={`artifacts-thumb${value ? " is-filled" : ""}`} aria-hidden="true">
+    <span ref={ref} className={`artifacts-thumb${value ? " is-filled" : ""}`} data-tone={itemTone(item)} aria-hidden="true">
       {body}
     </span>
   );

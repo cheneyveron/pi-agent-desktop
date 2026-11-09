@@ -32,16 +32,16 @@ function formatRelativeTime(value: string, locale: string): string {
 
 function statusColor(status: SubagentSessionStatus): string {
   if (status === "running" || status === "starting") return "var(--accent)";
-  if (status === "completed") return "#16a34a";
-  if (status === "failed") return "#dc2626";
-  if (status === "aborted") return "#d97706";
+  if (status === "completed") return "var(--success)";
+  if (status === "failed") return "var(--danger)";
+  if (status === "aborted") return "var(--warning)";
   return "var(--text-dim)";
 }
 
 function StatusIcon({ status }: { status: SubagentSessionStatus }) {
   if (status === "running" || status === "starting") {
     return (
-      <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
         <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       </svg>
@@ -49,20 +49,20 @@ function StatusIcon({ status }: { status: SubagentSessionStatus }) {
   }
   if (status === "failed") {
     return (
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9" /><path d="m9 9 6 6M15 9l-6 6" />
       </svg>
     );
   }
   if (status === "aborted" || status === "interrupted") {
     return (
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9" /><path d="M9 9h6v6H9z" />
       </svg>
     );
   }
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" />
     </svg>
   );
@@ -70,7 +70,7 @@ function StatusIcon({ status }: { status: SubagentSessionStatus }) {
 
 function StopIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+    <svg width="12" height="12" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
       <rect x="2" y="2" width="6" height="6" rx="1" />
     </svg>
   );
@@ -149,24 +149,24 @@ function AgentRow({
     >
       <span style={{ width: 28, height: 28, display: "grid", placeItems: "center", color: main ? "var(--text-muted)" : "var(--accent)" }}>
         {main ? (
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" />
           </svg>
         ) : (
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
           </svg>
         )}
       </span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: selected ? 600 : 500 }} title={primary}>
+        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--fs-caption)", fontWeight: selected ? 600 : 500 }} title={primary}>
           {primary}
         </span>
-        <span style={{ display: "block", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 11 }} title={secondary}>
+        <span style={{ display: "block", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--fs-micro)" }} title={secondary}>
           {secondary}
         </span>
       </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, color: main && !running ? "var(--text-dim)" : statusColor(status), fontSize: 11, whiteSpace: "nowrap" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: 6, color: main && !running ? "var(--text-dim)" : statusColor(status), fontSize: "var(--fs-micro)", whiteSpace: "nowrap" }}>
         {main && !running ? (
           selected ? t("agentSwitcher.current") : null
         ) : (
@@ -186,7 +186,7 @@ function AgentRow({
                 event.stopPropagation();
                 onSteer();
               }}
-              style={{ display: "inline-grid", placeItems: "center", width: 22, height: 22, border: "var(--hairline) solid var(--border)", borderRadius: 5, background: "var(--bg)", color: "var(--text-muted)", cursor: actionPending ? "default" : "pointer", padding: 0 }}
+              style={{ display: "inline-grid", placeItems: "center", width: 22, height: 22, border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg)", color: "var(--text-muted)", cursor: actionPending ? "default" : "pointer", padding: 0 }}
             >
               <SteerIcon />
             </button>
@@ -199,7 +199,7 @@ function AgentRow({
                 event.stopPropagation();
                 onStop();
               }}
-              style={{ display: "inline-grid", placeItems: "center", width: 22, height: 22, border: "var(--hairline) solid rgba(239,68,68,0.4)", borderRadius: 5, background: "var(--bg)", color: "#ef4444", cursor: actionPending ? "default" : "pointer", padding: 0 }}
+              style={{ display: "inline-grid", placeItems: "center", width: 22, height: 22, border: "var(--hairline) solid color-mix(in srgb, var(--danger) 40%, transparent)", borderRadius: "var(--radius-sm)", background: "var(--bg)", color: "var(--danger)", cursor: actionPending ? "default" : "pointer", padding: 0 }}
             >
               <StopIcon />
             </button>
@@ -275,25 +275,25 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
         borderLeft: "var(--hairline) solid var(--border)",
         borderRight: "var(--hairline) solid var(--border)",
         borderBottom: "var(--hairline) solid var(--border)",
-        borderRadius: "0 0 6px 6px",
-        boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
+        borderRadius: "0 0 var(--radius-sm) var(--radius-sm)",
+        boxShadow: "var(--shadow-popover)",
         overflow: "hidden",
       }}
     >
       <div>
         <div style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "var(--hairline) solid var(--border)" }}>
-          <strong style={{ fontSize: 12, fontWeight: 600 }}>{t("agentSwitcher.title")}</strong>
-          <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+          <strong style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--fw-semibold)" }}>{t("agentSwitcher.title")}</strong>
+          <span style={{ color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>
             {t("agentSwitcher.count", { count: subagents.length })}
           </span>
           {runningCount > 0 && (
-            <span style={{ marginLeft: "auto", color: "var(--accent)", fontSize: 11 }}>
+            <span style={{ marginLeft: "auto", color: "var(--accent)", fontSize: "var(--fs-micro)" }}>
               {t("agentSwitcher.runningCount", { count: runningCount })}
             </span>
           )}
         </div>
         {controlError && (
-          <div role="alert" style={{ padding: "6px 12px", background: "rgba(239,68,68,0.07)", color: "#ef4444", fontSize: 11, borderBottom: "var(--hairline) solid var(--border)" }}>
+          <div role="alert" style={{ padding: "6px 12px", background: "color-mix(in srgb, var(--danger) 7%, transparent)", color: "var(--danger)", fontSize: "var(--fs-micro)", borderBottom: "var(--hairline) solid var(--border)" }}>
             {controlError}
           </div>
         )}
@@ -307,8 +307,8 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
               aria-label={t("agentSwitcher.search")}
               style={{
                 width: "100%", height: 32, padding: "0 10px",
-                border: "var(--hairline) solid var(--border)", borderRadius: 6,
-                background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none",
+                border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
+                background: "var(--bg)", color: "var(--text)", fontSize: "var(--fs-caption)", outline: "none",
               }}
             />
           </div>
@@ -361,13 +361,13 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
                     }}
                     placeholder={t("agentSwitcher.steerPlaceholder")}
                     aria-label={t("agentSwitcher.steer")}
-                    style={{ flex: 1, minWidth: 0, height: 30, padding: "0 10px", border: "var(--hairline) solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none" }}
+                    style={{ flex: 1, minWidth: 0, height: 30, padding: "0 10px", border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg)", color: "var(--text)", fontSize: "var(--fs-caption)", outline: "none" }}
                   />
                   <button
                     type="button"
                     disabled={!steerDraft.trim() || actionPendingId === session.id}
                     onClick={() => void submitSteer(session.id)}
-                    style={{ height: 30, padding: "0 12px", border: "none", borderRadius: 6, background: "var(--accent)", color: "var(--accent-contrast)", fontSize: 12, cursor: !steerDraft.trim() || actionPendingId === session.id ? "default" : "pointer" }}
+                    style={{ height: 30, padding: "0 12px", border: "none", borderRadius: "var(--radius-sm)", background: "var(--accent)", color: "var(--accent-contrast)", fontSize: "var(--fs-caption)", cursor: !steerDraft.trim() || actionPendingId === session.id ? "default" : "pointer" }}
                   >
                     {t("agentSwitcher.steerSend")}
                   </button>
@@ -376,7 +376,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
             </div>
           ))}
           {visibleSubagents.length === 0 && (
-            <div style={{ padding: "22px 12px", color: "var(--text-dim)", fontSize: 12, textAlign: "center" }}>
+            <div style={{ padding: "22px 12px", color: "var(--text-dim)", fontSize: "var(--fs-caption)", textAlign: "center" }}>
               {subagents.length === 0 ? t("agentSwitcher.none") : t("agentSwitcher.noMatches")}
             </div>
           )}

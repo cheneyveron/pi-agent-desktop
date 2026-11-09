@@ -14,7 +14,10 @@ export const APP_PREF_KEYS = {
   sidebarWidth: "pi-sidebar-width",
   rightPanelWidth: "pi-right-panel-width",
   unreadSessionIds: "pi-web:unread-session-ids",
+  /** Project roots moved to the sidebar's Archive group (see lib/archived-projects.ts). */
   archivedProjects: "pi-web:archived-projects",
+  /** "1" while the sidebar Archive group is unfolded; folded by default. */
+  archiveExpanded: "pi-web:archive-expanded",
   /** Sidebar Projects pane layout: grouped project tree or chronological sessions. */
   projectViewMode: "pi-web:project-view-mode",
   /** Project roots whose session list is folded in the sidebar tree. */
@@ -33,6 +36,8 @@ export const APP_PREF_KEYS = {
   collapsedPinned: "pi-web:collapsed-pinned",
   /** Chat session ids hidden from the Chats section until "Show archived". */
   archivedChats: "pi-web:archived-chats",
+  /** Project session ids hidden from their project until "Show archived" (#200). */
+  archivedSessions: "pi-web:archived-sessions",
   updateSnooze: "pi-web:update-snooze",
   closeQuits: "pi-desktop-close-quits",
   notifyOnComplete: "pi-desktop-notify-on-complete",

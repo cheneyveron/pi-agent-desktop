@@ -34,7 +34,7 @@ export function AppSelect({ value, onValueChange, options, name, placeholder, cl
       <Select.Trigger {...props} disabled={disabled} className={["app-select-trigger", className].filter(Boolean).join(" ")}>
         <Select.Value>{selected?.label ?? placeholder ?? value}</Select.Value>
         <Select.Icon className="app-select-chevron">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </Select.Icon>
       </Select.Trigger>
       <Select.Portal>

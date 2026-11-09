@@ -804,7 +804,8 @@ test("sizes the floating-composer spacer without a React render", () => {
   assert.doesNotMatch(chatWindowSource, /bottomComposer(?:Ref|Height|ScrollFrameRef)/);
   assert.match(chatWindowSource, /spacer\.style\.height = `\$\{next\}px`/);
   assert.match(chatWindowSource, /if \(atBottom\) container\.scrollTop = container\.scrollHeight/);
-  assert.match(chatWindowSource, /className=\{isEmptyNew \? "relative shrink-0" : "absolute inset-x-0 z-20"\}/);
+  // chat-composer-overlay only carries the fade above the composer; the positioning classes are what matter.
+  assert.match(chatWindowSource, /className=\{isEmptyNew \? "relative shrink-0" : "chat-composer-overlay absolute inset-x-0 z-20"\}/);
 });
 
 test("keeps a detached viewport in place when streaming completes", () => {

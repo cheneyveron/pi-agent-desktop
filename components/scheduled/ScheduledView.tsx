@@ -67,18 +67,30 @@ export function ScheduledView({ projectRoots, defaultCwd, onBrowseFolder, onOpen
   };
   const ownerTakeoverReady = Boolean(schedulerOwnerInfo && (!schedulerOwnerInfo.fresh || !schedulerOwnerInfo.alive));
   const ownerPanel = schedulerOwner === false && (
+    // One quiet line; the process details are for troubleshooting, so they sit
+    // behind a disclosure instead of taking half the page.
     <div className="scheduled-notice scheduled-owner-notice" role="status">
-      <p>{t("scheduled.ownerNotice")}</p>
-      {schedulerOwnerInfo && (
-        <p className="scheduled-mono">
-          {t("scheduled.ownerDetails", {
-            pid: schedulerOwnerInfo.pid,
-            heartbeat: formatRelativeTime(schedulerOwnerInfo.heartbeatAt, locale),
-            started: formatDateTime(schedulerOwnerInfo.startedAt, locale),
-          })}
-        </p>
-      )}
-      <p>{t(ownerTakeoverReady ? "scheduled.ownerTakeoverReady" : "scheduled.ownerTakeoverHint")}</p>
+      <div className="scheduled-owner-summary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8h.01M11 12h1v4h1" />
+        </svg>
+        <span>{t("scheduled.ownerNoticeShort")}</span>
+      </div>
+      <details className="scheduled-owner-details">
+        <summary>{t("scheduled.ownerDetailsToggle")}</summary>
+        <p>{t("scheduled.ownerNotice")}</p>
+        {schedulerOwnerInfo && (
+          <p className="scheduled-mono">
+            {t("scheduled.ownerDetails", {
+              pid: schedulerOwnerInfo.pid,
+              heartbeat: formatRelativeTime(schedulerOwnerInfo.heartbeatAt, locale),
+              started: formatDateTime(schedulerOwnerInfo.startedAt, locale),
+            })}
+          </p>
+        )}
+        <p>{t(ownerTakeoverReady ? "scheduled.ownerTakeoverReady" : "scheduled.ownerTakeoverHint")}</p>
+      </details>
       <div className="scheduled-owner-actions">
         <button
           type="button"

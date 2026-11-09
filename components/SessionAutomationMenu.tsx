@@ -39,14 +39,14 @@ export function SessionAutomationMenu({
           height: 32,
           padding: 0,
           background: open ? "var(--bg-hover)" : "none",
-          border: "none", borderRadius: 9,
-          color: "var(--text-muted)", cursor: "pointer", fontSize: 12,
-          transition: "background 0.12s, color 0.12s",
+          border: "none", borderRadius: "var(--radius-md)",
+          color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--fs-caption)",
+          transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
         }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {/* Not a gear: the sidebar gear opens app Settings, this opens per-session automation. */}
+          <path d="M13 2 4.5 13.5H12L11 22l8.5-11.5H12L13 2Z" />
         </svg>
       </button>
       {open && (
@@ -55,7 +55,7 @@ export function SessionAutomationMenu({
           bottom: "calc(100% + 6px)",
           ...(alignLeft ? { left: 0 } : { right: 0 }),
           zIndex: 100, background: "var(--bg)", border: "var(--hairline) solid var(--border)",
-          borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
+          borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-popover)",
           padding: "6px 0", minWidth: 230,
         }}>
           {onCompact && (
@@ -69,7 +69,7 @@ export function SessionAutomationMenu({
                   onCompact();
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
                   <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
                 </svg>
@@ -82,7 +82,7 @@ export function SessionAutomationMenu({
           )}
           {onSetAutomation && automation && (<>
           {automation.autoCompactionEnabled !== null && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: "var(--fs-caption)", cursor: "pointer" }}>
               <input
                 type="checkbox"
                 checked={automation.autoCompactionEnabled}
@@ -92,7 +92,7 @@ export function SessionAutomationMenu({
             </label>
           )}
           {automation.autoRetryEnabled !== null && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: "var(--fs-caption)", cursor: "pointer" }}>
               <input
                 type="checkbox"
                 checked={automation.autoRetryEnabled}
@@ -103,7 +103,7 @@ export function SessionAutomationMenu({
           )}
           {automation.steeringMode !== null && (
             <div style={{ padding: "6px 12px", borderTop: "var(--hairline) solid var(--border)", marginTop: 4, paddingTop: 10 }}>
-              <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.steeringMode")}</div>
+              <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.steeringMode")}</div>
               <div style={{ display: "flex", gap: 4 }}>
                 {(["all", "one-at-a-time"] as const).map((mode) => (
                   <button
@@ -111,8 +111,8 @@ export function SessionAutomationMenu({
                     type="button"
                     onClick={() => onSetAutomation({ steeringMode: mode })}
                     style={{
-                      flex: 1, height: 26, fontSize: 11,
-                      border: "var(--hairline) solid var(--border)", borderRadius: 6,
+                      flex: 1, height: 26, fontSize: "var(--fs-micro)",
+                      border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
                       background: automation.steeringMode === mode ? "var(--accent)" : "var(--bg)",
                       color: automation.steeringMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
                       cursor: "pointer",
@@ -126,7 +126,7 @@ export function SessionAutomationMenu({
           )}
           {automation.followUpMode !== null && (
             <div style={{ padding: "6px 12px 4px", marginBottom: 2 }}>
-              <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.followUpMode")}</div>
+              <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.followUpMode")}</div>
               <div style={{ display: "flex", gap: 4 }}>
                 {(["all", "one-at-a-time"] as const).map((mode) => (
                   <button
@@ -134,8 +134,8 @@ export function SessionAutomationMenu({
                     type="button"
                     onClick={() => onSetAutomation({ followUpMode: mode })}
                     style={{
-                      flex: 1, height: 26, fontSize: 11,
-                      border: "var(--hairline) solid var(--border)", borderRadius: 6,
+                      flex: 1, height: 26, fontSize: "var(--fs-micro)",
+                      border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
                       background: automation.followUpMode === mode ? "var(--accent)" : "var(--bg)",
                       color: automation.followUpMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
                       cursor: "pointer",

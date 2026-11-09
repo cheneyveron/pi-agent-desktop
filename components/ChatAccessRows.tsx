@@ -35,7 +35,7 @@ export function ChatAccessRows({
         title={description}
       >
         <span style={{ flex: 1 }}>{unlocked ? t("chat.chatUnlocked") : t("chat.chatWorkspace")}</span>
-        <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8, whiteSpace: "normal", maxWidth: 260 }}>
+        <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginLeft: 8, whiteSpace: "normal", maxWidth: 260 }}>
           {description}
         </span>
       </div>
@@ -68,7 +68,7 @@ export function ChatAccessRows({
         </button>
       )}
       {access?.error && (
-        <div role="alert" style={{ padding: "4px 9px", fontSize: 11, color: "var(--danger)", whiteSpace: "normal", maxWidth: 320 }}>
+        <div role="alert" style={{ padding: "4px 9px", fontSize: "var(--fs-micro)", color: "var(--danger)", whiteSpace: "normal", maxWidth: 320 }}>
           {access.error}
         </div>
       )}

@@ -70,3 +70,6 @@ e2e_*.mjs
 # Staged by the Tauri build from public/.
 desktop/frontend/desktop-backend.html
 desktop/frontend/desktop-backend.js
+
+# Built phone shell for the relay entry host (npm run relay:shell)
+/relay-shell/dist/

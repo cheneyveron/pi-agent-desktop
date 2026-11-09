@@ -90,17 +90,17 @@ function ProviderUsageContent({ providerId, enabled }: { providerId: string; ena
   return (
     <section style={{ paddingTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, lineHeight: 1.35 }}>{t("providerUsage.usage")}</span>
+        <span style={{ fontSize: "var(--fs-body)", color: "var(--text)", fontWeight: "var(--fw-semibold)", lineHeight: 1.35 }}>{t("providerUsage.usage")}</span>
         <button
           type="button"
           onClick={query}
           disabled={!enabled || querying}
           title={t(querying ? "providerUsage.refreshing" : "providerUsage.refresh")}
           aria-label={t(querying ? "providerUsage.refreshing" : "providerUsage.refresh")}
-          style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 30, padding: 0, background: "none", border: "none", color: refreshDone ? "#4ade80" : "var(--text-dim)", cursor: enabled && !querying ? "pointer" : "default", borderRadius: 5, flexShrink: 0, opacity: enabled ? 1 : 0.6, transition: "color 0.3s" }}
+          style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 30, padding: 0, background: "none", border: "none", color: refreshDone ? "var(--success)" : "var(--text-dim)", cursor: enabled && !querying ? "pointer" : "default", borderRadius: "var(--radius-sm)", flexShrink: 0, opacity: enabled ? 1 : 0.6, transition: "color 0.3s" }}
         >
           {refreshDone ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           ) : (
@@ -111,16 +111,16 @@ function ProviderUsageContent({ providerId, enabled }: { providerId: string; ena
           )}
         </button>
         {report && (
-          <span title={new Date(report.capturedAt).toLocaleString(locale)} style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
+          <span title={new Date(report.capturedAt).toLocaleString(locale)} style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
             {t("providerUsage.updated", { time: formatUpdatedTime(report.capturedAt, locale) })}
           </span>
         )}
       </div>
 
-      {!report && !error && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("providerUsage.notQueried")}</span>}
-      {error && <span style={{ fontSize: 12, color: "#f87171" }}>{error}</span>}
+      {!report && !error && <span style={{ fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>{t("providerUsage.notQueried")}</span>}
+      {error && <span style={{ fontSize: "var(--fs-caption)", color: "var(--danger)" }}>{error}</span>}
       {report && (
-        <div style={{ display: "grid", gridTemplateColumns: "180px minmax(0, 1fr)", columnGap: 14, rowGap: 8, alignItems: "baseline", minWidth: 0, width: "min(100%, 420px)", maxWidth: "100%", fontSize: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "180px minmax(0, 1fr)", columnGap: 14, rowGap: 8, alignItems: "baseline", minWidth: 0, width: "min(100%, 420px)", maxWidth: "100%", fontSize: "var(--fs-caption)" }}>
           {report.buckets.map((bucket) => (
             <div key={bucket.id} style={{ display: "contents" }}>
               <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bucket.groupLabel ? `${bucket.groupLabel} / ${bucket.label}` : bucket.label}</span>

@@ -18,9 +18,9 @@ import {
 export const CODEMODE_VISIBLE_CALLS = 20;
 
 const STATUS_STYLE: Record<CodemodeCallStatus, { icon: string; color: string }> = {
-  running: { icon: "…", color: "#d97706" },
-  ok: { icon: "✓", color: "#16a34a" },
-  error: { icon: "✗", color: "#f87171" },
+  running: { icon: "…", color: "var(--warning)" },
+  ok: { icon: "✓", color: "var(--success)" },
+  error: { icon: "✗", color: "var(--danger)" },
   cancelled: { icon: "⊘", color: "var(--text-dim)" },
 };
 
@@ -39,7 +39,7 @@ function CallRow({ call }: { call: CodemodeCallView }) {
         >
           {status.icon}
         </span>
-        <span style={{ color: "var(--text-muted)", fontWeight: 600, flexShrink: 0 }}>{call.name}</span>
+        <span style={{ color: "var(--text-muted)", fontWeight: "var(--fw-semibold)", flexShrink: 0 }}>{call.name}</span>
         {call.args && (
           <span style={{ color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
             {call.args}
@@ -53,7 +53,7 @@ function CallRow({ call }: { call: CodemodeCallView }) {
         )}
       </div>
       {call.error && (
-        <div style={{ color: "#f87171", paddingLeft: 18, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{call.error}</div>
+        <div style={{ color: "var(--danger)", paddingLeft: 18, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{call.error}</div>
       )}
     </li>
   );
@@ -87,7 +87,7 @@ export function CodemodeCallList({ calls, omitted, isError }: {
         minWidth: 0,
       }}
     >
-      <div style={{ color: "var(--text-dim)", fontFamily: "inherit", fontSize: 11 }}>{t("codemode.calls")}</div>
+      <div style={{ color: "var(--text-dim)", fontFamily: "inherit", fontSize: "var(--fs-micro)" }}>{t("codemode.calls")}</div>
       {omitted > 0 && (
         <div style={{ color: "var(--text-dim)" }}>{t("codemode.omittedCalls", { count: omitted })}</div>
       )}

@@ -28,6 +28,7 @@ import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./Lazy
 // syntax highlighting a second time and only matters once a file tab opens.
 const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer), { ssr: false });
 const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileExplorer), { ssr: false });
+const TasksView = dynamic(() => import("./tasks/TasksView").then((m) => m.TasksView), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 const MainSessionView = dynamic(() => import("./main-session/MainSessionView").then((m) => m.MainSessionView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
@@ -114,13 +115,15 @@ import { getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 import { MAIN_SESSION_NOTIFICATION_ID, MAIN_SESSION_OPEN_EVENT } from "@/lib/main-session-client";
 import { useMainSessionNotifications } from "@/hooks/useMainSessionNotifications";
+import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
+import { getProjectDisplayName } from "@/lib/project-display";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
 /** A page covering the chat area, named by `?view=`. */
-type WorkspaceView = "scheduled" | "artifacts" | "main" | null;
+type WorkspaceView = "tasks" | "scheduled" | "artifacts" | "main" | null;
 
 function parseWorkspaceView(value: string | null | undefined): WorkspaceView {
-  return value === "scheduled" || value === "artifacts" || value === "main" ? value : null;
+  return value === "tasks" || value === "scheduled" || value === "artifacts" || value === "main" ? value : null;
 }
 type AutoNameStatus =
   | { kind: "idle" }
@@ -205,6 +208,7 @@ export function AppShell() {
   // The Scheduled and Artifacts pages cover the chat area without unmounting
   // it, so the open session keeps its state. At most one is open (`?view=`).
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => parseWorkspaceView(searchParams?.get("view")));
+  const tasksOpen = workspaceView === "tasks";
   const scheduledOpen = workspaceView === "scheduled";
   const artifactsOpen = workspaceView === "artifacts";
   const mainSessionOpen = workspaceView === "main";
@@ -1229,6 +1233,16 @@ export function AppShell() {
     ));
   }, []);
 
+  // The keyboard shortcut and the app menu start a session in the active cwd,
+  // which is an archived project while one of its sessions is open. Those stay
+  // readable; a new one waits until the project is restored (sidebar rule).
+  const blockArchivedNewSession = useCallback((cwd: string): boolean => {
+    const root = archivedProjectRootFor(cwd, sessionCatalog);
+    if (!root) return false;
+    appNotify.info({ message: translate("sidebar.projectArchivedNewSession", { name: getProjectDisplayName(root, [root]) }) });
+    return true;
+  }, [sessionCatalog, translate]);
+
   const handleProjectChangeFromComposer = useCallback((projectRoot: string) => {
     if (selectedSession || isChatWorkspaceActive) return;
     handleNewSession(`project-${Date.now()}`, projectRoot, "project");
@@ -1243,16 +1257,20 @@ export function AppShell() {
     }
     try {
       const cwd = await selectProjectDirectoryNative(projectPickerStartCwd, "");
-      if (cwd) handleNewSession(`project-${Date.now()}`, cwd, "project");
+      if (!cwd) return;
+      // Picking a folder is the explicit "add project" gesture: it restores an archived one.
+      const archivedRoot = archivedProjectRootFor(cwd, sessionCatalog);
+      if (archivedRoot) restoreProjectRoot(archivedRoot);
+      handleNewSession(`project-${Date.now()}`, cwd, "project");
     } catch (error) {
       console.error("Failed to switch project:", error);
     }
-  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd]);
+  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd, sessionCatalog]);
 
   const handleNativeMenuAction = useCallback((payload: string) => {
     if (payload === "new-session") {
       const cwd = isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd;
-      if (cwd) {
+      if (cwd && (isChatWorkspaceActive || !blockArchivedNewSession(cwd))) {
         handleNewSession(
           `native-menu-${Date.now()}`,
           cwd,
@@ -1266,7 +1284,7 @@ export function AppShell() {
       setTopMoreOpen(false);
       setSettingsSection(payload === "settings-general" ? "general" : "models");
     }
-  }, [activeCwd, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
+  }, [activeCwd, blockArchivedNewSession, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
 
   const openSettingsAtLastSection = useCallback(() => {
     setActiveTopPanel(null);
@@ -1295,11 +1313,14 @@ export function AppShell() {
   useGlobalKeyboardShortcuts({
     onNewSession: settingsSection || shortcutHelpOpen
       ? undefined
-      : (cwd: string) => handleNewSession(
-        `kb-${Date.now()}`,
-        cwd,
-        isChatWorkspaceActive ? "chat" : "project",
-      ),
+      : (cwd: string) => {
+        if (!isChatWorkspaceActive && blockArchivedNewSession(cwd)) return;
+        handleNewSession(
+          `kb-${Date.now()}`,
+          cwd,
+          isChatWorkspaceActive ? "chat" : "project",
+        );
+      },
     activeCwd: isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd,
     // Only while open: a closed panel must leave \ and focus alone.
     onCloseRightPanel: rightPanelOpen && !shortcutHelpOpen ? handleRightPanelClose : undefined,
@@ -1408,6 +1429,7 @@ export function AppShell() {
       router.replace(`?view=${view}`, { scroll: false });
     }
   }, [isMobile, router]);
+  const handleOpenTasks = useCallback(() => openWorkspaceView("tasks"), [openWorkspaceView]);
   const handleOpenScheduled = useCallback(() => openWorkspaceView("scheduled"), [openWorkspaceView]);
   const handleOpenMainSession = useCallback((taskId?: string) => {
     setWorkspaceView("main");
@@ -1940,7 +1962,9 @@ export function AppShell() {
     }
   };
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
-  const topBarTitle = scheduledOpen
+  const topBarTitle = tasksOpen
+    ? translate("tasks.title")
+    : scheduledOpen
     ? translate("scheduled.title")
     : mainSessionOpen
       ? translate("mainSession.title")
@@ -2010,7 +2034,7 @@ export function AppShell() {
         aria-label={translate("common.settings")}
         aria-haspopup="dialog"
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
@@ -2021,7 +2045,7 @@ export function AppShell() {
         title={translate("sidebar.hide")}
         aria-label={translate("sidebar.hide")}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
         </svg>
       </button>
@@ -2050,6 +2074,8 @@ export function AppShell() {
         onOpenMainSession={handleOpenMainSession}
         mainSessionOpen={mainSessionOpen}
         onMainSessionStarted={handleMainSessionStarted}
+        onOpenTasks={handleOpenTasks}
+        tasksOpen={tasksOpen}
         onOpenScheduled={handleOpenScheduled}
         scheduledOpen={scheduledOpen}
         onGenerateTitle={generateSessionTitleFor}
@@ -2078,14 +2104,14 @@ export function AppShell() {
           minHeight: mobileBanner ? 32 : undefined,
           height: mobileBanner ? undefined : "100%",
           padding: mobileBanner ? "6px 12px" : "0 12px",
-          background: mobileBanner ? "color-mix(in srgb, #d97706 8%, var(--bg-panel))" : "none",
+          background: mobileBanner ? "color-mix(in srgb, var(--warning) 8%, var(--bg-panel))" : "none",
           border: "none",
           borderRight: mobileBanner ? "none" : "1px solid var(--border)",
           borderBottom: mobileBanner ? "1px solid var(--border)" : "none",
-          color: "#d97706",
+          color: "var(--warning)",
           cursor: "pointer",
           flexShrink: 0,
-          fontSize: 11,
+          fontSize: "var(--fs-micro)",
           lineHeight: 1.35,
           textAlign: "left",
         }}
@@ -2212,6 +2238,9 @@ export function AppShell() {
             setRemoteProjectPickerError(null);
             try {
               const cwd = await validateProjectDirectory(path);
+              // Same as the native pick: choosing a folder restores an archived project.
+              const archivedRoot = archivedProjectRootFor(cwd, sessionCatalog);
+              if (archivedRoot) restoreProjectRoot(archivedRoot);
               handleNewSession(`project-${Date.now()}`, cwd);
               setRemoteProjectPickerOpen(false);
             } catch (error) {
@@ -2235,7 +2264,7 @@ export function AppShell() {
             background: "color-mix(in srgb, var(--danger) 14%, var(--bg-panel))",
             borderBottom: "var(--hairline) solid color-mix(in srgb, var(--danger) 35%, var(--border))",
             color: "var(--text)",
-            fontSize: 12,
+            fontSize: "var(--fs-caption)",
             zIndex: 300,
           }}
         >
@@ -2247,12 +2276,12 @@ export function AppShell() {
               height: 24,
               padding: "0 10px",
               border: "var(--hairline) solid var(--border)",
-              borderRadius: 5,
+              borderRadius: "var(--radius-sm)",
               background: "var(--bg)",
               color: "var(--accent)",
               cursor: "pointer",
-              fontSize: 11,
-              fontWeight: 600,
+              fontSize: "var(--fs-micro)",
+              fontWeight: "var(--fw-semibold)",
             }}
           >
             {translate("connection.retry")}
@@ -2271,7 +2300,7 @@ export function AppShell() {
           background: "rgba(0,0,0,0.4)",
           opacity: sidebarOpen ? 1 : 0,
           pointerEvents: sidebarOpen ? "auto" : "none",
-          transition: "opacity 0.25s ease",
+          transition: "opacity 0.25s var(--ease-native)",
         }}
       />
 
@@ -2380,55 +2409,20 @@ export function AppShell() {
           )}
           {showChat && !pageOpen && (
             <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
-              <button
-                className="native-toolbar-button"
-                onClick={handleViewFullHistory}
-                disabled={!selectedSession}
-                 title={selectedSession ? translate("history.full") : translate("history.unsaved")}
-                 aria-label={translate("history.full")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: "100%",
-                  padding: "0 12px",
-                  background: "none",
-                  color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-                  cursor: selectedSession ? "pointer" : "not-allowed",
-                  opacity: selectedSession ? 1 : 0.45,
-                  flexShrink: 0,
-                  fontSize: 11,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ flexShrink: 0 }}
-                >
-                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M12 7v5l3 2" />
-                </svg>
-                 {!isMobile && <span>{translate("history.label")}</span>}
-              </button>
-              {!isChatWorkspaceActive && (
+              {/* Branches opens from the More menu; this instance only hosts its dropdown. */}
+              {!isChatWorkspaceActive && sessionHasBranches && (
                 <BranchNavigator
                   tree={branchTree}
                   activeLeafId={branchActiveLeafId}
                   onLeafChange={handleBranchLeafChange}
+                  locked={branchSwitchLocked}
                   inline
-                  compact={isMobile}
+                  compact
                   containerRef={topBarRef}
                   open={activeTopPanel === "branches"}
                   onToggle={() => toggleTopPanel("branches")}
                   hasSession
+                  hideInlineButton
                 />
               )}
               {(() => {
@@ -2473,8 +2467,19 @@ export function AppShell() {
                 // Desktop shell: the same five actions as a native popup. A
                 // native item holds one line, so the DOM menu's caption is
                 // appended to the label where it carries live state.
+                const historyDisabled = !selectedSession || selectedSession.transient;
+                const showBranches = !isChatWorkspaceActive;
+
                 const openNativeMore = (anchor: Element) => {
                   void showNativeMenu([
+                    ...(showBranches ? [{
+                      label: translate("i18n.branches"),
+                      disabled: !sessionHasBranches,
+                      checked: activeTopPanel === "branches" ? true : undefined,
+                      onSelect: () => toggleTopPanel("branches"),
+                    }] : []),
+                    { label: translate("history.full"), disabled: historyDisabled, onSelect: handleViewFullHistory },
+                    { kind: "separator" as const },
                     { label: nameLabel, disabled: nameDisabled, onSelect: () => void handleAutoName() },
                     {
                       label: `${translate("system.prompt")}${systemPrompt === null ? "" : systemPrompt ? "" : ` (${translate("appshell.toolsDisabled")})`}`,
@@ -2526,8 +2531,8 @@ export function AppShell() {
                         borderTop: topMoreOpen ? "2px solid var(--accent)" : "2px solid transparent",
                         color: topMoreOpen ? "var(--text)" : "var(--text-muted)",
                         cursor: "pointer",
-                        fontSize: 11, whiteSpace: "nowrap",
-                        transition: "color 0.1s, background 0.1s",
+                        fontSize: "var(--fs-micro)", whiteSpace: "nowrap",
+                        transition: "color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native)",
                       }}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -2535,7 +2540,6 @@ export function AppShell() {
                         <circle cx="12" cy="12" r="1.65" />
                         <circle cx="19" cy="12" r="1.65" />
                       </svg>
-                      {!isMobile && <span>{translate("appshell.more")}</span>}
                     </button>
                     {topMoreOpen && topMorePos && createPortal(
                       <div
@@ -2550,8 +2554,56 @@ export function AppShell() {
                             : { top: topMorePos.top, right: topMorePos.right }),
                         }}
                       >
+                        {showBranches && (
+                          <button
+                            className="app-topbar-more-item"
+                            type="button"
+                            role="menuitem"
+                            disabled={!sessionHasBranches}
+                            onClick={() => toggleTopPanel("branches")}
+                          >
+                            <span
+                              className="app-topbar-more-icon"
+                              style={{ color: activeTopPanel === "branches" ? "var(--accent)" : "var(--text-muted)" }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <line x1="6" y1="3" x2="6" y2="15" />
+                                <circle cx="18" cy="6" r="3" />
+                                <circle cx="6" cy="18" r="3" />
+                                <path d="M18 9a9 9 0 0 1-9 9" />
+                              </svg>
+                            </span>
+                            <span className="app-topbar-more-copy">
+                              <span>{translate("i18n.branches")}</span>
+                              <small>{sessionHasBranches ? translate("appshell.branchesHint") : translate("i18n.noBranches")}</small>
+                            </span>
+                          </button>
+                        )}
                         <button
                           className="app-topbar-more-item"
+                          type="button"
+                          role="menuitem"
+                          disabled={historyDisabled}
+                          onClick={() => {
+                            setTopMoreOpen(false);
+                            handleViewFullHistory();
+                          }}
+                        >
+                          <span className="app-topbar-more-icon" style={{ color: historyDisabled ? "var(--text-dim)" : "var(--text-muted)" }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                              <path d="M3 3v5h5" />
+                              <path d="M12 7v5l3 2" />
+                            </svg>
+                          </span>
+                          <span className="app-topbar-more-copy">
+                            <span>{translate("history.full")}</span>
+                            <small>{historyDisabled ? translate("history.unsaved") : translate("appshell.historyHint")}</small>
+                          </span>
+                        </button>
+                        <div className="app-topbar-more-separator" role="separator" />
+                        <button
+                          className="app-topbar-more-item app-topbar-more-title"
                           type="button"
                           role="menuitem"
                           disabled={nameDisabled}
@@ -2692,21 +2744,6 @@ export function AppShell() {
           )}
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && showFilePanelToggle && renderMainFileToggle()}
-          {isMobile && !isChatWorkspaceActive && sessionHasBranches && (
-            <BranchNavigator
-              tree={branchTree}
-              activeLeafId={branchActiveLeafId}
-              onLeafChange={handleBranchLeafChange}
-              locked={branchSwitchLocked}
-              inline
-              compact
-              containerRef={topBarRef}
-              open={activeTopPanel === "branches"}
-              onToggle={() => toggleTopPanel("branches")}
-              hasSession={showChat}
-              hideInlineButton
-            />
-          )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
             <div style={{
@@ -2745,7 +2782,7 @@ export function AppShell() {
                 <div className="session-info-popover" style={{
                   background: "var(--bg-panel)",
                   borderBottom: "var(--hairline) solid var(--border)",
-                  boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
+                  boxShadow: "var(--shadow-popover)",
                   padding: "12px 16px",
                 }}>
                   {sessionStats ? (() => {
@@ -2803,7 +2840,7 @@ export function AppShell() {
                       compact = false,
                     ) => (
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+                          <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{title}</div>
                           <div style={{
                             display: "grid",
                             gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
@@ -2876,7 +2913,7 @@ export function AppShell() {
                     const cacheWarmingSectionRows = cacheWarmingInfo ? cacheWarmingRows(cacheWarmingInfo, translate) : [];
                     const sessionInfoSection = (
                       <div style={{ minWidth: 0 }}>
-                         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
+                         <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
                           {sessionRows.map((row) => (
                             <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
@@ -2896,7 +2933,7 @@ export function AppShell() {
                     );
                     const projectInfoSection = projectRows.length > 0 ? (
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.projectSection")}</div>
+                        <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{translate("session.projectSection")}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
                           {projectRows.map((row) => (
                             <div key={`project-info:${row.label}`} style={{ display: "contents" }}>
@@ -2925,7 +2962,7 @@ export function AppShell() {
                           ? "1fr"
                           : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
                         gap: isMobile ? 16 : 24,
-                        fontSize: 12,
+                        fontSize: "var(--fs-caption)",
                         lineHeight: 1.5,
                         fontFamily: "var(--font-mono)",
                       }}>
@@ -2940,7 +2977,7 @@ export function AppShell() {
                       </div>
                     );
                   })() : (
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                    <div style={{ fontSize: "var(--fs-caption)", color: "var(--text-muted)", fontStyle: "italic" }}>
                        {translate("session.load")}
                     </div>
                   )}
@@ -3015,27 +3052,27 @@ export function AppShell() {
               role="alert"
               style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
             >
-              <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
+              <div style={{ fontSize: 14, color: "var(--danger)" }}>{translate("workspace.unable")}</div>
               {showInitialRequestedCwd && (
-                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)" }}>
                   {initialNavigation.requestedCwd}
                 </div>
               )}
-              <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
+              <div style={{ maxWidth: 720, fontSize: "var(--fs-caption)" }}>{initialCwdError}</div>
             </div>
           ) : showPlaceholder ? (
             visibleProjectCwd ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--fs-title)" }}>
                  {translate("workspace.selectSession")}
               </div>
             ) : (
               <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "flex-start", gap: 8, userSelect: "none", pointerEvents: "none" }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}>
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}>
                   <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
                 </svg>
                 <div>
-                   <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{translate("workspace.getStarted")}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
+                   <div style={{ fontSize: 18, fontWeight: "var(--fw-semibold)", color: "var(--text)", marginBottom: 8 }}>{translate("workspace.getStarted")}</div>
+                  <div style={{ fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.8 }}>
                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{translate("workspace.selectProject")}<br />
                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{translate("workspace.addModels")}
                   </div>
@@ -3045,6 +3082,13 @@ export function AppShell() {
           ) : null}
         </div>
 
+        {tasksOpen && (
+          <TasksView
+            sessions={sessionCatalog}
+            runningSessionIds={runningSessionIds}
+            onOpenSession={(sessionId) => void handleOpenSession(sessionId)}
+          />
+        )}
         {scheduledOpen && (
           <ScheduledView
             projectRoots={availableProjectRoots}
@@ -3112,7 +3156,7 @@ export function AppShell() {
           aria-label={rightPanelOpen ? translate("workspace.hidePanel") : translate("workspace.showPanel")}
           aria-pressed={rightPanelOpen}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <line x1="15" y1="3" x2="15" y2="21" />
           </svg>
@@ -3147,7 +3191,7 @@ export function AppShell() {
                 aria-label={translate("i18n.close")}
                 title={translate("i18n.close")}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
@@ -3262,7 +3306,7 @@ export function AppShell() {
               aria-label={translate(fileTreeShown ? "contextPanel.hideFileList" : "contextPanel.showFileList")}
               aria-pressed={fileTreeShown}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="4.25" cy="5.25" r="1.35" fill="currentColor" stroke="none" /><path d="M7.75 5.25H21" />
                 <circle cx="4.25" cy="12" r="1.35" fill="currentColor" stroke="none" /><path d="M7.75 12H21" />
                 <circle cx="4.25" cy="18.75" r="1.35" fill="currentColor" stroke="none" /><path d="M7.75 18.75H21" />
@@ -3296,7 +3340,7 @@ export function AppShell() {
           title={translate("workspace.hidePanelHint")}
           aria-label={translate("workspace.hidePanel")}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
@@ -3401,10 +3445,10 @@ export function AppShell() {
                       background: changesCollapsed ? "none" : "var(--bg-selected)",
                       border: "none",
                       color: changesCollapsed ? "var(--text-dim)" : "var(--accent)",
-                      cursor: "pointer", borderRadius: 5,
+                      cursor: "pointer", borderRadius: "var(--radius-sm)",
                     }}
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <circle cx="12" cy="12" r="3" />
                       <path d="M3 12h6" />
                       <path d="M15 12h6" />
@@ -3421,11 +3465,11 @@ export function AppShell() {
                     display: "flex", alignItems: "center", justifyContent: "center",
                     width: 26, height: 26, padding: 0,
                     background: "none", border: "none",
-                    color: "var(--text-dim)", cursor: "pointer", borderRadius: 5,
+                    color: "var(--text-dim)", cursor: "pointer", borderRadius: "var(--radius-sm)",
                     opacity: explorerUploadBusy ? 0.6 : 1,
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <path d="m17 8-5-5-5 5" />
                     <path d="M12 3v12" />

@@ -107,18 +107,18 @@ export function UpdateReminder({ onOpenSettings }: { onOpenSettings: () => void 
         position: "fixed",
         right: 16,
         bottom: 16,
-        zIndex: 1200,
+        zIndex: "var(--z-toast)",
         width: "min(380px, calc(100vw - 32px))",
         border: "var(--hairline) solid var(--border)",
-        borderRadius: 10,
+        borderRadius: "var(--radius-lg)",
         background: "var(--bg-panel)",
-        boxShadow: "0 14px 40px rgba(0, 0, 0, 0.24)",
+        boxShadow: "var(--shadow-dialog)",
         color: "var(--text)",
         overflow: "hidden",
       }}
     >
       <div className="native-update-reminder-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px 10px" }}>
-        <div className="native-update-reminder-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700 }}>
+        <div className="native-update-reminder-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-body)", fontWeight: "var(--fw-bold)" }}>
           <span className="native-update-reminder-icon" aria-hidden="true" style={{ color: "var(--accent)", fontSize: 16 }}>↑</span>
           {t("updates.available")}
         </div>
@@ -153,13 +153,13 @@ export function UpdateReminder({ onOpenSettings }: { onOpenSettings: () => void 
               gap: 12,
               padding: "9px 10px",
               border: "var(--hairline) solid var(--border)",
-              borderRadius: 7,
+              borderRadius: "var(--radius-md)",
               background: "var(--bg)",
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 650 }}>{update.name}</div>
-              <div style={{ marginTop: 3, color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>
+              <div style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--fw-semibold)" }}>{update.name}</div>
+              <div style={{ marginTop: 3, color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)" }}>
                 {update.currentVersion} → {update.latestVersion}
               </div>
             </div>
@@ -172,8 +172,8 @@ export function UpdateReminder({ onOpenSettings }: { onOpenSettings: () => void 
               style={{
                 flexShrink: 0,
                 color: "var(--accent)",
-                fontSize: 11,
-                fontWeight: 650,
+                fontSize: "var(--fs-micro)",
+                fontWeight: "var(--fw-semibold)",
                 textDecoration: "none",
               }}
             >
@@ -181,7 +181,7 @@ export function UpdateReminder({ onOpenSettings }: { onOpenSettings: () => void 
             </a>
           </div>
         ))}
-        <div className="native-update-reminder-caption" style={{ color: "var(--text-dim)", fontSize: 10, lineHeight: 1.45 }}>
+        <div className="native-update-reminder-caption" style={{ color: "var(--text-dim)", fontSize: "var(--fs-micro)", lineHeight: 1.45 }}>
           {t("updates.caption", { product: PRODUCT_NAME })}
         </div>
         <button

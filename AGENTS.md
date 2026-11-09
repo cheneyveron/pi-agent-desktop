@@ -93,6 +93,12 @@ app/api/
   agent/[id]/events/route.ts      GET SSE stream
   agent/running/route.ts          GET currently-running session ids
   agent/running/events/route.ts   GET SSE stream of currently-running session ids
+  agent/tasks/route.ts            GET live task snapshots (running step, waiting dialogs, last outcome) for the Tasks page
+  remote-access/route.ts          GET/PUT Tailscale remote-access setting (PUT only from loopback)
+  push/{config,subscribe,unsubscribe,test}/route.ts  Web Push key, device subscriptions, test send
+  relay/route.ts                  GET/PUT encrypted relay status and config (PUT local-only)
+  relay/pairing/**                POST pairing QR ticket, POST [id] approve/deny (local-only)
+  relay/devices/[id]/route.ts     DELETE revoke a paired phone (local-only)
   auth/all-providers/route.ts     GET API-key provider list
   auth/api-key/[provider]/route.ts GET/POST/DELETE provider API key status/storage
   auth/login/[provider]/route.ts  GET OAuth/device-code SSE | POST manual code
@@ -121,6 +127,7 @@ app/api/
   desktop/read-images/route.ts    POST read natively-picked images into attachment payloads
   desktop/save/route.ts           POST copy a file to, or write bytes at, a natively-picked path
   artifacts/settings/route.ts     GET/PUT the "artifacts in the side panel" prompt switch
+  session-title/settings/route.ts GET/PUT the "name sessions automatically" switch
   artifacts/route.ts              GET ?q= artifacts across all sessions (Artifacts page)
   artifacts/item/route.ts         GET ?session=&identifier= one artifact with every version
   artifacts/file/route.ts         GET ?path= one written/edited file's calls | ?session=&toolCallId= a write's content
@@ -177,6 +184,9 @@ components/
   PluginSettingsForm.tsx  schema-driven Settings section of a package (see docs/agents/settings-ui.md)
   SkillsConfig.tsx    modal for loaded/search/installable skills
   scheduled/          Scheduled page (list, detail, editor, run history) and its sidebar row
+  tasks/              Tasks page (waiting / running / recent across projects) and its sidebar row
+  RemoteAccessSection.tsx  Settings › General › Remote access (Tailscale) and "Notify this device"
+  RelaySection.tsx    Settings › General › Remote relay: relay config, pairing QR, approvals, paired phones
   SettingsPanel.tsx   settings dialog; its General tab hosts the app intro, Version & Updates and the desktop-only switches
   AppUpdatesSection.tsx  Version & Updates block at the top of General
   desktop/DesktopAppSection.tsx  window/tray prefs; renders nothing outside Tauri
@@ -228,7 +238,8 @@ Read the doc for the area you touch before changing it. Upstream docs (no prefix
 - [subagents.md](docs/agents/subagents.md): the built-in subagent setting, profiles and their files, run status, completion notifications. Files: `lib/subagent*.ts`, `app/api/subagents/**`, `components/AgentsConfig.tsx`.
 - [scheduled-tasks.md](docs/agents/scheduled-tasks.md): scheduled tasks (the Scheduled page): server-side scheduler and its lease, catch-up and overlap rules, read-only default, the run index that hides runs from the project tree, why shared state is on `globalThis`. Files: `lib/scheduled-tasks/**`, `app/api/scheduled-tasks/**`, `instrumentation-node.ts`, `hooks/useScheduledTasks.ts`, `components/scheduled/**`, the Scheduled row in `components/SessionSidebar.tsx`, the page overlay in `components/AppShell.tsx`.
 - [main-session.md](docs/agents/main-session.md): the main-session service (part A of the v1 contract): process and proxy, state files, close-out intake and alias matching, the action set and the 48-hour archive rule, digest priorities and the 5-line cap, checkers, judgment turns and the model allowlist (rdsec claude-haiku-5-5 / gpt-6-luna only), the read-only dispatch whitelist, /replay, deviations from the contract. Files: `main-session/**`, `app/api/main-session/**`, `scripts/dev-with-main-session.mjs`.
-- [artifacts.md](docs/agents/artifacts.md): inline HTML/SVG/React previews and `:::artifact` blocks: what renders where, the sandbox rules and the desktop `about:srcdoc` allowance, the auto-run rule for scripted pages, the bundled React runtime (inlined, because sandboxed frames cannot reach localhost; `npm run preview-runtime` regenerates it), the fix flow and the prompt switch, the cross-session Artifacts page. Files: `lib/artifacts.ts`, `lib/artifact-store.ts`, `lib/artifact-index.ts`, `components/artifacts/**`, `lib/html-preview.ts`, `lib/artifact-settings.ts`, `lib/artifact-guide-extension.ts`, `hooks/useArtifactPublisher.ts`, `hooks/useHtmlPreviewFrame.ts`, `lib/preview-runtime.ts`, `scripts/build-preview-runtime.mjs`, `public/preview-runtime/`, `components/Artifact*.tsx`, `components/HtmlPreview*.tsx`, `components/artifact-tabs.ts`, `app/api/artifacts/**`, `is_inline_frame_document` in `src-tauri/src/lib.rs`.
+- [artifacts.md](docs/agents/artifacts.md): inline HTML/SVG/React previews and `:::artifact` blocks, output vs process files on the Artifacts page: what renders where, the sandbox rules and the desktop `about:srcdoc` allowance, the auto-run rule for scripted pages, the bundled React runtime (inlined, because sandboxed frames cannot reach localhost; `npm run preview-runtime` regenerates it), the fix flow and the prompt switch, the cross-session Artifacts page. Files: `lib/artifacts.ts`, `lib/artifact-store.ts`, `lib/artifact-index.ts`, `lib/file-output-role.ts`, `lib/artifact-file-roles.ts`, `lib/artifact-favorites.ts`, `components/artifacts/**`, `lib/html-preview.ts`, `lib/artifact-settings.ts`, `lib/artifact-guide-extension.ts`, `hooks/useArtifactPublisher.ts`, `hooks/useHtmlPreviewFrame.ts`, `lib/preview-runtime.ts`, `scripts/build-preview-runtime.mjs`, `public/preview-runtime/`, `components/Artifact*.tsx`, `components/HtmlPreview*.tsx`, `components/artifact-tabs.ts`, `app/api/artifacts/**`, `is_inline_frame_document` in `src-tauri/src/lib.rs`.
+- [remote-relay.md](docs/remote-relay.md): the end-to-end encrypted relay (Noise IK over a dumb relay, phone shell + tunnel service worker, pairing, request mark). Files: `lib/relay/**`, `relay/` (server, Docker), `relay-shell/` (`npm run relay:shell`), `app/api/relay/**`, `components/RelaySection.tsx`, `e2e/relay.mjs`; deploying: [remote-relay-deploy.md](docs/remote-relay-deploy.md). A request carrying the relay mark comes from a paired phone: it is never local (`isLocalRequest`), and local-only routes must ask `isLocalRequest()`, never a loopback Host.
 - [client-platform.md](docs/agents/client-platform.md): mobile software keyboard and viewport height, completion sound. Files: `hooks/useViewportHeight.ts`, `hooks/useAudio.ts`, the keyboard-open CSS.
 
 Fork notes:
@@ -288,6 +299,7 @@ Full per-merge reasoning (segments E, F, G, with what was adopted and what was d
 - **Upstream owns SDK adaptation.** Exact system prompts go through `lib/exact-system-prompt.ts` (`before_agent_start`); the session list comes from `lib/session-list-scanner.ts`; MCP and Code mode run on ADR 0006's `builtin:*` extensions (`createMcpExtension()` is never passed as a bare inline factory) and `resolveActiveToolNames()` replaced `withExtensionTools()`. Do not re-add a second path for any of these.
 - **Declined upstream UI stays declined**: the sidebar explorer and resizable session/explorer panes (`data-resize-handle="sidebar-sections"`), `SessionSearch`, `ChatMinimap`, `getSessionListIndices` windowing, the second mobile toolbar group, the topbar models/skills/settings quick-buttons, `ExtensionStatusBar` (the fork's `ExtensionStatusLine` replaces it). From the desktop upstream (abcwyc): `ConversationFind` (the chat keeps the shared `FindBar` and its pointer-based zones). A merge that brings one back is re-introducing declined UI, not a test to satisfy. Web project selection intentionally uses `DirectoryPicker` directly in the sidebar and composer.
 - **Fork layers that must survive a merge**: `userHome()` routing instead of literal `homedir()`, models-config literal-key redaction, `resolveSessionReferences` in the send/queue paths, the monotonic request-id guards in `useAgentSession`, the project-tree sidebar with the full-height layout, desktop i18n and Settings sections.
+- **Automatic session names**: upstream's Settings switch (`lib/session-title-settings.ts`, on by default in the fork) gates the fork's first-message `SessionAutoNamer`; upstream's post-run `autoTitleAfterRun()` stays out so two namers cannot race. Pinned sessions stay the fork's unified Pinned section, not upstream's chat-only pins.
 - **`lib/startup-preferences.ts` stays deleted** (new-session model picks are session-scoped); `PUT /api/models/default` is the only writer of global defaults.
 - **`package-lock.json` keeps the tauri plugin versions pinned to `src-tauri/Cargo.lock`**: restore HEAD's lock before `npm install --package-lock-only`, or the carets re-resolve and `release-workflows.test.mjs` fails.
 - After a merge: `node scripts/upstream-css-baseline.mjs update <upstream-ref>` and `npm run drift`.

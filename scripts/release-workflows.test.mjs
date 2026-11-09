@@ -66,7 +66,7 @@ test("npm test covers every test directory, recursively", async () => {
   // fork-owned tests under components/desktop/.
   const pkg = JSON.parse(await readText(join(root, "package.json"), "utf8"));
   assert.doesNotMatch(pkg.scripts.test, /'[^']*\.test\.mjs'/, "Windows cmd passes single quotes literally, silently running zero tests");
-  for (const dir of ["app", "lib", "scripts", "components", "hooks"]) {
+  for (const dir of ["app", "lib", "scripts", "components", "hooks", "relay", "relay-shell", "main-session"]) {
     assert.match(
       pkg.scripts.test,
       new RegExp(`${dir}/\\*\\*/\\*\\.test\\.mjs`),
@@ -82,11 +82,11 @@ test("no test file is left out of npm test", async () => {
     .split("\n")
     .filter(Boolean);
 
-  const covered = tracked.filter((file) => /^(app|lib|scripts|components|hooks|public|main-session)\//.test(file));
+  const covered = tracked.filter((file) => /^(app|lib|scripts|components|hooks|relay|relay-shell|public|main-session)\//.test(file));
   assert.deepEqual(
     tracked.filter((file) => !covered.includes(file)),
     [],
-    "a .test.mjs file lives outside app/, lib/, scripts/, components/, hooks/, public/ and main-session/ — extend npm test",
+    "a .test.mjs file lives outside app/, lib/, scripts/, components/, hooks/, relay/, relay-shell/, public/ and main-session/ — extend npm test",
   );
 });
 

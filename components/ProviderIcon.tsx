@@ -73,14 +73,14 @@ export function ProviderIcon({ id, size }: { id: string; size: number }) {
         width: size,
         height: size,
         border: "var(--hairline) solid var(--border)",
-        borderRadius: 4,
+        borderRadius: "var(--radius-xs)",
         color: "var(--text-dim)",
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
         fontSize: Math.max(8, Math.floor(size * 0.42)),
-        fontWeight: 700,
+        fontWeight: "var(--fw-bold)",
         lineHeight: 1,
       }}
     >

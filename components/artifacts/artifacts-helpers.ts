@@ -39,23 +39,44 @@ export function scopeOptions(items: readonly OutputSummary[], chatsLabel: string
   return chats ? [...options, { value: CHATS_SCOPE, label: chatsLabel }] : options;
 }
 
-/** Type filter values beyond the artifact types. */
+/**
+ * Type filter values beyond the artifact types. The default (empty) view is
+ * the outputs: every artifact and the files classed as outputs. Process files
+ * show only under their own value or "everything".
+ */
+export const TYPE_EVERYTHING = "all";
 export const TYPE_ALL_ARTIFACTS = "artifacts";
-export const TYPE_ALL_FILES = "files";
-export const TYPE_CREATED_FILES = "files:created";
-export const TYPE_EDITED_FILES = "files:edited";
+export const TYPE_OUTPUT_FILES = "files";
+export const TYPE_PROCESS_FILES = "files:process";
+
+function isProcessFile(item: OutputSummary): boolean {
+  return item.kind === "file" && item.role === "process";
+}
 
 function matchesType(item: OutputSummary, type: string): boolean {
+  if (type === TYPE_EVERYTHING) return true;
+  if (type === TYPE_PROCESS_FILES) return isProcessFile(item);
+  if (isProcessFile(item)) return false;
   if (!type) return true;
-  if (item.kind === "file") {
-    return type === TYPE_ALL_FILES || type === (item.created ? TYPE_CREATED_FILES : TYPE_EDITED_FILES);
-  }
+  if (item.kind === "file") return type === TYPE_OUTPUT_FILES;
   return type === TYPE_ALL_ARTIFACTS || item.type === type;
 }
 
-/** Empty `type` / `scope` means every type / everywhere. */
-export function filterArtifacts(items: readonly OutputSummary[], type: string, scope: string): OutputSummary[] {
-  return items.filter((item) => matchesType(item, type) && (!scope || artifactScope(item) === scope));
+/**
+ * Empty `type` means the outputs, empty `scope` everywhere. With
+ * `favoritesOnly`, only starred rows; the outputs default then also keeps
+ * starred process files, since the user picked them.
+ */
+export function filterArtifacts(items: readonly OutputSummary[], type: string, scope: string, favoritesOnly = false): OutputSummary[] {
+  return items.filter((item) => (
+    (favoritesOnly ? item.favorite && (!type || matchesType(item, type)) : matchesType(item, type))
+    && (!scope || artifactScope(item) === scope)
+  ));
+}
+
+/** Process files in `scope` that the outputs view leaves out, for its "N more" line. */
+export function countProcessFiles(items: readonly OutputSummary[], scope: string): number {
+  return items.reduce((count, item) => count + (isProcessFile(item) && (!scope || artifactScope(item) === scope) ? 1 : 0), 0);
 }
 
 export type FileThumbnailKind = "file-image" | "frame" | "mermaid" | "text" | "code" | "icon";

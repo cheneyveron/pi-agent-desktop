@@ -67,7 +67,7 @@ export function ComposerProjectChip({
         }}
         disabled={!onSelectProject && !(projectOptions.length > 0 && onProjectChange)}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
         </svg>
         <span>{label}</span>
@@ -107,12 +107,12 @@ export function ComposerProjectChip({
                   minWidth: 0,
                   padding: "7px 9px",
                   border: 0,
-                  borderRadius: 6,
+                  borderRadius: "var(--radius-sm)",
                   background: isCurrent ? "var(--bg-selected)" : "transparent",
                   color: isCurrent ? "var(--text)" : "var(--text-muted)",
                   cursor: "pointer",
                   textAlign: "left",
-                  fontSize: 12,
+                  fontSize: "var(--fs-caption)",
                 }}
                 onMouseEnter={(e) => {
                   if (!isCurrent) e.currentTarget.style.background = "var(--bg-hover)";
@@ -122,7 +122,7 @@ export function ComposerProjectChip({
                 }}
                 title={projectRoot}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
                 </svg>
                 <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{optionLabel}</span>

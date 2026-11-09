@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { isImeComposing } from "@/lib/ime";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { ARTIFACT_TYPES } from "@/lib/artifacts";
 import type { ArtifactListResponse, IndexedArtifactVersion, OutputSummary } from "@/lib/artifact-index";
+import type { NativeMenuEntry } from "@/lib/desktop-menu-model";
 import { getFileDirectory } from "@/lib/file-paths";
+import { showMenu } from "@/hooks/useFileContextMenu";
+import { useResizablePanel } from "@/hooks/useResizablePanel";
+import { openPathNative, revealItemInDirNative } from "@/lib/desktop-native";
+import { isTauriDesktop } from "@/lib/desktop-updater";
+import { getDesktopPlatform } from "@/lib/desktop-window";
+import { revealLabelKey } from "@/lib/file-context-menu";
 import { AppSelect } from "../AppSelect";
 import { ARTIFACT_TYPE_LABEL } from "../ArtifactCard";
 import { ARTIFACT_TOOLBAR_ICON, ArtifactView } from "../ArtifactView";
@@ -14,10 +21,11 @@ import { ArtifactThumbnail } from "./ArtifactThumbnail";
 import { FileOutputView } from "./FileOutputView";
 import {
   TYPE_ALL_ARTIFACTS,
-  TYPE_ALL_FILES,
-  TYPE_CREATED_FILES,
-  TYPE_EDITED_FILES,
+  TYPE_EVERYTHING,
+  TYPE_OUTPUT_FILES,
+  TYPE_PROCESS_FILES,
   artifactKey,
+  countProcessFiles,
   filterArtifacts,
   scopeOptions,
 } from "./artifacts-helpers";
@@ -41,6 +49,23 @@ const SEARCH_DEBOUNCE_MS = 250;
 /** Focusing the window refreshes the list at most this often. */
 const FOCUS_REFRESH_MIN_MS = 10_000;
 const LIST_CACHE_MAX = 10;
+/**
+ * List column width. 300 still fits the thumbnail, a readable title and the tags;
+ * past 640 rows gain nothing but whitespace. The preview keeps at least
+ * PREVIEW_MIN_WIDTH, so on a narrow window the list stops earlier.
+ */
+const LIST_DEFAULT_WIDTH = 360;
+const LIST_MIN_WIDTH = 300;
+const LIST_MAX_WIDTH = 640;
+const PREVIEW_MIN_WIDTH = 360;
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2.5l2.94 5.96 6.56.95-4.75 4.63 1.12 6.54L12 17.5l-5.87 3.08 1.12-6.54L2.5 9.41l6.56-.95L12 2.5z" />
+    </svg>
+  );
+}
 
 // The last lists by search text, kept while the app runs: reopening the page
 // shows them at once and refreshes in the background instead of starting empty.
@@ -64,6 +89,10 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
   const [search, setSearch] = useState("");
   const [type, setType] = useState("");
   const [scope, setScope] = useState("");
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [rowMenuError, setRowMenuError] = useState<string | null>(null);
   const [list, setList] = useState<ArtifactListResponse | null>(() => listCache.get("")?.data ?? null);
   /** The search the shown list answers; it lags `search` while a new one loads. */
   const [listSearch, setListSearch] = useState<string | null>(() => (listCache.has("") ? "" : null));
@@ -77,12 +106,48 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
   const [continueIndex, setContinueIndex] = useState<number | null>(null);
   const [continueText, setContinueText] = useState("");
   const [continueBusy, setContinueBusy] = useState(false);
-  const rootRef = useRef<HTMLElement>(null);
+  const listWidthRef = useRef(LIST_DEFAULT_WIDTH);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  // The page fills the main column, not the window: the sidebar sits beside it.
+  const getListMaxWidth = useCallback(
+    () => (rootRef.current?.clientWidth || window.innerWidth) - PREVIEW_MIN_WIDTH,
+    [],
+  );
+  const listResizer = useResizablePanel({
+    ariaLabel: t("artifacts.page.resizeList"),
+    cssVariable: "--artifacts-list-width",
+    defaultWidth: LIST_DEFAULT_WIDTH,
+    getMaxWidth: getListMaxWidth,
+    growthDirection: "right",
+    maxWidth: LIST_MAX_WIDTH,
+    minWidth: LIST_MIN_WIDTH,
+    storageKey: "pi-artifacts-list-width",
+    widthRef: listWidthRef,
+  });
+  const listPanelRef = listResizer.panelRef;
+  const setRootRef = useCallback((node: HTMLDivElement | null) => {
+    rootRef.current = node;
+    listPanelRef.current = node;
+  }, [listPanelRef]);
   const listPaneRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const runningRef = useRef(runningCount);
+  const scrollHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { searchRef.current?.focus({ preventScroll: true }); }, []);
+
+  // Overlay-style scrollbar, as in the sidebar: `is-scrolling` shows the thumb only while the list moves.
+  function handleListScroll() {
+    listPaneRef.current?.classList.add("is-scrolling");
+    if (scrollHideTimerRef.current) clearTimeout(scrollHideTimerRef.current);
+    scrollHideTimerRef.current = setTimeout(() => {
+      listPaneRef.current?.classList.remove("is-scrolling");
+      scrollHideTimerRef.current = null;
+    }, 800);
+  }
+  useEffect(() => () => {
+    if (scrollHideTimerRef.current) clearTimeout(scrollHideTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(query.trim()), SEARCH_DEBOUNCE_MS);
@@ -138,7 +203,11 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
   const scopes = useMemo(() => scopeOptions(items, t("artifacts.page.chats")), [items, t]);
   // A scope that left the list (search narrowed it away) stops filtering.
   const effectiveScope = scopes.some((option) => option.value === scope) ? scope : "";
-  const visible = useMemo(() => filterArtifacts(items, type, effectiveScope), [items, type, effectiveScope]);
+  const visible = useMemo(() => filterArtifacts(items, type, effectiveScope, favoritesOnly), [items, type, effectiveScope, favoritesOnly]);
+  const hiddenProcess = useMemo(
+    () => (type || favoritesOnly ? 0 : countProcessFiles(items, effectiveScope)),
+    [items, type, effectiveScope, favoritesOnly],
+  );
 
   // Follow the selected artifact's newest summary, so a reload that brought a
   // new version also refreshes the preview.
@@ -179,12 +248,77 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
 
   function selectItem(item: OutputSummary | null) {
     setActionError(null);
+    setFavoriteError(null);
     setContinueIndex(null);
     setContinueText("");
     setSelected(item);
   }
 
   const continueVersion = continueIndex !== null ? versions?.[continueIndex] : undefined;
+
+  /**
+   * Right-click on a row, in the desktop app: open the conversation that
+   * produced it; for a file also open it with the system's default app and
+   * show it in its folder. In a browser the browser's own menu stays.
+   */
+  function showRowMenu(event: MouseEvent, item: OutputSummary) {
+    if (!isTauriDesktop()) return;
+    event.preventDefault();
+    setRowMenuError(null);
+    const fail = (error: unknown) => setRowMenuError(t("artifacts.page.menuFailed", { error: error instanceof Error ? error.message : String(error) }));
+    const conversation = item.conversation;
+    const entries: NativeMenuEntry[] = [{
+      label: t("artifacts.page.menuOpenConversation"),
+      disabled: !conversation,
+      onSelect: () => {
+        if (!conversation) return;
+        onOpenInConversation(conversation.sessionId, conversation.entryId)
+          .then((opened) => { if (!opened) setRowMenuError(t("artifacts.page.sessionMissing")); })
+          .catch(fail);
+      },
+    }];
+    if (item.kind === "file") {
+      entries.push(
+        { kind: "separator" },
+        { label: t("artifacts.page.menuOpenDefault"), onSelect: () => { openPathNative(item.path).catch(fail); } },
+        { label: t(revealLabelKey(getDesktopPlatform())), onSelect: () => { revealItemInDirNative(item.path).catch(fail); } },
+      );
+    }
+    void showMenu(entries, { x: event.clientX, y: event.clientY });
+  }
+
+  async function toggleFavorite(item: OutputSummary) {
+    const favorite = !item.favorite;
+    const key = artifactKey(item);
+    setFavoriteError(null);
+    setFavoriteBusy(true);
+    try {
+      const target = item.kind === "file"
+        ? { kind: "file", path: item.path }
+        : { kind: "artifact", sessionId: item.sessionId, identifier: item.identifier };
+      const response = await fetch("/api/artifacts/favorite", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...target, favorite }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `HTTP ${response.status}`);
+      }
+      // Every remembered list shows the star at once; the next load confirms it.
+      const mark = (data: ArtifactListResponse): ArtifactListResponse => ({
+        ...data,
+        artifacts: data.artifacts.map((entry) => (artifactKey(entry) === key ? { ...entry, favorite } : entry)),
+      });
+      for (const [search, cached] of listCache) listCache.set(search, { ...cached, data: mark(cached.data) });
+      setList((current) => (current ? mark(current) : current));
+      setSelected((current) => (current && artifactKey(current) === key ? { ...current, favorite } : current));
+    } catch (error) {
+      setFavoriteError(t("artifacts.page.favoriteFailed", { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setFavoriteBusy(false);
+    }
+  }
 
   async function submitContinue(event?: FormEvent) {
     event?.preventDefault();
@@ -216,9 +350,9 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
     { value: "", label: t("artifacts.page.allTypes") },
     { value: TYPE_ALL_ARTIFACTS, label: t("artifacts.page.allArtifacts") },
     ...ARTIFACT_TYPES.map((value) => ({ value, label: ARTIFACT_TYPE_LABEL[value] })),
-    { value: TYPE_ALL_FILES, label: t("artifacts.page.allFiles") },
-    { value: TYPE_CREATED_FILES, label: t("artifacts.page.createdFiles") },
-    { value: TYPE_EDITED_FILES, label: t("artifacts.page.editedFiles") },
+    { value: TYPE_OUTPUT_FILES, label: t("artifacts.page.outputFiles") },
+    { value: TYPE_PROCESS_FILES, label: t("artifacts.page.processFiles") },
+    { value: TYPE_EVERYTHING, label: t("artifacts.page.everything") },
   ];
   const scopeSelectOptions = [{ value: "", label: t("artifacts.page.allProjects") }, ...scopes];
 
@@ -231,19 +365,17 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
         : "";
 
   return (
-    <section
-      ref={rootRef}
+    <div
+      ref={setRootRef}
+      role="region"
+      style={{ "--artifacts-list-width": `${listResizer.width}px` } as CSSProperties}
       className={`artifacts-view${current ? " has-selection" : ""}`}
       tabIndex={-1}
       aria-label={t("artifacts.page.title")}
       // Esc here must not reach the global shortcut that stops the agent running behind this page.
       onKeyDown={(event) => { if (event.key === "Escape") event.preventDefault(); }}
     >
-      <div ref={listPaneRef} className="artifacts-list-pane">
-        <header className="artifacts-header">
-          <h2 className="scheduled-title">{t("artifacts.page.title")}</h2>
-          <p className="scheduled-subtitle">{t("artifacts.page.subtitle")}</p>
-        </header>
+      <div ref={listPaneRef} className="artifacts-list-pane" onScroll={handleListScroll}>
         <div className="artifacts-filters">
           <input
             ref={searchRef}
@@ -258,6 +390,16 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
           <div className="artifacts-filter-row">
             <AppSelect value={type} onValueChange={setType} options={typeOptions} aria-label={t("artifacts.page.typeLabel")} className="artifacts-filter" />
             <AppSelect value={effectiveScope} onValueChange={setScope} options={scopeSelectOptions} aria-label={t("artifacts.page.scopeLabel")} className="artifacts-filter" />
+            <button
+              type="button"
+              className="artifacts-favorite-filter"
+              aria-pressed={favoritesOnly}
+              title={t("artifacts.page.favoritesOnly")}
+              aria-label={t("artifacts.page.favoritesOnly")}
+              onClick={() => setFavoritesOnly((on) => !on)}
+            >
+              <StarIcon filled={favoritesOnly} />
+            </button>
           </div>
         </div>
         {listError && <p className="scheduled-error" role="alert">{t("artifacts.page.loadFailed", { error: listError })}</p>}
@@ -273,14 +415,17 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
             <p>{t("artifacts.page.emptyBody")}</p>
           </div>
         )}
+        {rowMenuError && <p className="scheduled-error artifacts-status" role="alert">{rowMenuError}</p>}
         {list && (items.length > 0 || search) && visible.length === 0 && (
-          <p className="scheduled-hint artifacts-status">{t("artifacts.page.noMatches")}</p>
+          <p className="scheduled-hint artifacts-status">{t(favoritesOnly ? "artifacts.page.noFavorites" : "artifacts.page.noMatches")}</p>
         )}
         <ul className={`artifacts-list${loading && list && listSearch !== search ? " is-loading" : ""}`}>
           {visible.map((item) => {
             const key = artifactKey(item);
             const meta = [
               item.kind === "file" ? (item.created ? t("artifacts.page.fileCreated") : t("artifacts.page.fileEdited")) : ARTIFACT_TYPE_LABEL[item.type],
+              // The count reads as part of the meta line; as a second tag it stacked under "Deleted".
+              ...(item.versionCount > 1 ? [t(item.kind === "file" ? "artifacts.page.changeCount" : "artifacts.page.versionCount", { count: item.versionCount })] : []),
               ...(item.kind === "file" ? [getFileDirectory(item.displayPath) || "."] : []),
               item.sessionTitle,
               formatRelativeTime(item.updated, locale),
@@ -293,10 +438,18 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
                   className="artifacts-item"
                   aria-current={key === selectedKey ? "true" : undefined}
                   onClick={() => selectItem(item)}
+                  onContextMenu={(event) => showRowMenu(event, item)}
                 >
                   <ArtifactThumbnail item={item} scrollRoot={listPaneRef} />
                   <span className="artifacts-item-main">
-                    <span className="artifacts-item-title">{item.title}</span>
+                    <span className="artifacts-item-title">
+                      {item.favorite && (
+                        <span className="artifacts-item-star" title={t("artifacts.page.favorited")} aria-label={t("artifacts.page.favorited")}>
+                          <StarIcon filled />
+                        </span>
+                      )}
+                      {item.title}
+                    </span>
                     <span className="artifacts-item-meta" title={meta}>{meta}</span>
                     {snippet && (
                       <span className="artifacts-item-snippet">
@@ -305,21 +458,31 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
                     )}
                   </span>
                   <span className="artifacts-item-tags">
-                    {item.scheduled && <span className="scheduled-tag">{t("artifacts.page.scheduled")}</span>}
-                    {item.kind === "file" && item.missing && <span className="scheduled-tag">{t("artifacts.page.fileMissing")}</span>}
-                    {item.versionCount > 1 && (
-                      <span className="scheduled-tag">
-                        {t(item.kind === "file" ? "artifacts.page.changeCount" : "artifacts.page.versionCount", { count: item.versionCount })}
-                      </span>
+                    {item.kind === "file" && item.role === "output" && item.reasons[0] && (
+                      <span className="scheduled-tag">{t(`artifacts.page.reason.${item.reasons[0]}`)}</span>
                     )}
+                    {item.scheduled && <span className="scheduled-tag">{t("artifacts.page.scheduled")}</span>}
                   </span>
                 </button>
               </li>
             );
           })}
         </ul>
+        {list && hiddenProcess > 0 && (
+          <p className="scheduled-hint artifacts-status artifacts-process-note">
+            {t("artifacts.page.processHidden", { count: hiddenProcess })}
+            <button type="button" className="artifacts-link-button" onClick={() => setType(TYPE_PROCESS_FILES)}>
+              {t("artifacts.page.showProcess")}
+            </button>
+          </p>
+        )}
       </div>
 
+      <div
+        {...listResizer.separatorProps}
+        className={`panel-resize-handle artifacts-resize-handle${listResizer.isResizing ? " is-resizing" : ""}`}
+        title={`${t("artifacts.page.resizeList")}: ${t("layout.resizeHint")}`}
+      />
       <div className="artifacts-detail-pane">
         {current ? (
           <>
@@ -330,9 +493,26 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
               <span className="artifacts-detail-session" title={current.sessionTitle}>
                 {current.sessionTitle} · {formatRelativeTime(current.updated, locale)}
               </span>
+              <button
+                type="button"
+                className="file-viewer-icon-button artifacts-favorite-toggle"
+                aria-pressed={current.favorite}
+                disabled={favoriteBusy}
+                title={current.favorite ? t("artifacts.page.unfavorite") : t("artifacts.page.favorite")}
+                aria-label={current.favorite ? t("artifacts.page.unfavorite") : t("artifacts.page.favorite")}
+                onClick={() => void toggleFavorite(current)}
+              >
+                <StarIcon filled={current.favorite} />
+              </button>
             </div>
+            {favoriteError && <p className="scheduled-error artifacts-detail-error" role="alert">{favoriteError}</p>}
             {current.kind === "file" && (
-              <FileOutputView key={selectedKey} item={current} onOpenInConversation={onOpenInConversation} />
+              <FileOutputView
+                key={selectedKey}
+                item={current}
+                onOpenInConversation={onOpenInConversation}
+                onRoleChange={() => setReload((n) => n + 1)}
+              />
             )}
             {currentArtifact && continueVersion && (
               <form className="artifacts-continue" onSubmit={(event) => void submitContinue(event)}>
@@ -423,6 +603,6 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
 }

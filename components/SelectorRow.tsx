@@ -49,7 +49,7 @@ export function SelectorRow({
       style={{
         position: "relative",
         background: active ? "var(--bg-selected)" : "transparent",
-        transition: "background 0.1s",
+        transition: "background var(--dur-fast) var(--ease-native)",
       }}
     >
       <button
@@ -62,7 +62,7 @@ export function SelectorRow({
           width: "100%", minWidth: 0, padding: gutter ? "7px 36px 7px 12px" : "7px 12px",
           border: "none", background: "none",
           color: active ? "var(--text)" : "var(--text-muted)",
-          cursor: "pointer", fontSize: 12, fontWeight: active ? 600 : 400,
+          cursor: "pointer", fontSize: "var(--fs-caption)", fontWeight: active ? 600 : 400,
           textAlign: "left", whiteSpace: "nowrap",
         }}
       >

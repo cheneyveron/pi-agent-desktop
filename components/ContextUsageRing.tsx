@@ -79,9 +79,9 @@ export function ContextUsageRing({ contextUsage, sessionStats, onOpenStats }: Co
       style={{
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 32, height: 32, padding: 0, flexShrink: 0,
-        background: "none", border: "none", borderRadius: 9,
+        background: "none", border: "none", borderRadius: "var(--radius-md)",
         cursor: hasUsage ? "pointer" : "default",
-        transition: "background 0.12s, opacity 0.12s",
+        transition: "background var(--dur-fast) var(--ease-native), opacity var(--dur-fast) var(--ease-native)",
         opacity: hasUsage ? 1 : 0.5,
       }}
       onMouseEnter={(e) => {

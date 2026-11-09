@@ -251,18 +251,18 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
           background: isActive ? "var(--accent)" : isOnPath ? "var(--text-muted)" : "var(--border)",
           border: isActive ? "none" : "1px solid var(--text-dim)",
           marginRight: 6,
-          transition: "background 0.12s",
+          transition: "background var(--dur-fast) var(--ease-native)",
         }} />
 
         {/* Role badge */}
         {role && (
           <span style={{
-            fontSize: 10,
+            fontSize: "var(--fs-micro)",
             fontFamily: "var(--font-mono)",
             color: role === "user" ? "var(--accent)" : "var(--text-dim)",
             background: role === "user" ? "var(--accent-soft, var(--user-bg))" : "var(--bg-hover)",
             border: `1px solid ${role === "user" ? "var(--accent-border, var(--border))" : "var(--border)"}`,
-            borderRadius: 3,
+            borderRadius: "var(--radius-xs)",
             padding: "0 4px",
             marginRight: 5,
             flexShrink: 0,
@@ -274,14 +274,14 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
 
         {/* Skipped indicator */}
         {skipped > 0 && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginRight: 5, flexShrink: 0 }}>
+          <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginRight: 5, flexShrink: 0 }}>
             +{skipped}
           </span>
         )}
 
         {/* Label */}
         <span style={{
-          fontSize: 11,
+          fontSize: "var(--fs-micro)",
           color: isActive ? "var(--text)" : isOnPath ? "var(--text-muted)" : "var(--text-dim)",
           fontWeight: isActive ? 500 : 400,
           overflow: "hidden",
@@ -377,7 +377,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   }, [locked, onLeafChange, summaryTargetId]);
 
   const lockedNotice = locked && (
-    <div style={{ padding: "2px 0 4px", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>
+    <div style={{ padding: "2px 0 4px", fontSize: "var(--fs-micro)", color: "var(--text-dim)", fontStyle: "italic" }}>
       {t("i18n.branchesLockedWhileRunning")}
     </div>
   );
@@ -401,7 +401,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   );
 
   const chevron = (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2, transform: open ? "rotate(180deg)" : "none", transition: "transform var(--dur-base) var(--ease-native)" }}>
       <polyline points="2 3.5 5 6.5 8 3.5" />
     </svg>
   );
@@ -424,9 +424,9 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             border: "none",
             cursor: "pointer",
             color: open ? "var(--text)" : "var(--text-muted)",
-            fontSize: 11,
+            fontSize: "var(--fs-micro)",
             whiteSpace: "nowrap",
-            transition: "color 0.1s, background 0.1s",
+            transition: "color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native)",
           }}
           onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = open ? "var(--text)" : "var(--text-muted)"; }}
@@ -464,7 +464,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
                 ))}
               </div>
             ) : (
-              <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+              <div style={{ padding: "10px 16px", fontSize: "var(--fs-caption)", color: "var(--text-muted)", fontStyle: "italic" }}>
                 {noBranchReason}
               </div>
             )}
@@ -489,7 +489,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           border: "none",
           cursor: "pointer",
           color: "var(--text-muted)",
-          fontSize: 11,
+          fontSize: "var(--fs-micro)",
           textAlign: "left",
         }}
       >
@@ -507,7 +507,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           right: 0,
           background: "var(--bg)",
           borderBottom: "var(--hairline) solid var(--border)",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+          boxShadow: "var(--shadow-popover)",
           zIndex: 100,
         }}>
           {hasContent ? (
@@ -527,7 +527,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
               ))}
             </div>
           ) : (
-            <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+            <div style={{ padding: "10px 16px", fontSize: "var(--fs-caption)", color: "var(--text-muted)", fontStyle: "italic" }}>
               {noBranchReason ?? t("i18n.noBranches")}
             </div>
           )}

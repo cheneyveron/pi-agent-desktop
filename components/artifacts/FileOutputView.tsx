@@ -5,6 +5,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import type { ArtifactType } from "@/lib/artifacts";
 import type { FileOutputDetail, FileOutputOpInfo, FileOutputSummary } from "@/lib/artifact-index";
+import type { FileOutputRole } from "@/lib/file-output-role";
 import { ArtifactView } from "../ArtifactView";
 import { FileViewer } from "../FileViewer";
 
@@ -12,6 +13,8 @@ interface Props {
   item: FileOutputSummary;
   /** Opens the conversation scrolled to the entry. Resolves false when the session is gone. */
   onOpenInConversation: (sessionId: string, entryId: string) => Promise<boolean>;
+  /** The user moved the file into or out of the outputs; the list reloads. */
+  onRoleChange: () => void;
 }
 
 type Detail =
@@ -32,16 +35,18 @@ function snapshotType(path: string): { type: ArtifactType; lang: string } {
 }
 
 /**
- * A file the model wrote or edited: the file as it is on disk now, read
- * through /api/files with the latest writing session as the reference that
- * authorizes the path, plus every recorded write and edit. When the file is
- * gone, the last `write` call's content comes back from the transcript.
+ * A file the model wrote or edited (or one a reply handed over): the file as
+ * it is on disk now, read through /api/files with the latest writing session
+ * as the reference that authorizes the path, plus every recorded write and
+ * edit. When the file is gone, the last `write` call's content comes back
+ * from the transcript. The user can move it into or out of the outputs.
  */
-export function FileOutputView({ item, onOpenInConversation }: Props) {
+export function FileOutputView({ item, onOpenInConversation, onRoleChange }: Props) {
   const { t, locale } = useI18n();
   const [state, setState] = useState<Detail>({ status: "loading" });
   const [snapshot, setSnapshot] = useState<Snapshot>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [roleBusy, setRoleBusy] = useState(false);
   const revision = `${item.versionCount}:${item.updated}:${item.missing}`;
 
   useEffect(() => {
@@ -88,6 +93,26 @@ export function FileOutputView({ item, onOpenInConversation }: Props) {
     return () => controller.abort();
   }, [gone, lastWrite]);
 
+  async function setRole(role: FileOutputRole | null) {
+    setActionError(null);
+    setRoleBusy(true);
+    try {
+      const response = await fetch("/api/artifacts/file", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: item.path, role }),
+      });
+      const data = await response.json() as FileOutputDetail & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+      setState({ status: "ready", detail: data });
+      onRoleChange();
+    } catch (error) {
+      setActionError(t("artifacts.page.roleFailed", { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setRoleBusy(false);
+    }
+  }
+
   async function openOp(op: FileOutputOpInfo) {
     setActionError(null);
     if (!(await onOpenInConversation(op.sessionId, op.entryId))) setActionError(t("artifacts.page.sessionMissing"));
@@ -120,10 +145,28 @@ export function FileOutputView({ item, onOpenInConversation }: Props) {
     );
   }
 
+  const role = detail?.role ?? item.role;
+  const override = detail ? detail.override : item.override;
+
   return (
     <>
       <div className="artifacts-file-header">
         <span className="artifacts-file-path" title={item.path}>{item.displayPath}</span>
+        <div className="artifacts-file-role">
+          <button
+            type="button"
+            className="scheduled-button scheduled-button--small"
+            disabled={roleBusy}
+            onClick={() => void setRole(role === "output" ? "process" : "output")}
+          >
+            {role === "output" ? t("artifacts.page.markProcess") : t("artifacts.page.markOutput")}
+          </button>
+          {override && (
+            <button type="button" className="scheduled-button scheduled-button--small" disabled={roleBusy} onClick={() => void setRole(null)}>
+              {t("artifacts.page.resetRole")}
+            </button>
+          )}
+        </div>
         {state.status === "missing" && <p className="scheduled-hint">{t("artifacts.page.fileUnavailable")}</p>}
         {state.status === "error" && <p className="scheduled-error">{t("artifacts.page.loadFailed", { error: state.error ?? "" })}</p>}
         {ops.length > 0 && (
@@ -134,7 +177,9 @@ export function FileOutputView({ item, onOpenInConversation }: Props) {
                 const label = op.onActiveBranch ? t("artifacts.page.openInConversation") : t("artifacts.page.otherBranchHint");
                 return (
                   <li key={op.toolCallId}>
-                    <span className="artifacts-file-op">{op.tool === "write" ? t("artifacts.page.opWrite") : t("artifacts.page.opEdit")}</span>
+                    <span className="artifacts-file-op">
+                      {op.tool === "write" ? t("artifacts.page.opWrite") : op.tool === "edit" ? t("artifacts.page.opEdit") : t("artifacts.page.opMention")}
+                    </span>
                     <span className="artifacts-file-op-session" title={op.sessionTitle}>{op.sessionTitle}</span>
                     <span className="artifacts-file-op-time">{formatRelativeTime(op.timestamp, locale)}</span>
                     <button

@@ -153,12 +153,12 @@ function SkillDetail({
         </ConfigDetailHeader>
         <div className="skill-detail-status-row">
           {!enabled && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)" }}>
               {t("i18n.hiddenButInvocable")}
             </span>
           )}
           {saveError && (
-            <span style={{ fontSize: 12, color: "#f87171", overflowWrap: "anywhere" }}>
+            <span style={{ fontSize: "var(--fs-caption)", color: "var(--danger)", overflowWrap: "anywhere" }}>
               {saveError}
             </span>
           )}
@@ -233,7 +233,7 @@ function SkillDetail({
             )}
           </div>
           {updateError && (
-            <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
+            <span style={{ fontSize: "var(--fs-caption)", color: "var(--danger)" }}>{updateError}</span>
           )}
         </ConfigField>
       )}
@@ -384,10 +384,10 @@ function AddSkillPanel({
             style={{
               flex: 1,
               padding: "7px 10px",
-              fontSize: 12,
+              fontSize: "var(--fs-caption)",
               background: "var(--bg-panel)",
               border: "var(--hairline) solid var(--border)",
-              borderRadius: 6,
+              borderRadius: "var(--radius-sm)",
               color: "var(--text)",
               outline: "none",
             }}
@@ -403,11 +403,11 @@ function AddSkillPanel({
 
         {/* Errors */}
         {searchError && (
-          <div style={{ fontSize: 12, color: "#f87171" }}>{searchError}</div>
+          <div style={{ fontSize: "var(--fs-caption)", color: "var(--danger)" }}>{searchError}</div>
         )}
         {installError && (
           <div
-            style={{ fontSize: 12, color: "#f87171", wordBreak: "break-word" }}
+            style={{ fontSize: "var(--fs-caption)", color: "var(--danger)", wordBreak: "break-word" }}
           >
             {installError}
           </div>
@@ -441,8 +441,8 @@ function AddSkillPanel({
                   {/* skill name prominent */}
                   <div
                     style={{
-                      fontSize: 13,
-                      fontWeight: 600,
+                      fontSize: "var(--fs-body)",
+                      fontWeight: "var(--fw-semibold)",
                       color: "var(--text)",
                       marginBottom: 3,
                     }}
@@ -461,7 +461,7 @@ function AddSkillPanel({
                     <span
                       style={{
                         fontFamily: "var(--font-mono)",
-                        fontSize: 11,
+                        fontSize: "var(--fs-micro)",
                         color: "var(--text-dim)",
                       }}
                     >
@@ -469,9 +469,9 @@ function AddSkillPanel({
                     </span>
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: "var(--fs-caption)",
                         color: "var(--text-muted)",
-                        fontWeight: 500,
+                        fontWeight: "var(--fw-medium)",
                       }}
                     >
                       {r.installs}
@@ -482,7 +482,7 @@ function AddSkillPanel({
                         target="_blank"
                         rel="noreferrer"
                         style={{
-                          fontSize: 12,
+                          fontSize: "var(--fs-caption)",
                           color: "var(--accent)",
                           textDecoration: "none",
                         }}
@@ -502,7 +502,7 @@ function AddSkillPanel({
                     flexShrink: 0,
                     background: isInstalled ? "rgba(34,197,94,0.1)" : "none",
                     color: isInstalled
-                      ? "#16a34a"
+                      ? "var(--success)"
                       : isInstalling
                         ? "var(--accent)"
                         : "var(--text-muted)",
@@ -963,7 +963,7 @@ export function SkillsConfig({
             Object.values(updateStatuses).filter(
               (status) => status.state === "update-available",
             ).length > 0 && (
-              <span style={{ fontSize: 12, color: "#d97706" }}>
+              <span style={{ fontSize: "var(--fs-caption)", color: "var(--warning)" }}>
                 {
                   Object.values(updateStatuses).filter(
                     (status) => status.state === "update-available",

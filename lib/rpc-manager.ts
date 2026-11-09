@@ -2,7 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
-import { existsSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, realpathSync, statSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
@@ -15,9 +15,12 @@ import {
 } from "./project-command-env";
 import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSessionListVersion, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
-import { notifySessionComplete } from "./web-push";
+import { notifySessionEvent } from "./web-push";
+import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
+export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
+import { IDLE_SESSION_CAP_GRACE_MS, selectIdleSessionsToEvict, type IdleSessionCandidate, type IdleSessionCapLimits } from "./idle-session-cap";
 import type { AgentSession, LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
@@ -51,6 +54,7 @@ import {
 } from "./subagents";
 import { createSubagentController } from "./subagent-runtime";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
+import { isAutoTitleEnabled } from "./session-title-settings";
 import { resolveShellTools } from "./powershell-settings";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
@@ -107,7 +111,46 @@ export interface AgentEvent {
 }
 
 type EventListener = (event: AgentEvent) => void;
-type AgentRunCompleteListener = (sessionId: string) => void;
+type AgentRunCompleteListener = (sessionId: string, outcome: AgentRunOutcome) => void;
+/** A blocking extension dialog (select / confirm / input / editor / custom) is waiting for the user. */
+type AttentionNeededListener = (sessionId: string, prompt: string) => void;
+
+// How recent runs ended, kept past the wrapper: the idle timeout destroys a
+// wrapper 10 minutes after its run, and the Tasks page is often read later than
+// that (from a phone). Process-wide, so a server restart forgets them.
+type RecentRunOutcome = NonNullable<AgentTaskSnapshot["lastRun"]>;
+const RECENT_RUN_OUTCOME_LIMIT = 200;
+const RECENT_RUN_OUTCOMES_KEY = Symbol.for("pi-web:recent-run-outcomes");
+
+function recentRunOutcomes(): Map<string, RecentRunOutcome> {
+  const store = globalThis as unknown as Record<symbol, Map<string, RecentRunOutcome> | undefined>;
+  return store[RECENT_RUN_OUTCOMES_KEY] ??= new Map();
+}
+
+function recordRecentRunOutcome(sessionId: string, run: RecentRunOutcome): void {
+  const outcomes = recentRunOutcomes();
+  outcomes.delete(sessionId);
+  outcomes.set(sessionId, run);
+  while (outcomes.size > RECENT_RUN_OUTCOME_LIMIT) {
+    outcomes.delete(outcomes.keys().next().value as string);
+  }
+}
+
+export function resetRecentRunOutcomesForTests(): void {
+  recentRunOutcomes().clear();
+}
+
+const BLOCKING_UI_METHODS = new Set<string>(["select", "confirm", "input", "editor", "custom"]);
+
+function agentRunOutcome(event: AgentEvent): AgentRunOutcome {
+  const messages = Array.isArray(event.messages) ? event.messages as Array<Record<string, unknown>> : [];
+  const last = [...messages].reverse().find((message) => message?.role === "assistant");
+  if (last?.stopReason === "aborted") return { status: "aborted" };
+  if (last?.stopReason === "error") {
+    return { status: "failed", error: typeof last.errorMessage === "string" ? last.errorMessage : "" };
+  }
+  return { status: "done" };
+}
 
 type PendingUiResponse = {
   resolve: (response: ExtensionUiResponse) => void;
@@ -161,6 +204,7 @@ type AgentSessionWrapperOptions = {
   /** The user let this chat use their computer. */
   chatUnlocked?: boolean;
   onAgentRunComplete?: AgentRunCompleteListener;
+  onAttentionNeeded?: AttentionNeededListener;
   suppressCompletionNotifications?: boolean;
   /** Connects the session's MCP servers before a prompt starts a run, and lets go of them when it closes (lib/mcp-host.ts). */
   mcpHost?: Pick<McpHost, "prepareForPrompt" | "dispose">;
@@ -346,8 +390,10 @@ export class AgentSessionWrapper {
   private activeMutatingCommands = 0;
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
-  // Names a new session from its first message (lib/session-auto-name.ts).
+  // Names a new session from its first message (lib/session-auto-name.ts),
+  // when Settings › General › "Name sessions automatically" is on.
   private readonly autoNamer = new SessionAutoNamer({
+    enabled: () => isAutoTitleEnabled(),
     sessionName: () => this.inner.sessionManager.getSessionName(),
     isFirstUserMessage: () => isFirstUserMessage(this.inner.sessionManager.getEntries()),
     generate: async () => (await generateSessionTitle(this.inner as unknown as AgentSession)).title,
@@ -364,13 +410,22 @@ export class AgentSessionWrapper {
   private readonly policy: SessionPolicy;
   private readonly chatFolder: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
+  private readonly onAttentionNeeded?: AttentionNeededListener;
   private readonly suppressCompletionNotifications: boolean;
+  // Overwritten by every `agent_end`, so an auto-retry that recovers reports success.
+  private lastRunOutcome: AgentRunOutcome = { status: "done" };
+  private runStartedAt: number | null = null;
+  private retrying = false;
+  private lastFinishedRun: AgentTaskSnapshot["lastRun"] = null;
   private readonly mcpHost?: Pick<McpHost, "prepareForPrompt" | "dispose">;
   private mcpHostDisposed = false;
   // The MCP wait of the prompt being admitted; Stop ends it.
   private mcpPromptWait: { controller: AbortController; done: Promise<void> } | null = null;
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  // Last time a listener was attached or left, or a command/event reset the idle timer.
+  private lastUsedAt = Date.now();
+  private onUnwatchedCallback: (() => void) | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private sessionShutdownEmitted = false;
@@ -397,6 +452,7 @@ export class AgentSessionWrapper {
     });
     this.chatFolder = options.chatFolder === true;
     this.onAgentRunComplete = options.onAgentRunComplete;
+    this.onAttentionNeeded = options.onAttentionNeeded;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.mcpHost = options.mcpHost;
     this.composerQueue = new ComposerQueue(inner.sessionId, {
@@ -553,11 +609,15 @@ export class AgentSessionWrapper {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       if (event.type === "agent_start") {
         this.agentRunNeedsCompletion = true;
+        this.runStartedAt ??= Date.now();
         // Cross-window liveness: idle → running must reach other windows'
         // sidebars through the running-events stream, not just this one's SSE.
         notifyRunningChange();
       }
+      if (event.type === "auto_retry_start") this.retrying = true;
+      if (event.type === "auto_retry_end" || event.type === "agent_start") this.retrying = false;
       if (event.type === "agent_end") {
+        this.lastRunOutcome = agentRunOutcome(event);
         invalidateSessionListCache();
         notifyRunningChange();
         // Every tool call of the run has finished; nothing is left to replay.
@@ -591,6 +651,9 @@ export class AgentSessionWrapper {
         notifyRunningChange();
       }
       if (event.type === "agent_settled") {
+        // Stop during a retry back-off ends the run with no new agent_end (agent-session.js
+        // _finishCancelledRetry), so the last one still says "error"; the SDK reports the Stop here.
+        if (event.aborted === true) this.lastRunOutcome = { status: "aborted" };
         this.composerQueue.wake();
         this.notifyAgentRunCompleteIfIdle();
       }
@@ -624,13 +687,62 @@ export class AgentSessionWrapper {
   }
 
   private notifyAgentRunCompleteIfIdle(): void {
+    if (!this.isRunning()) this.runStartedAt = null;
     if (!this.agentRunNeedsCompletion || this.isRunning() || this.composerQueue.snapshot().length) return;
     this.agentRunNeedsCompletion = false;
+    this.runStartedAt = null;
+    this.retrying = false;
+    this.lastFinishedRun = { outcome: this.lastRunOutcome, finishedAt: Date.now() };
     if (this.suppressCompletionNotifications) return;
+    recordRecentRunOutcome(this.sessionId, this.lastFinishedRun);
     try {
-      this.onAgentRunComplete?.(this.sessionId);
+      this.onAgentRunComplete?.(this.sessionId, this.lastRunOutcome);
     } catch (error) {
       console.error("[pi-web] completion listener failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  getTaskSnapshot(): AgentTaskSnapshot {
+    const running = this.isRunning();
+    const waiting: AgentTaskSnapshot["waiting"] = [];
+    for (const event of this.pendingUiRequests.values()) {
+      const method = typeof event.method === "string" ? event.method : "";
+      if (!BLOCKING_UI_METHODS.has(method)) continue;
+      const prompt = typeof event.title === "string" ? event.title
+        : typeof event.message === "string" ? event.message
+          : "";
+      waiting.push({ method, prompt });
+    }
+    if (!running) this.runStartedAt = null;
+    let activity: AgentTaskSnapshot["activity"] = null;
+    if (running) {
+      const tools = [...this.activeToolEvents.values()];
+      const latest = tools[tools.length - 1];
+      activity = this.inner.isCompacting ? { kind: "compacting" }
+        : this.retrying ? { kind: "retrying" }
+          : latest && typeof latest.toolName === "string" ? { kind: "tool", name: latest.toolName }
+            : { kind: "thinking" };
+    }
+    return {
+      sessionId: this.sessionId,
+      running,
+      // Running before agent_start (MCP prepare, preflight): pin the start so it does not drift.
+      runStartedAt: running ? this.runStartedAt ??= Date.now() : null,
+      activity,
+      waiting,
+      lastRun: this.lastFinishedRun,
+    };
+  }
+
+  private notifyAttentionNeeded(request: ExtensionUiRequestBody): void {
+    if (this.suppressCompletionNotifications || !BLOCKING_UI_METHODS.has(request.method)) return;
+    const prompt = typeof request.title === "string" ? request.title
+      : typeof request.message === "string" ? request.message
+        : "";
+    try {
+      this.onAttentionNeeded?.(this.sessionId, prompt);
+    } catch (error) {
+      console.error("[pi-web] attention listener failed:", error instanceof Error ? error.message : error);
     }
   }
 
@@ -803,6 +915,7 @@ export class AgentSessionWrapper {
   }
 
   private resetIdleTimer(): void {
+    this.lastUsedAt = Date.now();
     if (!this._alive) {
       if (this.idleTimer) clearTimeout(this.idleTimer);
       return;
@@ -856,11 +969,42 @@ export class AgentSessionWrapper {
 
   onEvent(listener: EventListener): () => void {
     this.listeners.add(listener);
+    this.lastUsedAt = Date.now();
     for (const event of this.pendingUiRequests.values()) listener(event);
     for (const event of this.activeToolEvents.values()) listener(event);
     return () => {
-      this.listeners.delete(listener);
+      if (!this.listeners.delete(listener)) return;
+      this.lastUsedAt = Date.now();
+      if (this.listeners.size === 0) this.onUnwatchedCallback?.();
     };
+  }
+
+  onUnwatched(cb: () => void): void {
+    this.onUnwatchedCallback = cb;
+  }
+
+  /**
+   * This wrapper as a candidate for the idle-session cap (lib/idle-session-cap.ts),
+   * or null while anything still needs it loaded: a run (isRunning()), an SSE
+   * listener, a pending extension dialog, queued composer messages, an extension
+   * liveness provider, or use within the grace period. A session with no file on
+   * disk yet is never a candidate: shutting it down would lose it.
+   */
+  idleCapCandidate(now: number = Date.now()): IdleSessionCandidate | null {
+    if (!this.isAlive() || this.isRunning() || this.forceShutdownOnIdle) return null;
+    if (this.listeners.size > 0 || this.pendingUiRequests.size > 0 || this.activeCustomUis.size > 0) return null;
+    if (this.composerQueue.snapshot().length > 0) return null;
+    if (now - this.lastUsedAt < IDLE_SESSION_CAP_GRACE_MS) return null;
+    const sessionFile = this.sessionFile;
+    if (!sessionFile) return null;
+    let bytes: number;
+    try {
+      bytes = statSync(sessionFile).size;
+    } catch {
+      return null;
+    }
+    if (hasActiveSessionLivenessProvider({ sessionId: this.sessionId, sessionFile })) return null;
+    return { id: this.sessionId, idleSince: this.lastUsedAt, bytes };
   }
 
   onDestroy(cb: () => void): void {
@@ -1980,6 +2124,8 @@ export class AgentSessionWrapper {
           };
           this.activeCustomUis.set(id, custom);
           this.emitCustomUiRender(id, custom);
+          // Once per dialog: it re-renders on every keypress and redraw.
+          this.notifyAttentionNeeded({ method: "custom" });
         })
         .catch((error) => {
           if (completed) return;
@@ -2042,6 +2188,7 @@ export class AgentSessionWrapper {
         cancel: () => settle(defaultValue),
       });
       this.emit(fullRequest as AgentEvent);
+      this.notifyAttentionNeeded(request);
     });
   }
 
@@ -2260,8 +2407,50 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
     previous.onDestroy(() => {});
   }
   registry.set(sessionId, wrapper);
+  wrapper.onUnwatched(scheduleIdleSessionCap);
   wrapper.start();
   if (!wrapper.isChatOnly()) wrapper.beginExtensionBinding();
+  enforceIdleSessionCap();
+}
+
+let idleSessionCapTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Re-check the cap once a session that just lost its last listener is past the grace period. */
+function scheduleIdleSessionCap(): void {
+  if (idleSessionCapTimer) clearTimeout(idleSessionCapTimer);
+  idleSessionCapTimer = setTimeout(() => {
+    idleSessionCapTimer = null;
+    enforceIdleSessionCap();
+  }, IDLE_SESSION_CAP_GRACE_MS + 1_000);
+  idleSessionCapTimer.unref?.();
+}
+
+/**
+ * Shut down the oldest unwatched idle wrappers beyond the cap in
+ * lib/idle-session-cap.ts. PI_WEB_IDLE_TIMEOUT_MS=0 asks to keep sessions
+ * loaded, so it turns the cap off too. Returns the ids shut down.
+ */
+export function enforceIdleSessionCap(now: number = Date.now(), limits?: IdleSessionCapLimits): string[] {
+  if (SESSION_IDLE_TIMEOUT_MS === 0) return [];
+  const registry = getRegistry();
+  const candidates: IdleSessionCandidate[] = [];
+  const wrappers = new Map<string, AgentSessionWrapper>();
+  for (const [key, wrapper] of registry) {
+    // A wrapper registered before a hot reload may lack the method.
+    const candidate = typeof wrapper.idleCapCandidate === "function" ? wrapper.idleCapCandidate(now) : null;
+    if (!candidate) continue;
+    candidates.push({ ...candidate, id: key });
+    wrappers.set(key, wrapper);
+  }
+  const evicted: string[] = [];
+  for (const id of selectIdleSessionsToEvict(candidates, limits)) {
+    const wrapper = wrappers.get(id)!;
+    evicted.push(id);
+    void wrapper.shutdown().catch((error) => {
+      console.error("[pi-web] failed to shut down capped idle session:", error instanceof Error ? error.message : error);
+    });
+  }
+  return evicted;
 }
 
 const SUBAGENT_CONTROLLER = createSubagentController({
@@ -2695,6 +2884,23 @@ export function getRunningRpcSessionIds(): string[] {
   return [...ids];
 }
 
+/** Live sessions for the Tasks page; sub-agent runs are reported by their parent. */
+export function getRpcTaskSnapshots(): AgentTaskSnapshot[] {
+  const snapshots = new Map<string, AgentTaskSnapshot>();
+  for (const [sessionId, session] of getRegistry()) {
+    if (!session.isAlive() || session.hasSuppressedCompletionNotifications()) continue;
+    // A wrapper created before a hot reload (kept on globalThis) predates this method.
+    if (typeof session.getTaskSnapshot !== "function") continue;
+    const snapshot = session.getTaskSnapshot();
+    snapshots.set(session.sessionId || sessionId, { ...snapshot, sessionId: session.sessionId || sessionId });
+  }
+  for (const [sessionId, lastRun] of recentRunOutcomes()) {
+    if (snapshots.has(sessionId)) continue;
+    snapshots.set(sessionId, { sessionId, running: false, runStartedAt: null, activity: null, waiting: [], lastRun });
+  }
+  return [...snapshots.values()];
+}
+
 export function getCompletionNotificationSuppressedRpcSessionIds(): string[] {
   const ids = new Set<string>();
   for (const [sessionId, session] of getRegistry()) {
@@ -3002,9 +3208,22 @@ export async function startRpcSession(
       chatWorkspace,
       chatFolder,
       chatUnlocked,
-      onAgentRunComplete: (completedSessionId) => {
-        void notifySessionComplete(completedSessionId).catch((error) => {
+      onAgentRunComplete: (completedSessionId, outcome) => {
+        // A run the user stopped needs no message on their phone.
+        if (outcome.status === "aborted") return;
+        // The live session knows its own name; no need to scan every session file.
+        const sessionName = inner.sessionManager.getSessionName() ?? null;
+        const push = outcome.status === "failed"
+          ? notifySessionEvent(completedSessionId, { kind: "failed", detail: outcome.error }, sessionName)
+          : notifySessionEvent(completedSessionId, { kind: "complete" }, sessionName);
+        void push.catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
+        });
+      },
+      onAttentionNeeded: (waitingSessionId, prompt) => {
+        const sessionName = inner.sessionManager.getSessionName() ?? null;
+        void notifySessionEvent(waitingSessionId, { kind: "attention", detail: prompt }, sessionName).catch((error) => {
+          console.error("[pi-web] failed to send attention push:", error instanceof Error ? error.message : error);
         });
       },
       suppressCompletionNotifications: Boolean(subagentResources),

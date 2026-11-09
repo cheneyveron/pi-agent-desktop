@@ -9,6 +9,13 @@ import {
   isApiRequestHostAllowed,
 } from "@/lib/request-security";
 import {
+  isRemoteAccessHost,
+  isTailscaleFunnelRequest,
+  isRemoteAccessRequestAuthorized,
+  readRemoteAccessConfig,
+} from "@/lib/remote-access";
+import { readRelayMark } from "@/lib/relay/mark";
+import {
   isValidWebSessionToken,
   isValidBasicAuthorization,
   isWebPasswordEnabled,
@@ -32,7 +39,38 @@ export function proxy(request: NextRequest) {
     ? isApiRequestAllowed(request)
     : isApiRequestHostAllowed(request);
 
+  // Tailscale Funnel puts this port on the public internet. Without a web password
+  // that is a shell for anyone, so refuse it however the Host header reads.
+  if (isTailscaleFunnelRequest(request) && !isWebPasswordEnabled(process.env.PI_WEB_PASSWORD)) {
+    return new NextResponse("Pi refuses Tailscale Funnel (public) traffic. Use tailscale serve, which keeps it inside your tailnet.", {
+      status: 403,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  // A paired phone's request, replayed from 127.0.0.1 by the relay connector after
+  // its Noise session authenticated the device key. Host and Origin are the
+  // connector's own, and device keys take the place of the web password. A mark
+  // this process did not issue is refused outright.
+  const relayMark = readRelayMark(request);
+  if (relayMark === "forged") {
+    return isApiRequest
+      ? NextResponse.json({ error: "Untrusted relay request" }, { status: 403 })
+      : new NextResponse("Untrusted relay request", { status: 403 });
+  }
+  if (relayMark) return NextResponse.next();
+
   if (!isTrustedRequest) {
+    // The tailnet name from Settings › Remote access, reached without a Tailscale user:
+    // Funnel (public) traffic, a tagged device, or a login that is not on the list.
+    const remoteAccess = readRemoteAccessConfig();
+    if (remoteAccess && isRemoteAccessHost(request, remoteAccess)
+      && !isRemoteAccessRequestAuthorized(request, remoteAccess)) {
+      return new NextResponse("Remote access needs a signed-in Tailscale device that is allowed in Pi's settings.", {
+        status: 403,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
     if (!isApiRequest) {
       return new NextResponse("Untrusted request", { status: 403 });
     }

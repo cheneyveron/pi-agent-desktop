@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { Type, type TSchema } from "@earendil-works/pi-ai";
+import { Type, type TSchema } from "typebox";
 import {
   ActionError, ask, assign, dispatchReadonly, insert, remember, requireTask, schedule,
   suggestArchive, update, type Ctx,

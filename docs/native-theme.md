@@ -97,9 +97,23 @@ their own canvas (`--canvas-background: var(--bg)`) and derive `--selection`,
 `--sidebar-selected` and `--menu-selection-color` from their accent; the background
 washes apply to Light and Dark only.
 
-**Shape and motion.** Radii come from `--radius-sm/md/lg/xl` (6/8/12/16px). Controls are
-`--control-height-sm` 28px or `--control-height` 32px. Elevation uses the four
-`--shadow-*` levels. Easing is `--ease-native`.
+**Shape and motion.** Radii come from `--radius-xs/sm/md/lg/xl` (4/6/8/12/16px); the
+5px choice-row radius is the menu system's own token. Buttons sit on `--control-h-sm/md/lg`
+(24/28/32px; `--control-height-sm` and `--control-height` alias md and lg). Elevation uses the
+four `--shadow-*` levels. Transitions take `--dur-fast` (120ms, hover and press) or `--dur-base`
+(180ms, reveals) with `--ease-native`; only infinite loops keep their own curve. Focus rings
+keep their per-surface weight: the translucent `--focus-ring` is 3px where it sits on a tinted
+surface, and menus use the solid `--menu-focus-ring` (`--text`) so the ring keeps 3:1 against a
+hovered row (`e2e/option-controls.mjs`). Anything floating over other UI takes a
+`--z-*` layer (sticky 30, chrome 90, dropdown 120, popover 650, modal 1000, toast 1200,
+menu 2400); single-digit z-index stays literal inside a component. States use `--danger`,
+`--success` and `--warning`, never a hard-coded red, green or amber. Icons drawn on a
+24-unit viewBox use a 1.75 or 2 stroke and render at 12, 14 or 16px.
+
+**No new inline literals.** `scripts/inline-style-tokens.test.mjs` fails when a component
+gains an inline `fontSize`, `fontWeight` or hex colour. The legacy ones left are frozen per
+file in `scripts/inline-style-baseline.json`; after removing some, lower it with
+`node scripts/inline-style-tokens.mjs update` (it refuses to raise a count).
 
 **Settings choices.** Config sidebars (Agents, Models, Skills, Plugins and MCP) reuse
 the 8px choice inset, 4px row gap and 5px row radius. Selected and hovered neighbors
@@ -119,7 +133,7 @@ position derive from `--composer-line-height` and `--composer-send-size`; do not
 the icon by a fixed pixel offset. Send stays bottom-aligned with the card's arc.
 `e2e/composer-geometry.mjs` checks empty, single-line and multi-line drafts at 12–24px.
 
-**One chip language.** Every toolbar-ish control is a quiet 28×28 chip with a 7px radius.
+**One chip language.** Every toolbar-ish control is a quiet 28×28 chip with an 8px (`--radius-md`) radius.
 It shows `--bg-hover` when hovered and `--bg-selected` when pinned on. The pinned state is
 deliberately one step stronger than hover, so "on" is never mistaken for the pointer resting on
 the control. This applies to sidebar chrome buttons, the topbar actions, the panel toggle, the

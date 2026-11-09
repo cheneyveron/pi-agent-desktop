@@ -126,6 +126,10 @@ export function ConversationNavigator({ turns, scrollContainerRef, contentRef, e
           <span className="conversation-navigator-answer">
             {preview.answer || "…"}
           </span>
+          {/* Says what the ticks do, which they cannot show on their own. */}
+          <span className="conversation-navigator-hint">
+            {t("chat.conversationNavigatorHint", { current: (previewIndex ?? 0) + 1, total: turns.length })}
+          </span>
         </button>
       )}
       <div

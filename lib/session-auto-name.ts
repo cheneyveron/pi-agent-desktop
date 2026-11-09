@@ -1,7 +1,10 @@
 /**
  * Automatic naming of a new session, started by its first user message.
  *
- * Runs on the server, beside the live session, so it does not depend on a
+ * Upstream's Settings › General › "Name sessions automatically" switch
+ * (`isAutoTitleEnabled()`) decides whether it runs; this fork keeps its own
+ * trigger instead of upstream's post-run one so the title arrives during a
+ * long first turn. Runs on the server, beside the live session, so it does not depend on a
  * window staying on the session, and starts while the first turn is still
  * running instead of after it: a long first task no longer leaves the session
  * untitled for its whole length. Pi writes a new session's file only once an
@@ -24,6 +27,8 @@ export function isFirstUserMessage(entries: readonly EntryLike[]): boolean {
 }
 
 export interface AutoNameTarget {
+  /** Settings › General › "Name sessions automatically" (`lib/session-title-settings.ts`). */
+  enabled(): boolean;
   sessionName(): string | undefined;
   /** Whether the session holds only its first user message. */
   isFirstUserMessage(): boolean;
@@ -51,7 +56,7 @@ export class SessionAutoNamer {
    */
   onUserMessage(): void {
     if (this.state !== "waiting") return;
-    if (this.target.sessionName() || !this.target.isFirstUserMessage()) {
+    if (!this.target.enabled() || this.target.sessionName() || !this.target.isFirstUserMessage()) {
       this.state = "done";
       return;
     }
