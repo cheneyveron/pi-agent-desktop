@@ -83,8 +83,9 @@ const server = createServer(async (req, res) => {
       agentRequests.push(await body(req));
       return json(res, 200, { success: true, sessionId: "e2e-session" });
     }
-    // The main session's model picker lists the models the app offers (home folder scope).
-    if (url.pathname === "/api/home") return json(res, 200, { home: "/home/e2e" });
+    // The main session's model picker lists the models the app offers, scoped by the chat
+    // workspace folder (an allowed root; the home folder itself is refused by /api/models).
+    if (url.pathname === "/api/chat-workspace") return json(res, 200, { cwd: "/home/e2e/.pi/agent/chat-workspace" });
     if (url.pathname === "/api/models") return json(res, 200, { modelList: E2E_MODELS });
     if (url.pathname.startsWith("/api/")) return json(res, 200, {});
     res.setHeader("Content-Type", url.pathname === "/fixture.js" ? "text/javascript" : "text/html; charset=utf-8");

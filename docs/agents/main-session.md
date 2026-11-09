@@ -52,7 +52,7 @@ so under "Deviations".
 - Chosen in the UI with `components/main-session/MainSessionModelPicker.tsx` (an `AppSelect`):
   under the band of the 主会话 page with a notice while none is chosen or the last turn failed, in
   the band once one is, and in Settings › General › Main session
-  (`MainSessionSettingsSection.tsx`). It lists `GET /api/models?cwd=<home>`'s `modelList` — the
+  (`MainSessionSettingsSection.tsx`). It lists `GET /api/models?cwd=<chat workspace>`'s `modelList` (the home folder the turns run in is not on the file-access allow-list, so the route refuses it; the chat workspace is an allowed root with the same global model scope) — the
   same enabledModels-scoped set the composer offers, for the folder the turns run in — plus "none".
 - `POST /model {model: "provider/modelId" | null}` (through the proxy and its write guards) checks
   the ref against the Pi registry (`checkConfiguredModel()`: the model exists and

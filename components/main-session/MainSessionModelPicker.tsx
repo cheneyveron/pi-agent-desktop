@@ -8,16 +8,20 @@ import { modelPickerOptions, type PickerModel } from "./main-session-helpers";
 
 /**
  * The models the app offers for selection (GET /api/models, scoped by enabledModels like the
- * composer's selector), for the folder the main session's turns run in: the home folder.
+ * composer's selector). The route only answers for folders on the file-access allow-list, and
+ * the home folder the main session's turns run in is not one: asking for it returns 403 and
+ * the picker would offer only "none". The chat workspace is an allowed root with the same
+ * global (project-free) model scope, so the list is taken from there, as the Chats settings
+ * picker does.
  */
 function useConfiguredModels(): { models: PickerModel[]; loading: boolean } {
   const [models, setModels] = useState<PickerModel[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/home", { cache: "no-store" })
+    fetch("/api/chat-workspace", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
-      .then((data: { home?: string }) => fetch(`/api/models${data.home ? `?cwd=${encodeURIComponent(data.home)}` : ""}`, { cache: "no-store" }))
+      .then((data: { cwd?: string }) => fetch(`/api/models${data.cwd ? `?cwd=${encodeURIComponent(data.cwd)}` : ""}`, { cache: "no-store" }))
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
       .then((data: { modelList?: PickerModel[] }) => { if (!cancelled) setModels(Array.isArray(data.modelList) ? data.modelList : []); })
       .catch(() => { /* the picker then offers only "none" and the current choice */ })
