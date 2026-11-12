@@ -1,8 +1,8 @@
 "use client";
 
-import { AppSelect } from "./AppSelect";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { PRODUCT_NAME } from "@/lib/branding";
@@ -36,10 +36,11 @@ import { PluginsConfig } from "./PluginsConfig";
 import { AppUpdatesSection } from "./AppUpdatesSection";
 import { DesktopAppSection } from "./desktop";
 import { McpConfig } from "./McpConfig";
-import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { ConfigButton, ConfigDetailNavigationContext, ConfigSwitch, type ConfigDetailNavigation } from "./SettingsUi";
 import { ArtifactsSettingRow, AutoTitleSettingRow } from "./ArtifactsSettingRow";
 import { RemoteAccessSection } from "./RemoteAccessSection";
 import { RelaySection } from "./RelaySection";
+import { NetworkProxySection } from "./NetworkProxySection";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
 import { MainSessionSettingsSection } from "./main-session/MainSessionSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -49,6 +50,8 @@ interface Props {
   cwd: string | null;
   sessionId: string | null;
   initialSection: SettingsSection;
+  /** A phone opens on the list of sections instead of `initialSection` (the plain Settings button, P1). */
+  openAtHome?: boolean;
   onClose: () => void;
   onSessionReloaded: () => void;
   quoteSelectionEnabled: boolean;
@@ -177,12 +180,32 @@ function GeneralSettings({
 
       <div className="settings-general-columns">
         <div className="settings-general-col">
-          <section className="settings-general-section settings-general-intro settings-general-overview">
-            <p className="settings-general-tagline">{t("appSettings.tagline", { product: PRODUCT_NAME })}</p>
-            <p className="settings-general-tagline">{t("appSettings.taglineDetails")}</p>
-          </section>
           <AppUpdatesSection onBusyChange={onBusyChange} />
 
+          <section className="settings-general-section">
+            <h3 className="settings-general-heading">{t("common.language")}</h3>
+            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
+              {supportedLocales.map((plugin) => {
+                const selected = locale === plugin.id;
+                return (
+                  <button
+                    key={plugin.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setLocale(plugin.id as typeof locale)}
+                    className="settings-language-option"
+                  >
+                    <span className="settings-language-radio">
+                      {selected && <span className="settings-language-radio-dot" />}
+                    </span>
+                    <span className="settings-language-label">{plugin.label}</span>
+                    <span className="settings-language-code">{plugin.id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
           <section className="settings-general-section">
             <h3 className="settings-general-heading">{t("settings.chat")}</h3>
             <div className="settings-chat-options">
@@ -222,6 +245,7 @@ function GeneralSettings({
                   max={CHAT_CONTENT_WIDTH_MAX}
                   step={10}
                   value={chatContentWidth}
+                  style={rangeProgressStyle(chatContentWidth, CHAT_CONTENT_WIDTH_MIN, CHAT_CONTENT_WIDTH_MAX)}
                   onChange={(event) => setChatContentWidth(Number(event.target.value))}
                 />
               </div>
@@ -250,6 +274,7 @@ function GeneralSettings({
                   max={CHAT_CONTENT_FONT_SIZE_MAX}
                   step={1}
                   value={fontSize}
+                  style={rangeProgressStyle(fontSize, CHAT_CONTENT_FONT_SIZE_MIN, CHAT_CONTENT_FONT_SIZE_MAX)}
                   onChange={(event) => setFontSize(Number(event.target.value))}
                 />
               </div>
@@ -328,71 +353,70 @@ function GeneralSettings({
         </div>
 
         <div className="settings-general-col">
-          <section className="settings-general-section">
-            <h3 className="settings-general-heading">{t("common.language")}</h3>
-            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
-              {supportedLocales.map((plugin) => {
-                const selected = locale === plugin.id;
-                return (
-                  <button
-                    key={plugin.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setLocale(plugin.id as typeof locale)}
-                    className="settings-language-option"
-                  >
-                    <span className="settings-language-radio">
-                      {selected && <span className="settings-language-radio-dot" />}
-                    </span>
-                    <span className="settings-language-label">{plugin.label}</span>
-                    <span className="settings-language-code">{plugin.id}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
           <DesktopAppSection />
 
-          <RelaySection />
-
-          <RemoteAccessSection />
-
-          <TerminalSettingsSection />
-
-          {shellSettings?.isWindows && (
-            <section className="settings-general-section">
-              <h3 className="settings-general-heading">{t("settings.shellTool")}</h3>
-              <p className="settings-general-description">{t("settings.shellToolDescription")}</p>
-              <div className="settings-shell-option">
-                <span>{t("settings.usePowerShell")}</span>
-                <ConfigSwitch
-                  checked={shellSettings.powerShellEnabled}
-                  loading={shellSaving}
-                  label={t("settings.usePowerShell")}
-                  onChange={(enabled) => void togglePowerShell(enabled)}
-                />
-              </div>
-              {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
-            </section>
-          )}
-
-          {webAuthEnabled && (
-            <section className="settings-general-section">
-              <ConfigButton variant="secondary" disabled={loggingOut} onClick={() => void logOut()}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                </svg>
-                {loggingOut ? t("auth.loggingOut") : t("auth.logOut")}
-              </ConfigButton>
-              {logoutError && <p role="alert" className="settings-general-error">{logoutError}</p>}
-            </section>
-          )}
+          <ChatsSettingsSection />
         </div>
       </div>
+
+      {/* Low-traffic network and power-user options, grouped after the everyday ones. */}
+      <div className="settings-general-group">
+        <h3 className="settings-general-group-title">{t("settings.advancedGroup")}</h3>
+        <div className="settings-general-columns">
+          <div className="settings-general-col">
+            <NetworkProxySection />
+
+            <TerminalSettingsSection />
+
+            {shellSettings?.isWindows && (
+              <section className="settings-general-section">
+                <h3 className="settings-general-heading">{t("settings.shellTool")}</h3>
+                <p className="settings-general-description">{t("settings.shellToolDescription")}</p>
+                <div className="settings-shell-option">
+                  <span>{t("settings.usePowerShell")}</span>
+                  <ConfigSwitch
+                    checked={shellSettings.powerShellEnabled}
+                    loading={shellSaving}
+                    label={t("settings.usePowerShell")}
+                    onChange={(enabled) => void togglePowerShell(enabled)}
+                  />
+                </div>
+                {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
+              </section>
+            )}
+          </div>
+
+          <div className="settings-general-col">
+            <RelaySection />
+
+            <RemoteAccessSection />
+          </div>
+        </div>
+      </div>
+
+      {webAuthEnabled && (
+        <section className="settings-general-section">
+          <ConfigButton variant="secondary" disabled={loggingOut} onClick={() => void logOut()}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+            </svg>
+            {loggingOut ? t("auth.loggingOut") : t("auth.logOut")}
+          </ConfigButton>
+          {logoutError && <p role="alert" className="settings-general-error">{logoutError}</p>}
+        </section>
+      )}
+
+      <footer className="settings-general-intro settings-general-about">
+        <p className="settings-general-tagline">{t("appSettings.tagline", { product: PRODUCT_NAME })}</p>
+      </footer>
     </div>
   );
+}
+
+/** How far a range slider is filled, for the themed track in native-theme.css. */
+function rangeProgressStyle(value: number, min: number, max: number): CSSProperties {
+  const ratio = max > min ? (value - min) / (max - min) : 0;
+  return { "--range-progress": `${Math.round(Math.min(1, Math.max(0, ratio)) * 1000) / 10}%` } as CSSProperties;
 }
 
 export const SETTINGS_SECTION_ITEMS: { id: SettingsSection; labelKey: string; requiresProject: boolean }[] = [
@@ -405,11 +429,95 @@ export const SETTINGS_SECTION_ITEMS: { id: SettingsSection; labelKey: string; re
   { id: "mcp", labelKey: "settings.mcp", requiresProject: false },
 ];
 
+// A phone shows Settings one level at a time: the sections, a section (its list), a row's detail.
+type PhoneLevel = "home" | "section" | "detail";
+
+const PHONE_PARENT_LEVEL: Record<PhoneLevel, PhoneLevel> = { home: "home", section: "home", detail: "section" };
+const PHONE_LEVEL_DEPTH: Record<PhoneLevel, number> = { home: 0, section: 1, detail: 2 };
+const PHONE_LEVEL_EASING = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+
+/**
+ * A phone's level change slides the new level in: from the right going in,
+ * from the left (a shorter way, fading up) going back, as a navigation stack
+ * does. The header's Back and title fade in with it. Only the new level moves
+ * (the old one is gone at once), so the main area clips it; nothing moves
+ * under prefers-reduced-motion.
+ */
+function animatePhoneLevelChange(main: HTMLElement | null, header: HTMLElement | null, from: PhoneLevel, to: PhoneLevel) {
+  if (!main || typeof main.animate !== "function") return;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const forward = PHONE_LEVEL_DEPTH[to] > PHONE_LEVEL_DEPTH[from];
+  main.animate(forward
+    ? [
+      { transform: "translateX(100%)", boxShadow: "-12px 0 24px rgba(0, 0, 0, 0.12)" },
+      { transform: "translateX(0)", boxShadow: "-12px 0 24px rgba(0, 0, 0, 0)" },
+    ]
+    : [{ transform: "translateX(-30%)", opacity: 0.4 }, { transform: "translateX(0)", opacity: 1 }], {
+    duration: 280,
+    easing: PHONE_LEVEL_EASING,
+  });
+  header?.querySelectorAll<HTMLElement>(".settings-phone-back, .settings-dialog-title").forEach((element) => {
+    element.animate([
+      { opacity: 0, transform: `translateX(${forward ? 16 : -16}px)` },
+      { opacity: 1, transform: "translateX(0)" },
+    ], { duration: 220, easing: PHONE_LEVEL_EASING });
+  });
+}
+
+/**
+ * The phone's level, with an entry in the browser history for each level
+ * entered, so the system Back gesture goes up one level instead of leaving the
+ * page. The entry copies the current history state (Next's router reads it)
+ * and keeps the URL. Closing Settings drops the entries it added.
+ */
+function usePhoneSettingsLevel(isPhone: boolean, openAtHome: boolean) {
+  const [level, setLevel] = useState<PhoneLevel>(openAtHome ? "home" : "section");
+  // A desktop shows a section, so a window narrowed to a phone's width stays
+  // on it instead of falling back to the level the panel opened at.
+  if (!isPhone && level !== "section") setLevel("section");
+  const levelRef = useRef(level);
+  levelRef.current = level;
+  const pushedRef = useRef(0);
+
+  useEffect(() => {
+    if (!isPhone) return;
+    const onPopState = () => {
+      if (pushedRef.current === 0) return;
+      pushedRef.current -= 1;
+      setLevel((current) => PHONE_PARENT_LEVEL[current]);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [isPhone]);
+
+  const enter = useCallback((next: PhoneLevel) => {
+    if (!isPhone) return;
+    window.history.pushState(window.history.state, "");
+    pushedRef.current += 1;
+    setLevel(next);
+  }, [isPhone]);
+
+  const goUp = useCallback(() => {
+    // An entry this panel added: popstate goes up, as the system Back does.
+    if (pushedRef.current > 0) window.history.back();
+    else setLevel((current) => PHONE_PARENT_LEVEL[current]);
+  }, []);
+
+  const dropHistory = useCallback(() => {
+    const pushed = pushedRef.current;
+    pushedRef.current = 0;
+    if (pushed > 0) window.history.go(-pushed);
+  }, []);
+
+  return { level, levelRef, enter, goUp, dropHistory };
+}
+
 export function SettingsPanel({
   cwd,
   sessionId,
   initialSection,
-  onClose,
+  openAtHome = false,
+  onClose: closeSettings,
   onSessionReloaded,
   quoteSelectionEnabled,
   onQuoteSelectionChange,
@@ -431,6 +539,38 @@ export function SettingsPanel({
     requiresProject: settingsSectionRequiresProject(item.id),
   }));
   const sectionRequiresProject = settingsSectionRequiresProject(section);
+  // P1: a phone shows one level at a time (sections, a section, a row's detail).
+  const isPhone = useIsMobile();
+  const phone = usePhoneSettingsLevel(isPhone, openAtHome);
+  const { dropHistory, enter: enterPhoneLevel, goUp: goUpPhoneLevel, levelRef: phoneLevelRef } = phone;
+  const headerRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const shownPhoneLevelRef = useRef(phone.level);
+  // Before paint, so the new level never shows in place first.
+  useLayoutEffect(() => {
+    const from = shownPhoneLevelRef.current;
+    shownPhoneLevelRef.current = phone.level;
+    if (isPhone && from !== phone.level) animatePhoneLevelChange(mainRef.current, headerRef.current, from, phone.level);
+  }, [isPhone, phone.level]);
+  const onClose = useCallback(() => {
+    dropHistory();
+    closeSettings();
+  }, [closeSettings, dropHistory]);
+  const sectionLabel = sections.find((item) => item.id === section)?.label ?? t("settings.title");
+  // Named by the detail's active row (ConfigSidebarItem); none until one reports.
+  const [detailTitle, setDetailTitle] = useState<string | null>(null);
+  const detailNavigation = useMemo<ConfigDetailNavigation>(() => ({
+    detailOpen: phone.level === "detail",
+    openDetail: () => {
+      if (phoneLevelRef.current !== "section") return;
+      setDetailTitle(null);
+      enterPhoneLevel("detail");
+    },
+    closeDetail: () => {
+      if (phoneLevelRef.current === "detail") goUpPhoneLevel();
+    },
+    reportDetailTitle: setDetailTitle,
+  }), [enterPhoneLevel, goUpPhoneLevel, phone.level, phoneLevelRef]);
   // A signed desktop update installs and relaunches the app; the dialog must not
   // be dismissible from under it (the Version & Updates block reports the phase).
   const [busy, setBusy] = useState(false);
@@ -468,10 +608,16 @@ export function SettingsPanel({
     setLastSettingsSection(nextSection);
   };
 
+  const openSectionFromHome = (nextSection: SettingsSection) => {
+    activateSection(nextSection);
+    enterPhoneLevel("section");
+  };
+
   const sectionHost = (id: SettingsSection, content: ReactNode) => mountedSections.has(id) ? (
     <div
       key={id}
-      hidden={section !== id}
+      hidden={section !== id || phone.level === "home"}
+      data-phone-level={isPhone ? phone.level : undefined}
       className="settings-section-host"
     >
       {content}
@@ -489,15 +635,29 @@ export function SettingsPanel({
       className="settings-dialog-backdrop"
     >
       <div className="settings-dialog-surface">
-        <div className="settings-dialog-header">
-          <strong className="settings-dialog-title">{t("settings.title")}</strong>
-          <AppSelect
-            aria-label={t("settings.sectionPicker")}
-            value={section}
-            onValueChange={(value) => activateSection(value as SettingsSection)}
-            className="settings-mobile-section-picker"
-            options={sections.map((item) => ({ value: item.id, label: item.label, disabled: item.requiresProject && !cwd }))}
-          />
+        <div ref={headerRef} className="settings-dialog-header">
+          {isPhone && phone.level !== "home" && (() => {
+            const backName = phone.level === "detail" ? sectionLabel : t("settings.title");
+            return (
+              <button
+                type="button"
+                className="settings-phone-back"
+                onClick={goUpPhoneLevel}
+                aria-label={t("settings.backTo", { name: backName })}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+                <span>{backName}</span>
+              </button>
+            );
+          })()}
+          {/* A phone names the level it shows: Settings, the section, the detail's row. */}
+          <strong className="settings-dialog-title">
+            {!isPhone || phone.level === "home"
+              ? t("settings.title")
+              : phone.level === "section" ? sectionLabel : detailTitle}
+          </strong>
           <nav aria-label={t("settings.title")} className="settings-section-tabs">
             {sections.map((item) => {
               const selected = section === item.id;
@@ -521,7 +681,38 @@ export function SettingsPanel({
           <button type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")} className="config-close-button settings-dialog-close">×</button>
         </div>
 
-        <main className="settings-dialog-main">
+        <main ref={mainRef} className="settings-dialog-main">
+          {isPhone && phone.level === "home" && (
+            <nav aria-label={t("settings.title")} className="settings-phone-home">
+              {sections.map((item) => {
+                const disabled = item.requiresProject && !cwd;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="settings-phone-home-item"
+                    disabled={disabled}
+                    aria-describedby={disabled ? `settings-phone-home-${item.id}-note` : undefined}
+                    onClick={() => openSectionFromHome(item.id)}
+                  >
+                    <SettingsSectionIcon section={item.id} size={20} />
+                    <span className="settings-phone-home-label">
+                      <span>{item.label}</span>
+                      {disabled && (
+                        <span id={`settings-phone-home-${item.id}-note`} className="settings-phone-home-note">
+                          {t("settings.projectRequired")}
+                        </span>
+                      )}
+                    </span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="settings-phone-home-chevron">
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
+          <ConfigDetailNavigationContext.Provider value={detailNavigation}>
           {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} soundEnabled={soundEnabled} onSoundToggle={onSoundToggle} onBusyChange={setBusy} />)}
           {sectionHost("appearance", <AppearanceSettings />)}
           {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} onOpenMcp={() => activateSection("mcp")} />)}
@@ -532,6 +723,7 @@ export function SettingsPanel({
           {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
           {/* No project needed: the global mcp.json is listed alone, and a project adds its group. */}
           {sectionHost("mcp", <McpConfig embedded key={cwd ?? ""} cwd={cwd} trust={projectTrust} onTrustProject={onOpenTrustDialog} onProjectTrustChanged={onProjectTrustChanged} onClose={onClose} />)}
+          </ConfigDetailNavigationContext.Provider>
         </main>
       </div>
     </div>

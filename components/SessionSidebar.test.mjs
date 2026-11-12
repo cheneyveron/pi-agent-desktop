@@ -58,7 +58,7 @@ test("archived projects sit in a folded Archive group and need a restore before 
   assert.match(source, /onContextMenu=\{\(e\) => openProjectMenu\(e, group\.projectRoot, archived\)\}/);
   assert.match(source, /onRestore=\{\(\) => restoreProject\(projectMenu\.root\)\}/);
   // The group sits after the project list and unfolds for a search.
-  assert.match(source, /activeProjects\.map\(\(group\) => renderProjectGroup\(group\)\)\}\s*\{archivedProjects\.length > 0 && \(\s*<ArchivedProjectsSection/);
+  assert.match(source, /activeProjects\.map\(\(group\) => renderProjectGroup\(group\)\)\)\}\s*\{!projectsSectionFolded && archivedProjects\.length > 0 && \(\s*<ArchivedProjectsSection/);
   assert.match(source, /const archiveShown = archiveExpanded \|\| Boolean\(trimmedSessionQuery\)/);
   // Unfolding an archived project must not select it (that opens a composer there).
   assert.match(source, /if \(archived\) \{\s*setExpandedArchivedProjects\(\(prev\) => toggleId\(prev, group\.projectRoot\)\);\s*return;\s*\}/);
@@ -168,7 +168,7 @@ test("Chats show five families at a time even when there are no projects", () =>
   // available when `activeProjects` is empty.
   assert.match(
     source,
-    /sidebar-chats-header[\s\S]*?\{activeProjects\.length === 0 && !\(trimmedSessionQuery && archivedProjects\.length > 0\) \? \(/,
+    /sidebar-chats-header[\s\S]*?\{!projectsSectionFolded && \(activeProjects\.length === 0 && !\(trimmedSessionQuery && archivedProjects\.length > 0\) \? \(/,
   );
 });
 
@@ -181,6 +181,20 @@ test("Chats fold like a project and unfold back to the first five", () => {
   // The fold and the page count survive a reload.
   assert.match(source, /APP_PREF_KEYS\.collapsedChats/);
   assert.match(source, /APP_PREF_KEYS\.chatSessionPages/);
+});
+
+test("Projects section hydrates safely, folds archive, and still works when storage fails", () => {
+  assert.match(source, /let projectsSectionCollapsedMemory: boolean \| null = null;/);
+  assert.match(source, /if \(projectsSectionCollapsedMemory === null\) \{\s*projectsSectionCollapsedMemory = getPref\(APP_PREF_KEYS\.collapsedProjectsSection\) === "1";\s*\}/);
+  assert.match(source, /projectsSectionCollapsedMemory = collapsed;\s*if \(collapsed\) setPref\(/);
+  assert.match(source, /const projectsSectionCollapsed = useSyncExternalStore\(\s*subscribeProjectsSectionCollapsed, readProjectsSectionCollapsed, serverProjectsSectionCollapsed/);
+  assert.match(source, /const serverProjectsSectionCollapsed = \(\) => false/);
+  assert.match(source, /const projectsSectionFolded = !trimmedSessionQuery && projectsSectionCollapsed/);
+  assert.match(source, /aria-expanded=\{!projectsSectionFolded\}/);
+  assert.match(source, /writeProjectsSectionCollapsed\(!projectsSectionCollapsed\)/);
+  assert.match(source, /sidebar-project-tree-count">\(\{activeProjects\.length\}\)/);
+  assert.match(source, /!projectsSectionFolded && archivedProjects\.length > 0 &&/);
+  assert.match(source, /onToggle=\{\(\) => setArchiveExpanded\(!archiveExpanded\)\}/);
 });
 
 test("the Chats fold hydrates with the server value before reading localStorage", () => {
@@ -408,4 +422,52 @@ test("the row menu shows the compaction count only when the session was compacte
     sessionItemSource,
     /\{\(session\.compactionCount \?\? 0\) > 0 && \(\s*<div>\{t\("sidebar\.compactionCount", \{ count: session\.compactionCount \?\? 0 \}\)\}<\/div>/,
   );
+});
+
+test("a pinned project session goes to the Pinned section; upstream's in-project pin list stays out (S2)", () => {
+  // One pin list on one pref key: upstream's second state on the same key would overwrite the fork's.
+  assert.doesNotMatch(source, /setPinnedSessions|pinnedFirst\(unarchivedGroupTree/);
+  assert.doesNotMatch(source, /sidebar\.unpinChat" : "sidebar\.pinChat"/);
+  assert.match(source, /const groupTree = unarchivedGroupTree;/);
+  assert.match(source, /splitPinnedFamilies\(sessionFamilies, pinnedSessionIds\)/);
+  assert.match(source, /t\(pinned \? "sidebar\.unpinSession" : "sidebar\.pinSession"\)/);
+});
+
+test("projects can be pinned above the others from both project menus (S2)", async () => {
+  assert.match(source, /readIdSetPref\(APP_PREF_KEYS\.pinnedProjects\)/);
+  assert.match(source, /setPrefJson\(APP_PREF_KEYS\.pinnedProjects, \[\.\.\.pinnedProjects\]\)/);
+  assert.match(source, /const activeProjects = pinnedFirst\(\s*allProjects\.filter\(\(group\) => !archivedProjectRoots\.has\(group\.projectRoot\)\),\s*\(group\) => pinnedProjects\.has\(group\.projectRoot\),\s*\);/);
+  const nativeMenu = source.slice(source.indexOf("const showNativeProjectMenu = useCallback"));
+  assert.match(nativeMenu.slice(0, 4000), /sidebar\.unpinProject" : "sidebar\.pinProject"/);
+  assert.match(source, /pinned=\{pinnedProjects\.has\(projectMenu\.root\)\}/);
+  const menu = (await readFile(new URL("./ProjectContextMenu.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  assert.match(menu, /t\(pinned \? "sidebar\.unpinProject" : "sidebar\.pinProject"\)/);
+});
+
+test("a project's sessions can all be deleted, keeping the running ones (S6)", async () => {
+  const helper = source.slice(source.indexOf("const projectSessionsToDelete = useCallback"), source.indexOf("const restoreProject = useCallback"));
+  // Subagent runs go with their parent; scheduled runs and chats are not the project's list.
+  assert.match(helper, /session\.relation\?\.kind === "subagent" \|\| session\.relation\?\.kind === "scheduled"/);
+  assert.match(helper, /if \(runningSessionIds\.has\(session\.id\)\) kept \+= 1;\s*else ids\.push\(session\.id\);/);
+  // One by one through the session delete route, then the list reloads.
+  assert.match(helper, /for \(const id of target\.ids\)[\s\S]*?fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(id\)\}`, \{ method: "DELETE" \}\)/);
+  assert.match(helper, /void loadSessions\(\);/);
+  // A confirmation first, naming the running sessions it keeps.
+  assert.match(source, /title=\{t\("sidebar\.deleteProjectSessionsHeading", \{ name: projectSessionsDelete\.name \}\)\}/);
+  assert.match(source, /t\("sidebar\.deleteProjectSessionsRunning", \{ count: projectSessionsDelete\.kept \}\)/);
+  const nativeMenu = source.slice(source.indexOf("const showNativeProjectMenu = useCallback"));
+  assert.match(nativeMenu.slice(0, 4000), /onSelect: \(\) => requestProjectSessionsDelete\(projectRoot\)/);
+  assert.match(source, /deleteSessionsCount=\{projectSessionsToDelete\(projectMenu\.root\)\.ids\.length\}/);
+});
+
+test("a project session's row menus offer Fork, which opens the copy (S4)", () => {
+  const fork = source.slice(source.indexOf("const forkSession = useCallback"), source.indexOf("const restoreProject = useCallback"));
+  assert.match(fork, /fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(source\.id\)\}\/fork`, \{\s*method: "POST",/);
+  assert.match(fork, /forkFailureMessage\(data\.code, /);
+  assert.match(fork, /handleSelectSessionFromList\(forked\);/);
+  // Project rows only (chats own a folder), and only a family's top row.
+  assert.equal((source.match(/onFork=\{forkSession\}/g) ?? []).length, 3);
+  assert.match(source, /onFork=\{depth === 0 \? onFork : undefined\}/);
+  assert.match(sessionItemSource, /\.\.\.\(onFork \? \[\{ label: t\("sidebar\.fork"\), onSelect: \(\) => onFork\(session\) \}\] : \[\]\),/);
+  assert.match(sessionItemSource, /onClick=\{\(\) => \{ setMenuOpen\(false\); onFork\(session\); \}\}/);
 });

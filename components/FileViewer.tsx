@@ -18,6 +18,8 @@ import {
   isVideoPath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { DelimitedTable } from "./DelimitedTable";
+import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
@@ -26,7 +28,7 @@ import { FrontmatterCard } from "./FrontmatterCard";
 import { FindBar } from "./FindBar";
 import { useFindShortcut } from "@/hooks/useFindShortcut";
 import { supportsDomFind } from "@/lib/dom-find";
-import { parseUnifiedPatch } from "@/lib/patch";
+import { diffGapLabel, parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { getTurnFilePatch, subscribeTurnFilePatches } from "@/lib/turn-file-patches";
 import { getFileIcon } from "./FileIcons";
@@ -35,6 +37,7 @@ import { useDesktopChrome } from "./desktop/useDesktopChrome";
 import { useI18n } from "@/hooks/useI18n";
 import {
   resolveInitialFileDisplayMode,
+  resolveInitialWrapLines,
   type FileViewerDisplayMode as DisplayMode,
   type FileViewerState,
 } from "@/lib/file-viewer-state";
@@ -64,6 +67,8 @@ interface FileData {
   size: number;
   nextOffset: number;
   truncated: boolean;
+  // The file's first bytes hold a NUL (git's test): no text view, only the download.
+  binary?: boolean;
 }
 
 const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
@@ -397,7 +402,12 @@ type DiffLine = {
   text: string;
   oldLineNo: number | null;
   newLineNo: number | null;
+} | {
+  // Unchanged lines the diff leaves out between two hunks; null when it carries no numbers.
+  type: "gap";
+  count: number | null;
 };
+type DiffTextLine = Exclude<DiffLine, { type: "gap" }>;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -411,6 +421,7 @@ function diffLines(patch: string): DiffLine[] {
 
   return files.flatMap((file) => file.rows.flatMap((row): DiffLine[] => {
     if (row.type === "hunk") return [];
+    if (row.type === "gap") return [{ type: "gap", count: row.count }];
     if (row.left.type === "context" && row.right.type === "context") {
       return [{
         type: "unchanged",
@@ -442,27 +453,38 @@ function diffLines(patch: string): DiffLine[] {
 }
 
 type DiffRow =
-  | { type: "gap"; count: number }
-  | { type: "line"; line: DiffLine; index: number };
+  // Lines collapsed here, or left out by the patch between two hunks (null: the patch carries no count).
+  | { type: "gap"; count: number | null }
+  | { type: "line"; line: DiffTextLine; index: number };
 
 /** Diff lines with runs of unchanged lines beyond 3 lines of a change collapsed. */
 function diffRows(diff: DiffLine[]): DiffRow[] {
   const CONTEXT = 3;
   const visible = new Uint8Array(diff.length);
   diff.forEach((line, index) => {
-    if (line.type === "unchanged") return;
+    if (line.type === "unchanged" || line.type === "gap") return;
     for (let j = Math.max(0, index - CONTEXT); j <= Math.min(diff.length - 1, index + CONTEXT); j++) visible[j] = 1;
   });
 
   const rows: DiffRow[] = [];
+  // A run of collapsed lines grows; a gap of the patch's own is always a row of its own.
+  let collapsing = false;
   for (let index = 0; index < diff.length; index++) {
+    const line = diff[index];
+    if (line.type === "gap") {
+      rows.push({ type: "gap", count: line.count });
+      collapsing = false;
+      continue;
+    }
     if (visible[index]) {
-      rows.push({ type: "line", line: diff[index], index });
+      rows.push({ type: "line", line, index });
+      collapsing = false;
       continue;
     }
     const last = rows[rows.length - 1];
-    if (last?.type === "gap") last.count++;
+    if (collapsing && last?.type === "gap" && last.count !== null) last.count++;
     else rows.push({ type: "gap", count: 1 });
+    collapsing = true;
   }
   return rows;
 }
@@ -486,7 +508,7 @@ function DiffView({
   // Old and new lines are tokenized together, in diff order: a line keeps its
   // place in multi-line constructs as long as both sides agree on them.
   const tokens = useMemo(
-    () => highlightCodeLines(diff.map((line) => line.text).join("\n"), language),
+    () => highlightCodeLines(diff.map((line) => (line.type === "gap" ? "" : line.text)).join("\n"), language),
     [diff, language],
   );
 
@@ -509,7 +531,7 @@ function DiffView({
             borderBottom: "var(--hairline) solid var(--border)",
           }}
         >
-          ... {row.count} unchanged lines ...
+          {row.count === null ? "⋯" : diffGapLabel(row.count, t)}
         </div>
       );
     }
@@ -571,9 +593,9 @@ function DiffView({
         </span>
       </div>
     );
-  }, [rows, stylesheet, tokens]);
+  }, [rows, stylesheet, t, tokens]);
 
-  const hasChanges = diff.some((l) => l.type !== "unchanged");
+  const hasChanges = diff.some((l) => l.type === "removed" || l.type === "added");
   if (!hasChanges) {
     return (
       <div style={{ padding: "12px 16px", fontSize: "var(--fs-caption)", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
@@ -1153,7 +1175,8 @@ function TextFileViewer({
   // HTML file renders its preview as the first thing painted. Deciding it after
   // the contents load painted the source view for a frame first.
   const requestedInitialDisplayMode = resolveInitialFileDisplayMode(initialState, initialDisplayMode, filePath);
-  const initialWrapLines = initialState?.wrapLines ?? false;
+  // Prose (Markdown, plain text) wraps by default; code keeps its columns. A saved choice wins.
+  const initialWrapLines = resolveInitialWrapLines(initialState, filePath);
   const initialScrollTop = initialState?.scrollTop ?? 0;
   const initialScrollLeft = initialState?.scrollLeft ?? 0;
   const [displayMode, setDisplayMode] = useState<DisplayMode>(requestedInitialDisplayMode);
@@ -1377,11 +1400,14 @@ function TextFileViewer({
   const viewerContent = data?.content ?? "";
   const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
   const language = data?.language ?? "text";
-  const isHtml = language === "html";
-  const isMarkdown = language === "markdown";
+  const isBinary = data?.binary === true;
+  const isDelimitedTable = !isBinary && isDelimitedTablePath(filePath);
+  const isHtml = !isBinary && language === "html";
+  const isMarkdown = !isBinary && language === "markdown";
   const htmlHasScripts = isHtml && /<script\b/i.test(viewerContent);
   const htmlPreviewUrl = getFileApiUrl(filePath, "serve", sourceSessionId, { v: htmlPreviewRevision });
-  const hasPreview = !data?.truncated && (isHtml || isMarkdown);
+  // A CSV/TSV table renders from its first chunk too (DelimitedTable marks it incomplete).
+  const hasPreview = isDelimitedTable || (!data?.truncated && (isHtml || isMarkdown));
   // Only the first chunk of a large file is loaded, so preview is unavailable
   // until the rest arrives; a preview default falls back to source instead of
   // rendering a partial document. The mode returns to preview once the whole
@@ -1535,7 +1561,9 @@ function TextFileViewer({
       ];
   const metadata = isDeletedDiff
     ? t("files.deleted")
-    : `${language} · ${lines.length} lines · ${formatSize(data!.size)}`;
+    : isBinary
+      ? `${t("files.binary")} · ${formatSize(data!.size)}`
+      : `${language} · ${lines.length} lines · ${formatSize(data!.size)}`;
 
   return (
     <div className="file-viewer-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" }}>
@@ -1633,7 +1661,7 @@ function TextFileViewer({
                 <MentionIcon />
               </button>
             )}
-            {effectiveDisplayMode === "source" && (
+            {effectiveDisplayMode === "source" && !isBinary && (
               <>
                 <button
                   type="button"
@@ -1814,6 +1842,25 @@ function TextFileViewer({
             >
               {markdownPreview}
             </ReactMarkdown>
+          </div>
+        ) : isDelimitedTable && effectiveDisplayMode === "preview" ? (
+          <DelimitedTable
+            content={viewerContent}
+            filePath={filePath}
+            complete={!data?.truncated}
+            scrollRef={contentRef}
+          />
+        ) : isBinary ? (
+          // Decoded bytes are noise; opening a file never downloads it on its own (#1401).
+          <div className="file-viewer-binary">
+            <span>{t("files.binaryNoPreview")}</span>
+            <a
+              href={getFileApiUrl(filePath, "download", sourceSessionId)}
+              download={getFileName(filePath)}
+              className="file-viewer-mode-button file-viewer-binary-download"
+            >
+              {t("files.download")}
+            </a>
           </div>
         ) : (
           <VirtualCodeList

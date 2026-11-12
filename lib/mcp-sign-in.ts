@@ -28,7 +28,7 @@ import {
 import type {
   McpOAuthChallenge,
   McpOAuthSettings,
-  McpOAuthStateStore,
+  McpOAuthServerStore,
   McpSignInOptions,
   PiSdkInternals,
 } from "./pi-sdk-internals";
@@ -58,14 +58,14 @@ export { guardedCredentialStore, mcpOAuthUrl, McpSignedOutError, mcpSignInKey, t
 //   both fail. A second start joins the flow under way; a new flow of a server
 //   whose previous run is still unwinding (cancelled or expired, its network
 //   request not answered yet) waits for that run.
-// - **A time limit.** The SDK's loopback callback gives up after 5 minutes and
-//   `signInMcpServer()` takes no AbortSignal: the flow expires at the same
-//   5 minutes (counted from its start, so it ends first), and the only way to
-//   stop the SDK is to answer its prompt with "" (McpSignInCancelledError).
-//   A cancel that arrives before the prompt is asked is kept and applied the
-//   moment it is; before the sign-in started at all, it never starts. A flow
-//   that already has its code when the limit comes gets one grace period to
-//   finish, since the SDK exchanges the code whatever Pi Web does.
+// - **A time limit.** The SDK's loopback callback gives up after 5 minutes:
+//   the flow expires at the same 5 minutes (counted from its start, so it
+//   ends first). Its end aborts the signal `signInMcpServer()` is given (pi
+//   1.1), which stops the SDK at any step with McpSignInCancelledError, a
+//   request to the authorization server included; a prompt still waiting is
+//   also answered with "". Before the sign-in started at all, it never
+//   starts. A flow that already has its code when the limit comes gets one
+//   grace period to finish the exchange.
 // - **A pasted address is checked first.** The SDK ends the whole sign-in on
 //   a paste that is not a URL, carries another sign-in's `state`, or has no
 //   `code`. `pasteMcpSignInRedirect()` refuses those (and an `error` answer)
@@ -151,7 +151,7 @@ export interface McpSignInDeps {
   /** The SDK's `signInMcpServer()`. */
   signIn(options: McpSignInOptions): Promise<void>;
   /** The server's part of `mcp-auth.json`, from the SDK's credential store, by its name and URL. */
-  store(name: string, url: string): McpOAuthStateStore;
+  store(name: string, url: string): McpOAuthServerStore;
   /** Whether `error` is the SDK's McpSignInCancelledError: the prompt was answered with "". */
   isCancelled(error: unknown): boolean;
 }
@@ -368,7 +368,7 @@ function prune(flows: Map<string, Flow>): void {
  * it checks a redirect against), whose writes stop once the server was signed
  * out (`guard`, checked right before the SDK's synchronous write).
  */
-function watchedStore(store: McpOAuthStateStore, flow: Flow, guard: McpSignInWriteGuard): McpOAuthStateStore {
+function watchedStore(store: McpOAuthServerStore, flow: Flow, guard: McpSignInWriteGuard): McpOAuthServerStore {
   const note = (state: unknown) => {
     const value = isRecord(state) ? state.oauthState : undefined;
     flow.storedState = typeof value === "string" ? value : undefined;
@@ -384,6 +384,8 @@ function watchedStore(store: McpOAuthStateStore, flow: Flow, guard: McpSignInWri
       note(state);
       await store.save(state);
     },
+    // pi 1.5.1 takes the per-server refresh lock during sign-in; keep the SDK's own lock.
+    withRefreshLock: (fn) => store.withRefreshLock(fn),
   };
 }
 
@@ -495,6 +497,7 @@ async function runFlow(flow: Flow, deps: McpSignInDeps): Promise<void> {
           showAuthorizationUrl: (url) => showAuthorizationUrl(flow, url),
           promptForRedirectUrl: (signal) => askForRedirect(flow, signal),
         },
+        signal: flow.controller.signal,
       });
     } catch (error) {
       if (isEnded(flow)) return;

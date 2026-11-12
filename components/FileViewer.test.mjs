@@ -21,7 +21,7 @@ test("large files keep their syntax highlighting", () => {
   assert.doesNotMatch(source, /<SyntaxHighlighter\b/);
   assert.match(source, /const sourceTokens = useMemo\(\s*\(\) => \(showsSource \? highlightCodeLines\(viewerContent, language\) : null\)/);
   assert.match(source, /const diff = useMemo\(\(\) => diffLines\(patch\), \[patch\]\);/);
-  assert.match(source, /highlightCodeLines\(diff\.map\(\(line\) => line\.text\)\.join\("\\n"\), language\)/);
+  assert.match(source, /highlightCodeLines\(diff\.map\(\(line\) => \(line\.type === "gap" \? "" : line\.text\)\)\.join\("\\n"\), language\)/);
 });
 
 test("copying several source lines reads the file text, not the rendered rows", () => {

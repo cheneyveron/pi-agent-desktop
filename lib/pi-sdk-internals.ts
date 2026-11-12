@@ -47,7 +47,9 @@ const MEMBERS = {
   getMcpToolExposure: { module: "mcpServers", kind: "function" },
   signInMcpServer: { module: "mcpOAuth", kind: "function" },
   McpOAuthCredentialStore: { module: "mcpOAuth", kind: "class" },
-  McpSignInCancelledError: { module: "mcpOAuth", kind: "class" },
+  // pi 1.5.1 moved the class into pi-mcp; the SDK's runtime.js re-exports it
+  // and the SDK's own `instanceof` checks use that same re-export.
+  McpSignInCancelledError: { module: "mcpRuntime", kind: "class" },
   resolveConfigValueOrThrow: { module: "configValues", kind: "function" },
   resolveHeadersOrThrow: { module: "configValues", kind: "function" },
   getConfigValueEnvVarNames: { module: "configValues", kind: "function" },
@@ -128,6 +130,10 @@ export interface McpOAuthSettings {
   callbackPort?: number;
   callbackUrl?: string;
   scope?: string;
+  clientName?: string;
+  /** How pi identifies itself without `clientId`: its Client ID Metadata Document when supported (pi 1.5's default), dynamic registration, or always the document. */
+  clientRegistration?: "auto" | "dcr" | "cimd";
+  authServerMetadataUrl?: URL;
 }
 
 /** The part of pi-mcp's `McpClient` that pi-web reads. */
@@ -189,13 +195,16 @@ export interface McpSignInPrompt {
 
 export interface McpSignInOptions {
   serverUrl: string;
-  store: McpOAuthStateStore;
+  /** Needs `withRefreshLock` too since pi 1.5.1: sign-in takes the per-server refresh lock. */
+  store: McpOAuthServerStore;
   settings: McpOAuthSettings;
   challenge?: McpOAuthChallenge;
   prompt: McpSignInPrompt;
+  /** Stops the sign-in at any step with `McpSignInCancelledError` (pi 1.1). */
+  signal?: AbortSignal;
 }
 
-/** The settings `/mcp` changes; `enabled: true` and `exposure: "codemode"` remove the key. */
+/** The settings `/mcp` changes; `enabled: true` and `exposure: "codemode"` remove the key, except in an override. */
 export interface McpServerConfigPatch {
   enabled?: boolean;
   exposure?: McpExposure;
@@ -211,7 +220,8 @@ export interface PiSdkInternals {
   loadMcpConfig: (options: { agentDir: string; cwd: string; projectTrusted: boolean }) => LoadedMcpConfig;
   /** Returns true when an entry with the same name was replaced. */
   addMcpServerConfig: (path: string, name: string, config: McpServerConfig) => boolean;
-  updateMcpServerConfig: (path: string, name: string, patch: McpServerConfigPatch) => void;
+  /** With `override`, a missing entry is added as a project override (pi 1.0.1). */
+  updateMcpServerConfig: (path: string, name: string, patch: McpServerConfigPatch, options?: { override?: boolean }) => void;
   /** Returns false when the file does not define the server. */
   removeMcpServerConfig: (path: string, name: string) => boolean;
   /** Returns the config, or an error message. */
