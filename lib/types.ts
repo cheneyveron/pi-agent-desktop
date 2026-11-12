@@ -463,7 +463,7 @@ export interface AgentTaskSnapshot {
   /** The step the run is on: a tool by name, compacting, waiting to retry, or thinking. */
   activity: { kind: "tool"; name: string } | { kind: "compacting" } | { kind: "retrying" } | { kind: "thinking" } | null;
   /** Dialogs the session is blocked on, oldest first. */
-  waiting: { method: string; prompt: string }[];
+  waiting: { method: string; prompt: string; id?: string; message?: string }[];
   /** How the last finished run ended, and when; null when none finished in this process. */
-  lastRun: { outcome: AgentRunOutcome; finishedAt: number } | null;
+  lastRun: { outcome: AgentRunOutcome; finishedAt: number; summary?: string } | null;
 }

@@ -14,7 +14,7 @@ export const SEGMENTS: readonly Segment[] = ["need", "watch", "done"];
 
 export type EventAction =
   | "assign" | "update" | "dispatch_readonly" | "ask" | "archive" | "remember"
-  | "digest" | "insert" | "schedule" | "checker" | "closeout" | "answer";
+  | "digest" | "insert" | "schedule" | "checker" | "closeout" | "answer" | "continue";
 
 export interface NextItem {
   text: string;

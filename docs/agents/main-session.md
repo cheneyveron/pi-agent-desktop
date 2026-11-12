@@ -81,8 +81,10 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
 - `intake.ts` — POST /closeouts. Deterministic so a close-out is never lost when the model is down:
   assign through the alias table (`aliases.ts`), replace stands/next/open with the newest
   close-out, merge waits (keeping the original `since`), add artifacts, branch, repo (= the
-  close-out's cwd), P1 flag; an ask per open question to the user; `user_said` and `learned` to
-  memory. Idempotency key = the close-out `id` when present (the extension's outbox replays it),
+  close-out's cwd), P1 flag; **one** ask per close-out from its open questions to the user (a P1
+  or production one first, then a write, then an either/or, else the first; `others` counts the
+  rest, which stay in `task.open`; an earlier close-out's ask that is no longer the one raised is
+  cancelled); `user_said` and `learned` to memory. Idempotency key = the close-out `id` when present (the extension's outbox replays it),
   else `sessionId@t`. Same key and same content → the first result; same key, changed content
   (the card's "交接" button) → applied again with `revisionOf`.
 - `aliases.ts` — strong ids (tickets, labelled org/group guids, branches) match on their own; a
@@ -91,14 +93,16 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
   ties to the most recently updated, reported as `ties`). A declared ticket nobody tracks is a
   new task even if a related tracked ticket is mentioned. A related ticket another task already
   owns is never added as an alias.
-- `actions.ts` — the nine actions plus answer/undo. Every call writes one event with `why`.
+- `actions.ts` — the ten actions plus answer/undo. Every call writes one event with `why`.
   `archive` from the judge is a suggestion (`state: pending`, `effectiveAt` +48 h);
   `processPendingArchives` applies it unless the task saw activity since (cancelled), has unpushed
   commits or is P1 (blocked). Answers: archive words archive (all tasks of a batched archive ask),
   keep words cancel suggestions, done words tick the step the ask was about, snooze words leave it
   for the re-raise rule, "派人查" starts a read-only dispatch, anything else is recorded — as an
-  `approval` when the ask was a write. Nothing is ever executed on the user's behalf. Undo works
-  for answers and immediate archives for 5 minutes and restores the saved task snapshots.
+  `approval` when the ask was a write — and passed on to the task's work session (see "Continue").
+  The service itself runs nothing on the user's behalf. Undo works for answers and immediate
+  archives for 5 minutes and restores the saved task snapshots. A failed read-only check raises
+  its immediate ask with the finding (`failureFinding()`), not with the step it was given.
 - `digest.ts` — the rules live in code; the model can only reword. Max 5 lines, one per task.
   Order: immediate > post-merge/deploy verification > fresh (see Deviations) > waits on a person
   on the third calendar day without change, or past their `until` > read-only results of the
@@ -116,7 +120,7 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
   turn.
 - `judge.ts` + `prompts/judge.md` — one turn at a time. Input: the event, the involved tasks in
   full (with open asks and recent events), a board of tasks active in 30 days with last-activity
-  dates, and what the service already did. Tools: exactly the nine actions; tool errors are
+  dates, and what the service already did. Tools: exactly the ten actions; tool errors are
   returned to the model as text. `digest` is refused outside the daily tick.
 - `pi-runtime.ts` — Pi SDK sessions outside the Next registry: no extensions, skills or context
   files; exact system prompt through `lib/exact-system-prompt.ts` (do not add another path);
@@ -144,6 +148,61 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
   Computed on every response and `task` stream event, never stored.
 - `replay.ts` — POST /replay; see below.
 
+## Continue: work goes on in the task's session
+The main session's job is to move work forward, not to restate it. `continueSession()`
+(`actions.ts`; the judge's `continue` tool, and `MainSessionService.answer()` for the user's own
+answers) emits a `continue` stream event `{eventId, task, text, origin, sessionId?, cwd?}`. The
+app server listens (`lib/main-session-insert-client.ts`) and `continueFromMainSession()`
+(`lib/rpc-manager.ts`) sends the text as a prompt into the task's latest session (reopened when
+it is not live; a follow-up when it is running), or starts a session in the task's repo when it
+has none, then reports back with `POST /continues/:eventId/delivered {sessionId | error}`.
+
+- `origin: "main"` (the judge chose the step): the prompt is prefixed `[主会话续做] ` and carries
+  `mainSession: true`, which turns the **write gate** on for that session. The service refuses
+  the same step twice for a task (`key` = hash of the text) and more than
+  `CONTINUE_DAILY_CAP` (3) a day per task; the judge sees the refusal as text.
+- `origin: "user"` (an answer that is not one of the service's own words): prefixed `[主会话] `,
+  not gated, not limited. It is sent `ANSWER_FORWARD_DELAY_MS` (6 s) after the answer, so an
+  answer undone in the UI's 5 second window never reaches the session.
+- Delivery is at-most-once: with no app server on the stream the event is lost, and the
+  `continue` event never gets `deliveredAt`.
+
+### The write gate (`lib/main-session-gate.ts`)
+Registered on every project session, inert unless the wrapper's `mainSessionGate.gated` is true.
+`AgentSessionWrapper.send()` sets it from the latest `prompt` / `steer` / `follow_up`: true only
+for `mainSession: true`, false for any message of the user's — never cleared on `agent_end`, so
+a retry of a gated turn stays gated. While gated, a tool call runs without asking only if it is
+`read` / `grep` / `find` / `ls`; `edit` / `write` inside the session's folder (`~` and `@` paths,
+odd spaces and links out of the folder count as outside); or one simple bash command the
+read-only guard allows or that is on the local list (`git add/commit`, `npm test`,
+`npm run test|lint|typecheck|check`, `npx tsc --noEmit`, `node --test`, `cargo test`, …; no shell
+operators). Everything else — push, merge, deploy, `kubectl`, installs, sub-agents, MCP tools,
+PowerShell — waits on `ctx.ui.confirm("主会话续做：需要你批准", <command>)`, which the session
+shows and the task's card answers; a no (or no UI) blocks the call with the reason. It is a guard
+against a well-meaning agent, not a sandbox: an allowed test command runs the repo's scripts.
+Do not add a path that clears the flag on anything but a user message, and keep the list
+default-deny.
+
+## The page
+- **Cards.** Need and watch rows are cards (`MainSessionRow.tsx`): id, title, a state tag, the
+  full text (four lines, all of it when expanded), chips, a reply box, "打开会话". The done list
+  keeps its two-line rows. `useSessionActivity()` polls `/api/agent/tasks` every 2 s and
+  `cardStateOf()` picks what the task's sessions show: a waiting dialog (允许 / 拒绝 answer a
+  confirm through `extension_ui_response`; other dialogs link to the session), else a run (step,
+  elapsed, 停止), else a run that ended after `task.updatedAt` (its `lastRun.summary`, the last
+  600 characters of the reply) — the stand-in until the close-out, which is written five idle
+  minutes later, updates the task. An answer that goes on to a session (`goesToSession()`, the
+  service's word lists copied verbatim and pinned by a test) keeps its card in the need list
+  ("held") instead of sliding it out; so does a watch task whose session waits for an approval.
+- **Open session** shows the task's existing session (`openTaskSession()`: `task.sessions[0]`)
+  with a temporary card above its composer (`lib/main-session-arrival.ts`, `ArrivalCard.tsx`):
+  the question, next steps, the chips, "put the background in the composer". It lives in client
+  memory only and goes on send, on close, or when another session is opened. A new session is
+  created only when the task has none, or from the row menu's "再开一个新会话".
+- **The conversation** holds only what the user and the main session said to each other, with
+  a separator per calendar day. The digest is not posted into it (it restates the list above);
+  it still drives the daily notification.
+
 ## HTTP (service; the UI calls the same paths under `/api/main-session`)
 | | |
 |---|---|
@@ -159,8 +218,9 @@ wins on load), `closeouts/<sessionId>.json` (every close-out of the session, rev
 | GET `/digest?date=` | `{date, lines, narrative, eventId}`; today before the tick time → `{lines: [], pending: true}` |
 | POST `/chat` / GET `/chat` | `{text}` → `{reply, cites, actions}` / `{messages}` |
 | GET `/events?since=` | `{events}` |
-| GET `/stream` | SSE `hello`, `task` ({task: TaskView}), `digest`, `insert` ({sessionId, text, task, eventId}), `event`, `chat` ({t, delta}: a reply being produced) |
+| GET `/stream` | SSE `hello`, `task` ({task: TaskView}), `digest`, `insert` ({sessionId, text, task, eventId}), `continue` ({eventId, task, text, origin, sessionId?, cwd?}), `event`, `chat` ({t, delta}: a reply being produced) |
 | POST `/sessions/:id/started` | `{task}` → `{ok, task, event}` |
+| POST `/continues/:eventId/delivered` | `{sessionId?, error?}` → `{ok, event}`; a newly started session joins the task |
 | POST `/replay` | see below |
 
 Errors are `{error}` with 4xx/5xx. The `insert` text has no prefix; the close-out extension adds

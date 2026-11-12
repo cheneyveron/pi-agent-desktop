@@ -2,7 +2,7 @@
 // 127.0.0.1 by server.ts. Errors are `{error}` with a 4xx/5xx status.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { ActionError, answer, archiveNow, requireTask, undo } from "./actions.ts";
+import { ActionError, archiveNow, continueDelivered, requireTask, undo } from "./actions.ts";
 import { replay, type ReplayInput } from "./replay.ts";
 import type { MainSessionService } from "./service.ts";
 import type { Task } from "./types.ts";
@@ -93,7 +93,7 @@ export function createHandler(service: MainSessionService) {
         if (method === "POST" && parts.length === 3) {
           const body = await readJson(req);
           if (sub === "answer") {
-            const result = answer(service.ctx, id, { word: String(body.word ?? ""), ...(typeof body.eventId === "string" ? { eventId: body.eventId } : {}) });
+            const result = service.answer(id, { word: String(body.word ?? ""), ...(typeof body.eventId === "string" ? { eventId: body.eventId } : {}) });
             return send(res, 200, { task: view(result.task), event: result.event });
           }
           if (sub === "archive") {
@@ -135,6 +135,14 @@ export function createHandler(service: MainSessionService) {
       if (method === "POST" && head === "sessions" && id && sub === "started" && parts.length === 3) {
         const body = await readJson(req);
         return send(res, 200, service.sessionStarted(id, typeof body.task === "string" ? body.task : undefined));
+      }
+      if (method === "POST" && head === "continues" && id && sub === "delivered" && parts.length === 3) {
+        const body = await readJson(req);
+        const event = continueDelivered(service.ctx, id, {
+          ...(typeof body.sessionId === "string" && body.sessionId ? { sessionId: body.sessionId } : {}),
+          ...(typeof body.error === "string" && body.error ? { error: body.error } : {}),
+        });
+        return send(res, 200, { ok: true, event });
       }
       if (method === "POST" && head === "replay" && parts.length === 1) {
         const body = await readJson(req);

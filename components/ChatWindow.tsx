@@ -1,4 +1,6 @@
 "use client";
+import { ArrivalCard } from "./main-session/ArrivalCard";
+import { clearTaskArrival } from "@/lib/main-session-arrival";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -1162,7 +1164,11 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
-      onSend={handleSend}
+      onSend={(message, images) => {
+        // The main-session arrival card has done its job once the user answers here.
+        clearTaskArrival(session?.id);
+        return handleSend(message, images);
+      }}
       onClearDraft={cancelEdit}
       onAttachFiles={onAttachFiles}
       onAbort={handleAbort}
@@ -1772,6 +1778,11 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
             isChat={chatOnly}
           />
         )}
+        <ArrivalCard
+          sessionId={session?.id}
+          onSend={(text) => void handleSend(text)}
+          onInsert={(text) => chatInputRef?.current?.insertText(text)}
+        />
         {chatInputElement}
         {(belowEditorWidgets.length > 0 || hasExtensionStatus) && (
           <div className={`extension-status-shelf${belowEditorWidgets.length > 0 ? " has-widgets" : ""}${hasExtensionStatus ? " has-status" : ""}`}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import {
   answerTask,
@@ -10,15 +10,19 @@ import {
   endVisit,
   refreshMainSession,
   sendMainChat,
-  startTaskSession,
+  openTaskSession,
   undoLast,
   useMainSession,
   type MainChatMessage,
 } from "@/hooks/useMainSession";
+import { answerSessionDialog, stopSessionRun, useSessionActivity } from "@/hooks/useSessionActivity";
 import { APP_PREF_KEYS, getPref, setPref } from "@/lib/app-prefs";
 import { SEGMENTS, type Segment, type Task } from "@/lib/main-session-client";
 import {
+  cardStateOf,
   clampListHeight,
+  goesToSession,
+  type CardState,
   focusAfterRemoval,
   modelNotice,
   moveFocus,
@@ -26,6 +30,9 @@ import {
   resolveTask,
   rowOf,
   segmentOf,
+  clockTime,
+  dayKey,
+  dayLabel,
   shortTime,
   sortRows,
   suggestions,
@@ -57,8 +64,10 @@ function readListHeight(): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+const IDLE_CARD: CardState = { kind: "idle" };
+
 export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fallbackCwd }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const state = useMainSession();
   const [segment, setSegment] = useState<Segment>("need");
   const [collapsed, setCollapsed] = useState(false);
@@ -96,11 +105,21 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
   }, []);
 
   const seen = state.visitSeen ?? state.seen;
+  const activity = useSessionActivity(state.status === "ready");
+  // Tasks answered on this visit whose answer went on to their work session.
+  const [held, setHeld] = useState<ReadonlySet<string>>(() => new Set());
   const rowsBySegment = useMemo(() => {
     const result = {} as Record<Segment, RowView[]>;
     for (const s of SEGMENTS) result[s] = sortRows(state.tasks[s].map((task) => rowOf(task, s, seen)));
+    // Cards that are the user's to look at although nothing is asked: one just answered (held to
+    // show what the session makes of it), and one whose session waits for an approval.
+    const extra = state.tasks.watch
+      .map((task) => rowOf(task, "need", seen))
+      .filter((row) => held.has(row.id) || cardStateOf(row, activity).kind === "approval");
+    // First: these are the ones something is happening on.
+    if (extra.length) result.need = [...extra, ...result.need];
     return result;
-  }, [state.tasks, seen]);
+  }, [state.tasks, seen, held, activity]);
   const allTasks = useMemo<Task[]>(() => SEGMENTS.flatMap((s) => state.tasks[s]), [state.tasks]);
   const rows = rowsBySegment[segment];
   const visibleRows = useMemo(
@@ -197,22 +216,52 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
   const labelOf = useCallback((id: string) => rows.find((row) => row.id === id)?.label ?? id, [rows]);
 
   const handleAnswer = useCallback((id: string, word: string) => {
+    const row = rows.find((r) => r.id === id);
+    if (row?.canContinue && goesToSession(word)) {
+      // The answer starts a run in the task's session: the card stays to show it.
+      setHeld((value) => new Set(value).add(id));
+      setReplyId(null);
+      setMenuId(null);
+      void answerTask(id, word, labelOf(id));
+      return;
+    }
     commit(id, () => answerTask(id, word, labelOf(id)));
-  }, [commit, labelOf]);
+  }, [commit, labelOf, rows]);
+
+  const handleDismiss = useCallback((id: string) => {
+    setHeld((value) => {
+      const copy = new Set(value);
+      copy.delete(id);
+      return copy;
+    });
+  }, []);
+
+  const handleStop = useCallback((sessionId: string) => {
+    setOpenError(null);
+    void stopSessionRun(sessionId).catch((error) => setOpenError(t("mainSession.card.actionFailed", { error: error instanceof Error ? error.message : String(error) })));
+  }, [t]);
+
+  const handleDialog = useCallback((sessionId: string, dialogId: string, confirmed: boolean) => {
+    setOpenError(null);
+    void answerSessionDialog(sessionId, dialogId, confirmed).catch((error) => setOpenError(t("mainSession.card.actionFailed", { error: error instanceof Error ? error.message : String(error) })));
+  }, [t]);
 
   const handleArchive = useCallback((id: string) => {
     commit(id, () => archiveTask(id, labelOf(id)));
   }, [commit, labelOf]);
 
-  const handleOpenTaskSession = useCallback(async (id: string) => {
+  // The task's existing session when it has one; a new one (with the context pack) only when it
+  // has none, or when the user asks for a fresh one from the row menu.
+  const handleOpenTaskSession = useCallback(async (id: string, fresh = false) => {
     setOpenError(null);
     try {
-      const sessionId = await startTaskSession(id, fallbackCwd);
-      onSessionStarted(sessionId);
+      const opened = await openTaskSession(id, fallbackCwd, { fresh });
+      if (opened.created) onSessionStarted(opened.sessionId);
+      else void onOpenSession(opened.sessionId);
     } catch (error) {
       setOpenError(t("mainSession.openFailed", { error: error instanceof Error ? error.message : String(error) }));
     }
-  }, [fallbackCwd, onSessionStarted, t]);
+  }, [fallbackCwd, onOpenSession, onSessionStarted, t]);
 
   const handleOpenExisting = useCallback((sessionId: string) => {
     void onOpenSession(sessionId);
@@ -234,8 +283,8 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
     else if (action === "session") {
       const row = rows.find((r) => r.id === id);
       if (row?.sessionId) handleOpenExisting(row.sessionId);
-    }
-  }, [handleArchive, handleOpenExisting, rows, toggleExpanded]);
+    } else if (action === "newSession") void handleOpenTaskSession(id, true);
+  }, [handleArchive, handleOpenExisting, handleOpenTaskSession, rows, toggleExpanded]);
 
   const handleTask = useCallback((ref: string) => {
     locate(ref);
@@ -384,7 +433,8 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
       <div className="ms-band">
         <div className="ms-segments" role="tablist" aria-label={t("mainSession.segments")}>
           {SEGMENTS.map((s) => {
-            const count = rowsBySegment[s].length;
+            // The tasks in the segment: a card held in the list after its answer is not counted twice.
+            const count = state.tasks[s].length;
             const fresh = newCount(rowsBySegment[s]);
             const on = s === segment;
             return (
@@ -458,7 +508,7 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
         <div className="ms-list" id="main-session-list" ref={listRef} style={listStyle}>
           <div className="ms-list-inner">
             <div className="ms-list-header">
-              <b>{t("mainSession.listHeader", { segment: t(`mainSession.segment.${segment}`), count: rows.length })}</b>
+              <b>{t("mainSession.listHeader", { segment: t(`mainSession.segment.${segment}`), count: state.tasks[segment].length })}</b>
               <span>{t("mainSession.lastSeen", { time: seen[segment] ? shortTime(seen[segment]) : "—", count: newCount(rows) })}</span>
               <button
                 type="button"
@@ -493,6 +543,11 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
                         flash={flashId === row.id}
                         menuOpen={menuId === row.id}
                         replying={replyId === row.id}
+                        activity={segment === "done" ? IDLE_CARD : cardStateOf(row, activity)}
+                        held={held.has(row.id)}
+                        onStop={handleStop}
+                        onDialog={handleDialog}
+                        onDismiss={handleDismiss}
                         onFocusRow={handleFocusRow}
                         onAnswer={handleAnswer}
                         onOpenSession={(id) => void handleOpenTaskSession(id)}
@@ -526,9 +581,17 @@ export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fa
       )}
       <div className="ms-conversation" ref={conversationRef}>
         <div className="ms-conversation-inner">
-          {state.chat.map((message) => (
-            <ChatMessage key={message.id} message={message} onTask={handleTask} onOpenSession={handleOpenExisting} />
-          ))}
+          {state.chat.length === 0 && <div className="ms-conversation-empty">{t("mainSession.chatEmpty")}</div>}
+          {state.chat.map((message, index) => {
+            const day = dayKey(message.at);
+            const newDay = day !== "" && (index === 0 || day !== dayKey(state.chat[index - 1].at));
+            return (
+              <Fragment key={message.id}>
+                {newDay && <div className="ms-day" role="separator">{dayLabel(message.at, now, t, locale)}</div>}
+                <ChatMessage message={message} onTask={handleTask} onOpenSession={handleOpenExisting} />
+              </Fragment>
+            );
+          })}
         </div>
       </div>
       <div className="ms-composer">
@@ -595,7 +658,7 @@ function ChatMessage({ message, onTask, onOpenSession }: {
   if (message.who === "you") {
     return (
       <div className="ms-message ms-message--you">
-        <div className="ms-message-who">{t("mainSession.you")} · {shortTime(message.at).slice(6)}</div>
+        <div className="ms-message-who">{t("mainSession.you")} · {clockTime(message.at)}</div>
         <div className="ms-bubble">{message.text}</div>
       </div>
     );
@@ -606,18 +669,17 @@ function ChatMessage({ message, onTask, onOpenSession }: {
       <span className="ms-badge">{t("mainSession.badge")}</span>
       <div className="ms-message-body">
         <div className="ms-message-who">
-          {shortTime(message.at)}
-          {message.label && ` · ${t(message.label === "since" ? "mainSession.sinceLabel" : "mainSession.digestLabel")}`}
+          {clockTime(message.at)}
           {message.actions?.map((action) => <span key={action.id} className="ms-event-action">{action.action}</span>)}
         </div>
         {message.pending && !message.text ? (
           <div className="ms-thinking">{t("mainSession.thinking")}</div>
         ) : message.pending ? (
-          <div className="ms-narrative ms-streaming"><TaskText text={message.text} onTask={onTask} /></div>
+          <div className="ms-streaming"><TaskText text={message.text} onTask={onTask} /></div>
         ) : message.error ? (
           <div className="ms-error-text">{t("mainSession.chatFailed", { error: message.error })}</div>
         ) : (
-          <div className={message.label ? "ms-narrative" : undefined}><TaskText text={message.text} onTask={onTask} /></div>
+          <div><TaskText text={message.text} onTask={onTask} /></div>
         )}
         {cites.length > 0 && (
           <div className="ms-cite">

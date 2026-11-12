@@ -11,6 +11,7 @@ const entries = await read("./SessionEntries.tsx");
 const shell = await read("../AppShell.tsx");
 const sessionSidebar = await read("../SessionSidebar.tsx");
 const messageView = await read("../MessageView.tsx");
+const chatWindow = await read("../ChatWindow.tsx");
 const css = await read("../../app/native-theme.css");
 const store = await read("../../hooks/useMainSession.ts");
 const { englishMessages } = await createJiti(import.meta.url).import("../../lib/i18n/locale-plugins.ts");
@@ -43,6 +44,26 @@ test("rows are two lines with answer chips primary and a small open-session butt
   assert.match(row, /className="ms-small-button" title=\{t\("mainSession\.openSessionKey"\)\}/);
 });
 
+test("need and watch rows are cards: full text, the session's state, a reply that goes to the session", () => {
+  assert.match(row, /segment === "done" \? "" : "ms-card"/);
+  assert.match(row, /<div className=\{`ms-card-text\$\{expanded \? " is-open" : ""\}`\}>/);
+  for (const kind of ["running", "approval", "ended"]) assert.match(row, new RegExp(`activity\\.kind === "${kind}"`));
+  assert.match(row, /onDialog\(activity\.sessionId, activity\.id!, true\)/);
+  assert.match(row, /onStop\(activity\.sessionId\)/);
+  // An answer that starts a run keeps its card in the list instead of sliding it out.
+  assert.match(view, /if \(row\?\.canContinue && goesToSession\(word\)\) \{/);
+  assert.match(view, /held\.has\(row\.id\) \|\| cardStateOf\(row, activity\)\.kind === "approval"/);
+  assert.match(css, /\.ms-card-text \{[^}]*-webkit-line-clamp: 4;/);
+});
+
+test("opening a task shows its existing session with the arrival card; a new one only on request", () => {
+  assert.match(store, /for \(const id of task\?\.sessions \?\? \[\]\) \{\s*if \(await sessionExists\(id\)\) \{/);
+  assert.match(store, /setTaskArrival\(arrivalOf\(/);
+  assert.match(view, /else if \(action === "newSession"\) void handleOpenTaskSession\(id, true\);/);
+  assert.match(chatWindow, /<ArrivalCard\s+sessionId=\{session\?\.id\}/);
+  assert.match(chatWindow, /clearTaskArrival\(session\?\.id\);\s*return handleSend\(message, images\);/);
+});
+
 test("keyboard triage covers j/k 1/2/3 o e Enter Esc and leaves inputs alone", () => {
   for (const key of ['key === "j" \\|\\| key === "k"', "\\^\\[123\\]\\$", 'key === "o"', 'key === "e"', 'key === "Enter"', 'key === "Escape"']) {
     assert.match(view, new RegExp(key));
@@ -62,7 +83,11 @@ test("answered rows slide out, then a 5 second in-flow undo bar appears", () => 
 });
 
 test("the conversation shows every message and scrolls; replies cite their basis", () => {
-  assert.match(view, /state\.chat\.map\(\(message\) => \(/);
+  assert.match(view, /state\.chat\.map\(\(message, index\) => \{/);
+  // Day separators, and no digest restated as a message.
+  assert.match(view, /<div className="ms-day" role="separator">\{dayLabel\(message\.at, now, t, locale\)\}<\/div>/);
+  assert.doesNotMatch(view, /sinceLabel|digestLabel|ms-narrative/);
+  assert.doesNotMatch(store, /applyDigest|label: "since"/);
   assert.match(css, /\.ms-conversation \{ flex: 1 1 150px; min-height: 130px; overflow: auto; \}/);
   assert.match(view, /t\("mainSession\.basis"\)/);
   assert.equal(englishMessages["mainSession.basis"], "Based on: ");

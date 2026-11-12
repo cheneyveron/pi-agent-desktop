@@ -4,7 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isMe, isOpenAsk, processPendingArchives, type Ctx, type DispatchRequest, type DispatchResult, type StreamType } from "./actions.ts";
+import { answer, continueSession, isMe, isOpenAsk, processPendingArchives, type AnswerResult, type Ctx, type DispatchRequest, type DispatchResult, type StreamType } from "./actions.ts";
 import { chat, type ChatMessage, type ChatReply } from "./chat.ts";
 import { fireAfterSession, runCheckers } from "./checkers/index.ts";
 import { realExec, type Exec } from "./checkers/exec.ts";
@@ -34,6 +34,8 @@ export interface ServiceOptions {
   tickAt?: { hour: number; minute: number };
   /** Disable the timers (tests drive ticks directly). */
   timers?: boolean;
+  /** How long an answer waits (its undo window in the UI) before it is sent on to the work session. */
+  forwardDelayMs?: number;
   /** MAIN_SESSION_MODEL (`provider/modelId`): overrides the saved choice. Default: the env var. */
   envModel?: string | null;
   /** Save-time check of a chosen model. Default: the Pi registry has it and its provider is signed in. */
@@ -51,6 +53,9 @@ export interface ModelChoice {
 }
 
 export type Listener = (type: StreamType, data: unknown) => void;
+
+/** Longer than the UI's 5 second undo, so an undone answer never reaches the session. */
+const ANSWER_FORWARD_DELAY_MS = 6_000;
 
 function parseTickAt(value: string | undefined): { hour: number; minute: number } {
   const m = /^(\d{1,2}):(\d{2})$/.exec(value ?? "");
@@ -71,6 +76,7 @@ export class MainSessionService {
   private envModel: ModelRef | null;
   private checkModel: (ref: ModelRef) => Promise<void>;
   private modelWrites: Promise<unknown> = Promise.resolve();
+  private forwardDelayMs: number;
 
   constructor(options: ServiceOptions) {
     this.store = options.store;
@@ -80,6 +86,7 @@ export class MainSessionService {
     const dispatcher = options.dispatcher;
     this.exec = options.exec ?? realExec;
     this.tickAt = options.tickAt ?? parseTickAt(process.env.MAIN_SESSION_TICK);
+    this.forwardDelayMs = options.forwardDelayMs ?? ANSWER_FORWARD_DELAY_MS;
     this.ctx = {
       store: this.store,
       now: options.now ?? (() => new Date()),
@@ -339,6 +346,36 @@ export class MainSessionService {
 
   chatHistory(): { messages: ChatMessage[] } {
     return { messages: this.chatLog.slice(-200) };
+  }
+
+  /**
+   * POST /tasks/:id/answer. A decision or a reply in the user's own words (anything that is not
+   * archive / keep / done / snooze / dispatch) also goes to the task's work session, once the
+   * UI's undo window has passed: the session is where the work continues.
+   */
+  answer(taskId: string, input: { word: string; eventId?: string }): AnswerResult {
+    const result = answer(this.ctx, taskId, input);
+    const effect = result.event.data?.effect;
+    if ((effect === "approved" || effect === "noted") && !result.event.data?.forwarded && result.task.status !== "archived") {
+      const timer = setTimeout(() => this.forwardAnswer(result.event.id), this.forwardDelayMs);
+      timer.unref?.();
+    }
+    return result;
+  }
+
+  private forwardAnswer(eventId: string): void {
+    const event = this.store.getEvent(eventId);
+    if (!event?.task || event.data?.undone || event.data?.forwarded) return;
+    const ask = event.data?.askId ? this.store.getEvent(event.data.askId) : undefined;
+    const question = typeof ask?.data?.question === "string" ? ask.data.question : "";
+    const text = question ? `你的决定：${event.data.word}\n（针对：${question}）` : `你的回复：${event.data.word}`;
+    try {
+      const sent = continueSession(this.ctx, { task: event.task, text, origin: "user", why: `the user's answer (${event.id})`, auto: false });
+      this.store.rewriteEvent({ ...event, data: { ...event.data, forwarded: sent.id } });
+    } catch (error) {
+      // No session and no repo: the answer stays recorded on the task.
+      this.store.rewriteEvent({ ...event, data: { ...event.data, forwardError: error instanceof Error ? error.message : String(error) } });
+    }
   }
 
   sessionStarted(sessionId: string, taskId: string | undefined) {

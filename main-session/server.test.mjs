@@ -99,7 +99,7 @@ test("the contract's endpoints, end to end", async () => {
 
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(judged.length >= 1, "the close-out got a judgment turn");
-    assert.deepEqual(judged[0].tools, ["assign", "update", "dispatch_readonly", "ask", "archive", "remember", "insert", "schedule", "digest"]);
+    assert.deepEqual(judged[0].tools, ["assign", "update", "dispatch_readonly", "ask", "archive", "remember", "insert", "continue", "schedule", "digest"]);
   });
 });
 
@@ -334,4 +334,46 @@ test("the demo fixture seeds an empty state for UI work and e2e", async () => {
     assert.ok(need.every((t) => t.ask?.eventId));
     assert.equal((await call("GET", "/tasks?status=done")).body.tasks[0].id, "CAS-4739");
   }, { fixture });
+});
+
+// ── answers go on to the task's work session ─────────────────────────────
+
+test("a decision is passed to the work session after the undo window; the service's own words and undone answers are not", async () => {
+  await withServer(async ({ call, service }) => {
+    const sent = [];
+    service.subscribe((type, data) => { if (type === "continue") sent.push(data); });
+    const wait = () => new Promise((resolve) => setTimeout(resolve, 60));
+    await call("POST", "/closeouts", closeout);
+
+    // "稍后" is the service's own (snooze): nothing is sent.
+    await call("POST", "/tasks/CAS-4764/answer", { word: "稍后" });
+    await wait();
+    assert.deepEqual(sent, []);
+
+    // An undone answer never reaches the session.
+    await call("POST", "/closeouts", { ...closeout, t: "2026-11-05T11:00:00.000Z", open: [{ question: "推还是等？", who: "me" }] });
+    const undone = await call("POST", "/tasks/CAS-4764/answer", { word: "推" });
+    await call("POST", "/tasks/CAS-4764/undo", { eventId: undone.body.event.id });
+    await wait();
+    assert.deepEqual(sent, []);
+
+    // A decision goes on, with the question it answers, as the user's own message.
+    const answered = await call("POST", "/tasks/CAS-4764/answer", { word: "推" });
+    await wait();
+    assert.equal(sent.length, 1);
+    assert.deepEqual(
+      { task: sent[0].task, sessionId: sent[0].sessionId, origin: sent[0].origin, text: sent[0].text },
+      { task: "CAS-4764", sessionId: "sess-1", origin: "user", text: "你的决定：推\n（针对：推还是等？）" },
+    );
+    assert.equal(service.store.getEvent(answered.body.event.id).data.forwarded, sent[0].eventId);
+
+    // A reply with nothing asked goes on too; the app reports where it landed.
+    await call("POST", "/tasks/CAS-4764/answer", { word: "先别合并，等我看完日志" });
+    await wait();
+    assert.equal(sent[1].text, "你的回复：先别合并，等我看完日志");
+    const delivered = await call("POST", `/continues/${sent[1].eventId}/delivered`, { sessionId: "sess-2" });
+    assert.equal(delivered.status, 200);
+    assert.deepEqual(service.store.getTask("CAS-4764").sessions, ["sess-2", "sess-1"]);
+    assert.equal((await call("POST", "/continues/e_nope/delivered", {})).status, 404);
+  }, { forwardDelayMs: 20 });
 });

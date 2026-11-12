@@ -203,23 +203,29 @@ export async function intakeCloseout(ctx: Ctx, closeout: Closeout): Promise<Inta
   ctx.emit("event", event);
 
   const openKey = (q: OpenQ) => `open:${task!.id}:${shortHash(q.question)}`;
-  const currentKeys = new Set(closeout.open.filter((q) => isMe(q.who)).map(openKey));
-  // Questions an earlier close-out asked and this one no longer lists were settled in the work.
+  // One close-out raises at most one question: the one a word can settle (a P1, a write, an
+  // either/or) when there is one, else the first. The rest stay on the task as open questions
+  // for the work session to settle, or for a judgment turn to hand back to it.
+  const mine = closeout.open.filter((q) => isMe(q.who));
+  const urgent = (q: OpenQ) => /\bP1\b|\bprod\b|生产/i.test(q.question);
+  const q = mine.find(urgent) ?? mine.find((o) => WRITE_WORDS.test(o.question)) ?? mine.find((o) => chipsFor(o.question)) ?? mine[0];
+  // An earlier close-out's question that is no longer the one raised was settled in the work,
+  // or stays on the task as an open question: either way it stops asking.
   for (const e of openAsks(ctx.store, task.id)) {
-    if (typeof e.data.key === "string" && e.data.key.startsWith(`open:${task.id}:`) && !currentKeys.has(e.data.key)) {
+    if (typeof e.data.key === "string" && e.data.key.startsWith(`open:${task.id}:`) && (!q || e.data.key !== openKey(q))) {
       ctx.store.rewriteEvent({ ...e, data: { ...e.data, cancelled: true, cancelledBy: event.id } });
     }
   }
   if (task.status === "need" && openAsks(ctx.store, task.id).length === 0) task.status = "watch";
-  for (const q of closeout.open) {
-    if (!isMe(q.who)) continue;
+  if (q) {
     const chips = chipsFor(q.question);
     ask(ctx, {
       task: task.id, question: q.question, why: `open question in close-out of ${closeout.sessionId}`,
       key: openKey(q),
       ...(chips ? { chips } : {}),
       ...(WRITE_WORDS.test(q.question) ? { write: true } : {}),
-      ...(/\bP1\b|\bprod\b|生产/i.test(q.question) ? { immediate: true, category: "immediate" as const } : {}),
+      ...(urgent(q) ? { immediate: true, category: "immediate" as const } : {}),
+      ...(mine.length > 1 ? { others: mine.length - 1 } : {}),
     });
   }
   ctx.emit("task", { task });

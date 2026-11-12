@@ -124,7 +124,9 @@ const segmentCount = (page, segment) => page.locator(`.ms-segment--${segment} .m
 const row = (page, id) => page.locator(`.ms-row[data-row-id="${id}"]`);
 
 try {
-  // 1. Sidebar → main page → answer → row leaves, counts change → undo.
+  // 1. Sidebar → main page → answer → counts change → undo. A decision goes on to the task's
+  //    session, so its card stays to show what comes of it; a snooze is the service's own and
+  //    slides its row out.
   {
     const { page, errors } = await open({ search: "?view=session" });
     const section = page.locator(".ms-sidebar-section");
@@ -139,35 +141,57 @@ try {
     assert.deepEqual([await segmentCount(page, "need"), await segmentCount(page, "watch"), await segmentCount(page, "done")], ["14", "3", "17"]);
     await page.screenshot({ path: `${out}/main-light-1280.png` });
 
-    await row(page, "CAS-4764").getByRole("button", { name: "推", exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('.ms-row[data-row-id="CAS-4764"]'));
-    assert.equal(await segmentCount(page, "need"), "13");
-    assert.equal(await segmentCount(page, "watch"), "4");
+    // Cards: the task's title, the whole question, a reply box where there is a session.
+    const card = row(page, "CAS-4764");
+    assert.match(await card.getAttribute("class"), /\bms-card\b/);
+    assert.equal(await card.locator(".ms-card-title").textContent(), "P1 PCT-121470 根因修复");
+    assert.match(await card.locator(".ms-card-text").textContent(), /^a58e342 在本地分支 .*推还是放弃？$/);
+    assert.equal(await card.locator(".ms-card-state").textContent(), "等你");
+    assert.equal(await card.locator(".ms-reply input").getAttribute("placeholder"), "回复这个会话…");
+
+    await card.getByRole("button", { name: "推", exact: true }).click();
     const undo = page.locator(".ms-undo");
     await undo.waitFor();
+    assert.equal(await segmentCount(page, "need"), "13");
+    assert.equal(await segmentCount(page, "watch"), "4");
     assert.match(await undo.textContent(), /CAS-4764 回「推」→ 移到在盯的/);
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset?.rowId), "PCT-120665", "focus moves to the next row");
+    assert.equal(await card.count(), 1, "a decision keeps its card in the list");
+    assert.equal(await card.locator(".ms-card-state").textContent(), "在盯");
+    assert.equal(await card.locator(".ms-answered").textContent(), "已转给会话：推");
+    assert.equal(await page.locator(".main-session-view .ms-row").first().getAttribute("data-row-id"), "CAS-4764", "held cards come first");
     assert.match(await section.locator(".ms-sidebar-last").textContent(), /刚才：CAS-4764 回「推」/);
     await page.screenshot({ path: `${out}/main-answered-undo.png` });
     await undo.getByRole("button", { name: "撤销" }).click();
-    await row(page, "CAS-4764").waitFor();
-    assert.equal(await segmentCount(page, "need"), "14");
+    await page.waitForFunction(() => document.querySelector(".ms-segment--need .ms-segment-count")?.textContent === "14");
     assert.equal(await undo.count(), 0);
+    await card.getByRole("button", { name: "知道了" }).click();
+    assert.equal(await card.locator(".ms-card-state").textContent(), "等你");
+
+    // "等" is the service's own word (snooze): nothing goes to a session, the row slides out.
+    await row(page, "CAS-4766").getByRole("button", { name: "等", exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.ms-row[data-row-id="CAS-4766"]'));
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset?.rowId), "memory:weekly", "focus moves to the next row");
+    await undo.getByRole("button", { name: "撤销" }).click();
+    await row(page, "CAS-4766").waitFor();
+    assert.equal(await segmentCount(page, "need"), "14");
 
     // 2. Keyboard: j to the first row, 2 answers with its second chip (放弃 → handled), Esc clears.
     await page.locator(".ms-list-header").click();
     await page.keyboard.press("Escape");
     await page.keyboard.press("j");
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset?.rowId), "CAS-4764");
+    const firstRow = await page.locator(".main-session-view .ms-row").first().getAttribute("data-row-id");
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset?.rowId), firstRow);
     await page.keyboard.press("k");
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset?.rowId), firstRow, "k stops at the first row");
+    await row(page, "CAS-4764").locator(".ms-card-text").click();
     await page.keyboard.press("Enter");
     await row(page, "CAS-4764").locator(".ms-details").waitFor();
     await page.keyboard.press("2");
     await page.waitForFunction(() => !document.querySelector('.ms-row[data-row-id="CAS-4764"]'));
-    assert.equal(await segmentCount(page, "done"), "18");
+    await page.waitForFunction(() => document.querySelector(".ms-segment--done .ms-segment-count")?.textContent === "18");
     await page.locator(".ms-undo").getByRole("button", { name: "撤销" }).click();
     await row(page, "CAS-4764").waitFor();
-    await page.keyboard.press("j");
+    await row(page, "CAS-4764").locator(".ms-card-text").click();
     await page.keyboard.press("e");
     await page.waitForFunction(() => document.querySelector(".ms-segment--done .ms-segment-count")?.textContent === "18");
     await page.locator(".ms-undo").getByRole("button", { name: "撤销" }).click();

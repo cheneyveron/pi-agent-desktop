@@ -21,7 +21,7 @@ export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { IDLE_SESSION_CAP_GRACE_MS, selectIdleSessionsToEvict, type IdleSessionCandidate, type IdleSessionCapLimits } from "./idle-session-cap";
-import type { AgentSession, LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, InlineExtension, LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
 import type {
@@ -63,7 +63,8 @@ import { createScheduledTasksExtension } from "./scheduled-tasks-extension";
 import { createPiWebBuiltinExtensions } from "./builtin-extensions";
 import { isMainSessionDisabled, mainSessionUrl, replayCloseoutOutbox } from "./closeout-extension";
 import { MAIN_SESSION_NOTE_PREFIX, MAIN_SESSION_NOTE_TYPE, type MainSessionNoteDetails } from "./closeout-types";
-import { startMainSessionStream, type MainSessionStream } from "./main-session-insert-client";
+import { startMainSessionStream, type MainSessionContinueEvent, type MainSessionStream } from "./main-session-insert-client";
+import { createMainSessionGateExtension } from "./main-session-gate";
 import type { McpHost } from "./mcp-host";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension } from "./mcp-read-only-policy";
@@ -152,6 +153,20 @@ function agentRunOutcome(event: AgentEvent): AgentRunOutcome {
   return { status: "done" };
 }
 
+/** The end of the run's last reply, for surfaces that show a session without opening it. */
+const RUN_SUMMARY_LIMIT = 600;
+function agentRunSummary(event: AgentEvent): string {
+  const messages = Array.isArray(event.messages) ? event.messages as Array<Record<string, unknown>> : [];
+  const last = [...messages].reverse().find((message) => message?.role === "assistant");
+  const content = Array.isArray(last?.content) ? last.content as Array<Record<string, unknown>> : [];
+  const text = content
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text as string)
+    .join("\n")
+    .trim();
+  return text.length > RUN_SUMMARY_LIMIT ? `…${text.slice(-RUN_SUMMARY_LIMIT)}` : text;
+}
+
 type PendingUiResponse = {
   resolve: (response: ExtensionUiResponse) => void;
   cancel: () => void;
@@ -195,6 +210,8 @@ type ExtensionUiRequestBody = Record<string, unknown> & {
 
 
 type AgentSessionWrapperOptions = {
+  /** Shared with the write gate extension: true while the running turn was started by the main session. */
+  mainSessionGate?: { gated: boolean };
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
   /** A non-project chat. Chats reject tool commands, and shell commands unless unlocked. */
@@ -417,6 +434,8 @@ export class AgentSessionWrapper {
   private runStartedAt: number | null = null;
   private retrying = false;
   private lastFinishedRun: AgentTaskSnapshot["lastRun"] = null;
+  private lastRunSummary = "";
+  private readonly mainSessionGate?: { gated: boolean };
   private readonly mcpHost?: Pick<McpHost, "prepareForPrompt" | "dispose">;
   private mcpHostDisposed = false;
   // The MCP wait of the prompt being admitted; Stop ends it.
@@ -451,6 +470,7 @@ export class AgentSessionWrapper {
       chatUnlocked: options.chatUnlocked,
     });
     this.chatFolder = options.chatFolder === true;
+    this.mainSessionGate = options.mainSessionGate;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.onAttentionNeeded = options.onAttentionNeeded;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
@@ -618,6 +638,7 @@ export class AgentSessionWrapper {
       if (event.type === "auto_retry_end" || event.type === "agent_start") this.retrying = false;
       if (event.type === "agent_end") {
         this.lastRunOutcome = agentRunOutcome(event);
+        this.lastRunSummary = agentRunSummary(event);
         invalidateSessionListCache();
         notifyRunningChange();
         // Every tool call of the run has finished; nothing is left to replay.
@@ -692,7 +713,10 @@ export class AgentSessionWrapper {
     this.agentRunNeedsCompletion = false;
     this.runStartedAt = null;
     this.retrying = false;
-    this.lastFinishedRun = { outcome: this.lastRunOutcome, finishedAt: Date.now() };
+    this.lastFinishedRun = {
+      outcome: this.lastRunOutcome, finishedAt: Date.now(),
+      ...(this.lastRunSummary ? { summary: this.lastRunSummary } : {}),
+    };
     if (this.suppressCompletionNotifications) return;
     recordRecentRunOutcome(this.sessionId, this.lastFinishedRun);
     try {
@@ -711,7 +735,11 @@ export class AgentSessionWrapper {
       const prompt = typeof event.title === "string" ? event.title
         : typeof event.message === "string" ? event.message
           : "";
-      waiting.push({ method, prompt });
+      waiting.push({
+        method, prompt,
+        ...(typeof event.id === "string" ? { id: event.id } : {}),
+        ...(typeof event.title === "string" && typeof event.message === "string" ? { message: event.message } : {}),
+      });
     }
     if (!running) this.runStartedAt = null;
     let activity: AgentTaskSnapshot["activity"] = null;
@@ -1076,6 +1104,11 @@ export class AgentSessionWrapper {
         throw new Error("Session is being copied to a new session");
       }
 
+      // Whoever sent the latest message owns the turn: the main session's own steps run behind
+      // the write gate, and a message from the user lifts it.
+      if (this.mainSessionGate && (type === "prompt" || type === "steer" || type === "follow_up")) {
+        this.mainSessionGate.gated = command.mainSession === true;
+      }
       if (type === "prompt" || type === "steer" || type === "follow_up" || type === "queue_composer") {
         const imageError = validateAgentImages(command.images);
         if (imageError) throw new Error(imageError);
@@ -2571,6 +2604,53 @@ export async function injectMainSessionNote(
   return session.injectMainSessionNote(note, task, options);
 }
 
+/** What the session reads when the main session hands it a step, and when it passes on the user's answer. */
+export const MAIN_SESSION_CONTINUE_PREFIX = "[主会话续做] ";
+export const MAIN_SESSION_ANSWER_PREFIX = "[主会话] ";
+
+/**
+ * Run a step in a task's work session for the main session (its `continue` action): the
+ * task's session, reopened if it is not live, or a new one in the task's folder. A step the
+ * main session chose itself runs behind the write gate; the user's own answer does not.
+ * Returns the session that took it.
+ */
+export async function continueFromMainSession(event: MainSessionContinueEvent): Promise<string> {
+  const mainDriven = event.origin !== "user";
+  const message = `${mainDriven ? MAIN_SESSION_CONTINUE_PREFIX : MAIN_SESSION_ANSWER_PREFIX}${event.text}`;
+  let session: AgentSessionWrapper;
+  let sessionId: string;
+  const sessionFile = event.sessionId ? getRpcSession(event.sessionId)?.sessionFile || await resolveSessionPath(event.sessionId) : null;
+  if (event.sessionId && sessionFile) {
+    ({ session } = await startRpcSession(event.sessionId, sessionFile, undefined));
+    sessionId = event.sessionId;
+  } else {
+    if (!event.cwd || !existsSync(event.cwd)) throw new Error("the task has no session and no folder to start one in");
+    const started = await startRpcSession(`main-session-${randomUUID()}`, "", event.cwd);
+    session = started.session;
+    sessionId = started.realSessionId;
+    invalidateSessionListCache();
+  }
+  if (session.isChatWorkspace() || session.isChatOnly()) throw new Error("a chat cannot take a main-session step");
+  // Returns once the run is admitted; the run itself goes on in the background.
+  void session.send({
+    type: "prompt",
+    message,
+    ...(session.isRunning() ? { streamingBehavior: "followUp" } : {}),
+    ...(mainDriven ? { mainSession: true } : {}),
+  }).catch((error) => {
+    console.error("[pi-web] main-session step failed:", error instanceof Error ? error.message : error);
+  });
+  return sessionId;
+}
+
+async function reportContinueDelivery(eventId: string, body: { sessionId?: string; error?: string }): Promise<void> {
+  await fetch(`${mainSessionUrl()}/continues/${encodeURIComponent(eventId)}/delivered`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch(() => undefined);
+}
+
 declare global {
   var __piWebMainSessionStream: MainSessionStream | undefined;
 }
@@ -2593,6 +2673,14 @@ export function ensureMainSessionInsertClient(): void {
       const result = await injectMainSessionNote(event.sessionId, event.text, event.task, { eventId: event.eventId });
       if (!result.delivered && isVerboseLogging()) {
         console.log(`[pi-web] main-session note for ${event.sessionId} not delivered: ${result.reason}`);
+      }
+    },
+    onContinue: async (event) => {
+      try {
+        const sessionId = await continueFromMainSession(event);
+        await reportContinueDelivery(event.eventId, { sessionId });
+      } catch (error) {
+        await reportContinueDelivery(event.eventId, { error: error instanceof Error ? error.message : String(error) });
       }
     },
     log: (message) => console.warn(`[pi-web] ${message}`),
@@ -3041,6 +3129,8 @@ export async function startRpcSession(
     // extension: it may read the session's context files, which exist only
     // after the session is created, so the getter is filled in below.
     const exactSystemPromptRef: { current?: () => string } = {};
+    // Flipped by the wrapper as messages arrive (see send()); read by the gate on every tool call.
+    const mainSessionGate = { gated: false };
     const exactSystemPromptExtension = createExactSystemPromptExtension(() => exactSystemPromptRef.current?.());
     const usesExactSystemPrompt = chatOnly || subagentResources?.exactSystemPrompt !== undefined;
     // codemode, tool-search, and mcp, as the pi CLI loads them, and the host that decides
@@ -3105,6 +3195,7 @@ export async function startRpcSession(
             extensionFactories: [
               ...(builtins?.extensions ?? []),
               createReadOnlyMcpPolicyExtension(),
+              createMainSessionGateExtension({ isGated: () => mainSessionGate.gated, cwd: sessionCwd }) as unknown as InlineExtension,
               createArtifactGuideExtension(),
               createScheduledTasksExtension(),
               createProjectCommandBashExtension({
@@ -3203,6 +3294,7 @@ export async function startRpcSession(
         : undefined;
     exactSystemPromptRef.current = exactSystemPrompt;
     const wrapper = new AgentSessionWrapper(inner, {
+      mainSessionGate,
       exactSystemPrompt,
       chatOnly,
       chatWorkspace,

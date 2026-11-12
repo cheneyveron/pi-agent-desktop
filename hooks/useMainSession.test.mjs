@@ -16,13 +16,14 @@ function install(overrides = {}) {
 }
 const counts = () => ["need", "watch", "done"].map((s) => store.getMainSessionState().tasks[s].length);
 
-test("refresh loads all three lists and the narrative", async () => {
+test("refresh loads all three lists; the digest stays out of the conversation", async () => {
   install();
   await store.refreshMainSession();
   assert.equal(store.getMainSessionState().status, "ready");
   assert.deepEqual(counts(), [14, 3, 17]);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(store.getMainSessionState().chat[0].label, "since");
+  assert.equal(store.getMainSessionState().chat.length, 0);
+  assert.ok(store.getMainSessionState().digest);
 });
 
 test("an answer updates counts at once and offers a 5 second undo that restores the row", async () => {
@@ -93,7 +94,8 @@ test("a digest from the stream reaches the notification handlers once per date",
   await store.refreshMainSession();
   emit({ type: "digest", digest: { date: "2026-11-07", lines: [], narrative: "today" } });
   assert.deepEqual(seen, ["2026-11-07"]);
-  assert.equal(store.getMainSessionState().chat.at(-1).label, "digest");
+  assert.equal(store.getMainSessionState().chat.length, 0);
+  assert.equal(store.getMainSessionState().digest.date, "2026-11-07");
   stop();
   release();
 });
@@ -140,7 +142,7 @@ test("a health probe reporting ok:false means not running, without asking for an
   assert.equal(backend.calls.filter((c) => c.method === "listTasks").length, 0);
 });
 
-test("the stored conversation (GET /chat) loads before this visit's narrative", async () => {
+test("the stored conversation (GET /chat) loads, and only it", async () => {
   install({ chatHistory: async () => ({ messages: [
     { role: "user", text: "CAS-4685 卡在哪", t: "2026-11-05T10:00:00Z" },
     { role: "main", text: "等你 dev 验证", t: "2026-11-05T10:00:05Z", cites: [{ task: "CAS-4685" }] },
@@ -148,7 +150,7 @@ test("the stored conversation (GET /chat) loads before this visit's narrative", 
   await store.refreshMainSession();
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
   const chat = store.getMainSessionState().chat;
-  assert.deepEqual(chat.map((m) => [m.who, m.label ?? null]), [["you", null], ["main", null], ["main", "since"]]);
+  assert.deepEqual(chat.map((m) => m.who), ["you", "main"]);
   assert.equal(chat[1].cites[0].task, "CAS-4685");
 });
 

@@ -72,6 +72,7 @@ function lastText(e: MainEvent): { short?: string; text: string } {
     case "remember": return { short: "记下", text: clip(String(e.data?.texts?.[0] ?? ""), 140) };
     case "schedule": return { short: "安排", text: clip(String(e.data?.text ?? ""), 140) };
     case "insert": return { short: "插话", text: clip(String(e.data?.text ?? ""), 140) };
+    case "continue": return { short: e.data?.origin === "user" ? "已转给会话" : "让会话续做", text: clip(String(e.data?.text ?? ""), 140) };
     case "update": return { short: "更新", text: e.why };
     default: return { text: e.why };
   }

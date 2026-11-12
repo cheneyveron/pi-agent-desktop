@@ -18,14 +18,13 @@ import {
   type Segment,
   type Task,
 } from "@/lib/main-session-client";
+import { arrivalOf, setTaskArrival } from "@/lib/main-session-arrival";
 
 export interface MainChatMessage {
   id: string;
   who: "you" | "main";
   text: string;
   at: string;
-  /** "自上次以来" for the digest narrative. */
-  label?: "since" | "digest";
   cites?: ChatCite[];
   actions?: MainEvent[];
   pending?: boolean;
@@ -268,11 +267,11 @@ export async function refreshMainSession(force = false): Promise<void> {
   }
 }
 
-/** Messages the service already holds; this visit's narrative and questions follow them. */
+/** Messages the service already holds; this visit's questions follow them. */
 let historyLength = 0;
 
 async function loadHistory(client: MainSessionApi): Promise<void> {
-  if (state.chat.some((m) => m.label) || historyLength) return;
+  if (historyLength) return;
   try {
     const { messages } = await client.chatHistory();
     if (!messages?.length) return;
@@ -286,32 +285,16 @@ async function loadHistory(client: MainSessionApi): Promise<void> {
     historyLength = history.length;
     setState({ chat: [...history, ...state.chat] });
   } catch {
-    // An older service without GET /chat: start from the narrative.
+    // An older service without GET /chat: the conversation starts empty.
   }
 }
 
 async function loadDigest(): Promise<void> {
   try {
-    const digest = await (await api()).digest();
-    applyDigest(digest, "since");
+    setState({ digest: await (await api()).digest() });
   } catch {
-    // The narrative is optional; the lists already loaded.
+    // The digest is optional; the lists already loaded.
   }
-}
-
-function applyDigest(digest: Digest, label: "since" | "digest"): void {
-  const narrative = digest.narrative?.trim();
-  const already = state.chat.some((m) => m.label && m.text === narrative);
-  const entry: MainChatMessage | null = narrative && !already
-    ? { id: `m${++seq}`, who: "main", text: narrative, at: new Date().toISOString(), label }
-    : null;
-  // "Since last time" opens the conversation even when it arrives after the first question.
-  const chat = !entry
-    ? state.chat
-    : label === "since"
-      ? [...state.chat.slice(0, historyLength), entry, ...state.chat.slice(historyLength)]
-      : [...state.chat, entry];
-  setState({ digest, chat });
 }
 
 function handleStreamEvent(event: MainStreamEvent): void {
@@ -322,7 +305,8 @@ function handleStreamEvent(event: MainStreamEvent): void {
     const waiting = state.chat.find((m) => m.pending);
     if (waiting) setState({ chat: state.chat.map((m) => (m.id === waiting.id ? { ...m, text: m.text + event.delta } : m)) });
   } else if (event.type === "digest") {
-    applyDigest(event.digest, "digest");
+    // The digest is the list above restated: it feeds notifications, never the conversation.
+    setState({ digest: event.digest });
     for (const handler of digestHandlers) {
       try { handler(event.digest); } catch { /* one consumer failing must not starve the others */ }
     }
@@ -476,9 +460,56 @@ export async function sendMainChat(text: string): Promise<void> {
   }
 }
 
+/** The list's name for a task: its id, or its title when the id is a generated one. */
+function displayLabel(task: Task): string {
+  return /^(org|repo|memory):/.test(task.id) && task.title ? task.title : task.id;
+}
+
+async function sessionExists(sessionId: string): Promise<boolean> {
+  try {
+    return (await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" })).ok;
+  } catch {
+    return false;
+  }
+}
+
+export interface OpenedTaskSession {
+  sessionId: string;
+  /** true: a new session was created for the task; false: its latest existing one is to be shown. */
+  created: boolean;
+}
+
 /**
- * Open a work session for a task: the service's context pack (or one built from
+ * The session to show for a task: its latest existing one (the sessions the task's close-outs
+ * came from, or the user opened for it), or a new one carrying the context pack when it has none.
+ * `fresh` forces a new one. Opening a task twice must not create a second session.
+ */
+export async function openTaskSession(taskId: string, fallbackCwd: string | null, options: { fresh?: boolean } = {}): Promise<OpenedTaskSession> {
+  if (!options.fresh) {
+    const known = findTask(taskId);
+    const task = known ?? (await (await api()).getTask(taskId).catch(() => null))?.task;
+    // The latest session that still exists: a deleted one must not strand the user on nothing.
+    let existing: string | undefined;
+    for (const id of task?.sessions ?? []) {
+      if (await sessionExists(id)) {
+        existing = id;
+        break;
+      }
+    }
+    if (existing && task) {
+      // Say why the user lands there: a card above that session's composer.
+      const detail = await (await api()).getTask(taskId).catch(() => null);
+      setTaskArrival(arrivalOf(detail?.task ?? task, existing, displayLabel(detail?.task ?? task), detail?.contextPack));
+      return { sessionId: existing, created: false };
+    }
+  }
+  return { sessionId: await startTaskSession(taskId, fallbackCwd), created: true };
+}
+
+/**
+ * Create a work session for a task: the service's context pack (or one built from
  * the task) becomes the first message, then the service learns the session id.
+ * Callers that mean "show me the task's session" use openTaskSession.
  */
 export async function startTaskSession(taskId: string, fallbackCwd: string | null): Promise<string> {
   const client = await api();

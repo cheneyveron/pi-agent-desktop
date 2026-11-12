@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Type, type TSchema } from "typebox";
 import {
-  ActionError, ask, assign, dispatchReadonly, insert, remember, requireTask, schedule,
+  ActionError, ask, assign, continueSession, dispatchReadonly, insert, remember, requireTask, schedule,
   suggestArchive, update, type Ctx,
 } from "./actions.ts";
 import { daysBetween } from "./dates.ts";
@@ -183,6 +183,14 @@ export function actionTools(ctx: Ctx, trigger: Trigger, sink: MainEvent[]): Judg
         const taskId = str(p.task);
         if (taskId && !requireTask(ctx, taskId).sessions.includes(sessionId)) throw new ActionError(`session ${sessionId} is not on ${taskId}`);
         return done(insert(ctx, { sessionId, text: String(p.text), ...(taskId ? { task: taskId } : {}), why: String(p.why) }));
+      },
+    },
+    {
+      name: "continue",
+      description: "Have the task's own work session carry on with one concrete step (it has the repo, the tools and the history). The app runs the turn behind a write gate: reads, edits inside the repo and tests run; anything else waits for the user's approval there. Refused when the same step was already handed over or the task got three steps today.",
+      parameters: Type.Object({ task: Type.String(), step: Type.String({ description: "What to do next, self-contained, in the user's language." }), why }),
+      async execute(p) {
+        return done(continueSession(ctx, { task: String(p.task), text: String(p.step), origin: "main", why: String(p.why) }));
       },
     },
     {

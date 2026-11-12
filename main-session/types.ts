@@ -71,7 +71,7 @@ export interface Task {
 
 export type EventAction =
   | "assign" | "update" | "dispatch_readonly" | "ask" | "archive" | "remember"
-  | "digest" | "insert" | "schedule" | "checker" | "closeout" | "answer";
+  | "digest" | "insert" | "schedule" | "checker" | "closeout" | "answer" | "continue";
 
 export interface MainEvent {
   id: string;
@@ -155,6 +155,8 @@ export interface AskData {
   tasks?: string[];
   /** The answer is an approval of a write the service will not perform itself. */
   write?: boolean;
+  /** How many more open questions the same close-out left on the task. */
+  others?: number;
 }
 
 export type DigestCategory =

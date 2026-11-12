@@ -55,10 +55,47 @@ export function parseInsertEvent(data: string): MainSessionInsertEvent | undefin
   };
 }
 
+export interface MainSessionContinueEvent {
+  eventId: string;
+  task: string;
+  text: string;
+  /** "main": the main session chose the step (runs behind the write gate); "user": the user's answer. */
+  origin: "user" | "main";
+  /** The task's work session; absent when a new one has to be started in `cwd`. */
+  sessionId?: string;
+  cwd?: string;
+}
+
+/** A `continue` frame: run a step in a task's work session. */
+export function parseContinueEvent(data: string): MainSessionContinueEvent | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const raw = parsed as Record<string, unknown>;
+  if (typeof raw.eventId !== "string" || !raw.eventId || typeof raw.task !== "string" || typeof raw.text !== "string" || !raw.text.trim()) return undefined;
+  const sessionId = typeof raw.sessionId === "string" && raw.sessionId ? raw.sessionId : undefined;
+  const cwd = typeof raw.cwd === "string" && raw.cwd ? raw.cwd : undefined;
+  if (!sessionId && !cwd) return undefined;
+  return {
+    eventId: raw.eventId,
+    task: raw.task,
+    text: raw.text,
+    // Anything but an explicit "user" is treated as the main session's own step: gated.
+    origin: raw.origin === "user" ? "user" : "main",
+    ...(sessionId ? { sessionId } : {}),
+    ...(cwd ? { cwd } : {}),
+  };
+}
+
 export interface MainSessionStreamOptions {
   /** Service base URL, e.g. `http://127.0.0.1:30180`. */
   url: string;
   onInsert: (event: MainSessionInsertEvent) => void | Promise<void>;
+  onContinue?: (event: MainSessionContinueEvent) => void | Promise<void>;
   /** Each time the stream opens: the service is up. */
   onConnect?: () => void;
   fetch?: typeof fetch;
@@ -102,6 +139,15 @@ export function startMainSessionStream(options: MainSessionStreamOptions): MainS
         const { frames, rest } = parseSseFrames(buffer);
         buffer = rest;
         for (const frame of frames) {
+          if (frame.event === "continue") {
+            const step = parseContinueEvent(frame.data);
+            if (!step) options.log?.("ignored a malformed main-session continue event");
+            // Not awaited: a step is a whole agent run, and notes must keep flowing meanwhile.
+            else void Promise.resolve(options.onContinue?.(step)).catch((error) => {
+              options.log?.(`main-session continue failed: ${error instanceof Error ? error.message : String(error)}`);
+            });
+            continue;
+          }
           if (frame.event !== "insert") continue;
           const event = parseInsertEvent(frame.data);
           if (!event) {

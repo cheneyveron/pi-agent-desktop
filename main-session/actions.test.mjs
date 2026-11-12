@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  answer, archiveNow, ask, assign, hasUnpushedCommits, openAsks, pendingArchive, processPendingArchives, shortHash, suggestArchive, undo,
+  answer, archiveNow, ask, assign, continueDelivered, continueSession, CONTINUE_DAILY_CAP, failureFinding, hasUnpushedCommits, openAsks, pendingArchive, processPendingArchives, shortHash, suggestArchive, undo,
 } from "./actions.ts";
 import { chipsFor, intakeCloseout, parseCloseout } from "./intake.ts";
 import { HOUR, closeout, makeCtx, task } from "./test-helpers.mjs";
@@ -193,4 +193,92 @@ test("either/or questions become chips", () => {
   assert.deepEqual(chipsFor("推还是放弃？"), ["推", "放弃"]);
   assert.deepEqual(chipsFor("CAS-4764 修复在本地 4 天没推，推还是放弃？"), ["推", "放弃"]);
   assert.equal(chipsFor("what should we do?"), undefined);
+});
+
+// ── continue: handing a step to the task's work session ──────────────────
+
+test("continue sends the step to the task's latest session and records it", () => {
+  const h = makeCtx();
+  h.ctx.store.putTask(task("CAS-40", { sessions: ["s-new", "s-old"], repo: "/work/cas" }));
+  const event = continueSession(h.ctx, { task: "CAS-40", text: "跑一遍单测并修掉失败的用例", origin: "main", why: "next step needs no decision" });
+  assert.equal(event.action, "continue");
+  assert.equal(event.auto, true);
+  const sent = h.emitted.find((e) => e.type === "continue").data;
+  assert.deepEqual(
+    { sessionId: sent.sessionId, task: sent.task, origin: sent.origin, cwd: sent.cwd, eventId: sent.eventId },
+    { sessionId: "s-new", task: "CAS-40", origin: "main", cwd: "/work/cas", eventId: event.id },
+  );
+});
+
+test("the main session never hands over the same step twice, nor more than three a day", () => {
+  const h = makeCtx();
+  h.ctx.store.putTask(task("CAS-41", { sessions: ["s-1"] }));
+  continueSession(h.ctx, { task: "CAS-41", text: "step a", origin: "main", why: "w" });
+  assert.throws(() => continueSession(h.ctx, { task: "CAS-41", text: "step a", origin: "main", why: "w" }), /already handed/);
+  continueSession(h.ctx, { task: "CAS-41", text: "step b", origin: "main", why: "w" });
+  continueSession(h.ctx, { task: "CAS-41", text: "step c", origin: "main", why: "w" });
+  assert.throws(() => continueSession(h.ctx, { task: "CAS-41", text: "step d", origin: "main", why: "w" }), new RegExp(`${CONTINUE_DAILY_CAP} steps today`));
+  // The user's own answers are not limited, and the next day the count starts over.
+  continueSession(h.ctx, { task: "CAS-41", text: "step a", origin: "user", why: "the user's answer" });
+  h.advance(24 * HOUR);
+  continueSession(h.ctx, { task: "CAS-41", text: "step d", origin: "main", why: "w" });
+});
+
+test("a task with neither a session nor a repo cannot be continued", () => {
+  const h = makeCtx();
+  h.ctx.store.putTask(task("CAS-42"));
+  assert.throws(() => continueSession(h.ctx, { task: "CAS-42", text: "x", origin: "main", why: "w" }), /no session and no repo/);
+  h.ctx.store.putTask(task("CAS-43", { repo: "/work/cas" }));
+  continueSession(h.ctx, { task: "CAS-43", text: "x", origin: "main", why: "w" });
+  const sent = h.emitted.filter((e) => e.type === "continue").at(-1).data;
+  assert.equal(sent.sessionId, undefined);
+  assert.equal(sent.cwd, "/work/cas");
+});
+
+test("a delivered continue records the session, adding a newly started one to the task", () => {
+  const h = makeCtx();
+  h.ctx.store.putTask(task("CAS-44", { repo: "/work/cas" }));
+  const event = continueSession(h.ctx, { task: "CAS-44", text: "x", origin: "main", why: "w" });
+  const delivered = continueDelivered(h.ctx, event.id, { sessionId: "s-started" });
+  assert.equal(delivered.data.sessionId, "s-started");
+  assert.ok(delivered.data.deliveredAt);
+  assert.deepEqual(h.ctx.store.getTask("CAS-44").sessions, ["s-started"]);
+  assert.throws(() => continueDelivered(h.ctx, "e_missing", {}), /no continue/);
+});
+
+// ── asks: one per close-out, and a readable failed check ─────────────────
+
+test("a close-out with several open questions raises one: the one a word can settle", async () => {
+  const h = makeCtx();
+  await intakeCloseout(h.ctx, closeout({
+    thread: "CAS-50", stands: "排查中",
+    open: [
+      { who: "me", question: "stg 的凭证是哪个 IAM 用户的" },
+      { who: "me", question: "推还是等" },
+      { who: "me", question: "跳板机上有 AWS CLI 吗" },
+    ],
+  }));
+  const asks = openAsks(h.ctx.store, "CAS-50");
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].data.question, "推还是等");
+  assert.equal(asks[0].data.others, 2);
+  assert.equal(h.ctx.store.getTask("CAS-50").open.length, 3);
+});
+
+test("a later close-out replaces the question an earlier one raised", async () => {
+  const h = makeCtx();
+  await intakeCloseout(h.ctx, closeout({ thread: "CAS-51", open: [{ who: "me", question: "入口在哪里" }] }));
+  await intakeCloseout(h.ctx, closeout({
+    thread: "CAS-51", t: "2026-11-02T11:00:00.000Z",
+    open: [{ who: "me", question: "入口在哪里" }, { who: "me", question: "推还是等" }],
+  }));
+  const asks = openAsks(h.ctx.store, "CAS-51");
+  assert.deepEqual(asks.map((e) => e.data.question), ["推还是等"]);
+});
+
+test("a failed check is reported by its finding, not by the instruction it was given", () => {
+  assert.equal(failureFinding("FAIL: origin/int 把 ctlRouter 先挂到 /public。"), "origin/int 把 ctlRouter 先挂到 /public。");
+  const long = failureFinding(`FAIL: ${"第一句结论。".repeat(60)}`);
+  assert.ok(long.length <= 221);
+  assert.ok(long.endsWith("。"));
 });

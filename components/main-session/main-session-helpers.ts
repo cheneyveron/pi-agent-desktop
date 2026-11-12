@@ -18,6 +18,11 @@ export interface RowView {
   answered?: string;
   /** A write answer the service cannot execute: offer "open session to do it". */
   needsExecution: boolean;
+  /** The task's title, when it says more than the label does. */
+  title?: string;
+  /** The task can take a reply: it has a work session, or a folder to start one in. */
+  canContinue: boolean;
+  updatedAt: string;
   text: string;
   why: string;
   ifNot?: string;
@@ -32,6 +37,13 @@ const WRITE_ANSWERS = new Set(["推", "补测", "做", "补验", "起草", "发"
 export function displayId(task: Task): string {
   if (/^(org|repo|memory):/.test(task.id) && task.title) return task.title;
   return task.id;
+}
+
+/** The card names the task in its head, so a text that opens with "CAS-1（…）：" loses that opening. */
+export function withoutTaskPrefix(text: string, task: Pick<Task, "id" | "title">): string {
+  const escaped = task.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const stripped = text.replace(new RegExp(`^\\s*${escaped}\\s*(?:（[^）]*）|\\([^)]*\\))?\\s*[:：]\\s*`), "");
+  return stripped || text;
 }
 
 export function rowOf(task: Task, segment: Segment, seen: SeenMap): RowView {
@@ -56,7 +68,10 @@ export function rowOf(task: Task, segment: Segment, seen: SeenMap): RowView {
     isNew: !seen[segment] || at > seen[segment],
     answered,
     needsExecution: Boolean(answered && WRITE_ANSWERS.has(answered) && segment === "watch"),
-    text: task.ask?.text ?? task.last?.text ?? task.stands,
+    ...(task.title && task.title !== displayId(task) ? { title: withoutTaskPrefix(task.title, task) } : {}),
+    canContinue: task.sessions.length > 0 || Boolean(task.repo),
+    updatedAt: task.updatedAt,
+    text: withoutTaskPrefix(task.ask?.text ?? task.last?.text ?? task.stands, task),
     why: task.ask?.why ?? task.last?.why ?? "",
     ifNot: task.ask?.ifNot,
     source: task.ask?.source,
@@ -64,6 +79,81 @@ export function rowOf(task: Task, segment: Segment, seen: SeenMap): RowView {
     sessionId: task.last?.sessionId ?? task.sessions[0],
     eventId: task.ask?.eventId ?? task.last?.eventId,
   };
+}
+
+// The service's own words, copied from main-session/actions.ts (ARCHIVE / KEEP / DONE / SNOOZE /
+// DISPATCH; main-session-helpers.test.mjs keeps the copy honest): it acts on these itself. Any
+// other answer is a decision or a reply, which it passes on to the task's work session.
+const SERVICE_WORDS = [
+  /^(归档|全部归档|放弃|不做|不做了|算了|drop|archive|abandon)$/i,
+  /^(保留|不归档|keep|留着)$/i,
+  /^(做了|已做|已验证|完成|做完了|好了|已处理|done|verified|ok了)$/i,
+  /^(稍后|再等等|等等|等|later|wait|snooze|明天再说)$/i,
+  /^(派人查|派人看|查一下|check)$/i,
+];
+
+/** Whether an answer goes on to the task's work session (and so starts a run there). */
+export function goesToSession(word: string): boolean {
+  const text = word.trim();
+  return Boolean(text) && !SERVICE_WORDS.some((pattern) => pattern.test(text));
+}
+
+export type CardState =
+  /** A session dialog is waiting (the write gate's approval, or any other confirm). */
+  | { kind: "approval"; sessionId: string; id?: string; title: string; detail: string; confirmable: boolean }
+  | { kind: "running"; sessionId: string; step: string; since: number | null }
+  /** The run ended after the task last changed: its last words stand in until the close-out arrives. */
+  | { kind: "ended"; sessionId: string; outcome: "done" | "aborted" | "failed"; summary: string; error?: string }
+  | { kind: "idle" };
+
+type Snapshot = {
+  sessionId: string;
+  running: boolean;
+  runStartedAt: number | null;
+  activity: { kind: string; name?: string } | null;
+  waiting: { method: string; prompt: string; id?: string; message?: string }[];
+  lastRun: { outcome: { status: string; error?: string }; finishedAt: number; summary?: string } | null;
+};
+
+/** What the task's work sessions are doing, for the card: a waiting dialog first, then a run, then a fresh result. */
+export function cardStateOf(row: Pick<RowView, "sessions" | "updatedAt">, snapshots: ReadonlyMap<string, Snapshot>): CardState {
+  const live = row.sessions.map((id) => snapshots.get(id)).filter((s): s is Snapshot => Boolean(s));
+  const blocked = live.find((s) => s.waiting.length > 0);
+  if (blocked) {
+    const dialog = blocked.waiting[0];
+    return {
+      kind: "approval", sessionId: blocked.sessionId, title: dialog.prompt, detail: dialog.message ?? "",
+      confirmable: dialog.method === "confirm" && Boolean(dialog.id),
+      ...(dialog.id ? { id: dialog.id } : {}),
+    };
+  }
+  const running = live.find((s) => s.running);
+  if (running) {
+    const activity = running.activity;
+    const step = activity?.kind === "tool" ? activity.name ?? "" : activity?.kind ?? "thinking";
+    return { kind: "running", sessionId: running.sessionId, step, since: running.runStartedAt };
+  }
+  const updated = Date.parse(row.updatedAt);
+  const ended = live
+    .filter((s) => s.lastRun && !(s.lastRun.finishedAt <= updated))
+    .sort((a, b) => b.lastRun!.finishedAt - a.lastRun!.finishedAt)[0];
+  if (ended?.lastRun) {
+    const status = ended.lastRun.outcome.status;
+    return {
+      kind: "ended", sessionId: ended.sessionId,
+      outcome: status === "aborted" ? "aborted" : status === "failed" ? "failed" : "done",
+      summary: ended.lastRun.summary ?? "",
+      ...(ended.lastRun.outcome.error ? { error: ended.lastRun.outcome.error } : {}),
+    };
+  }
+  return { kind: "idle" };
+}
+
+/** "1:05" since a run started. */
+export function elapsedLabel(since: number | null, now: number): string {
+  if (!since) return "";
+  const seconds = Math.max(0, Math.floor((now - since) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 /** Immediate first, then newest first. */
@@ -87,6 +177,33 @@ function startOfDay(ms: number): number {
   const d = new Date(ms);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
+}
+
+/** Local calendar day of a timestamp, as a sortable key ("2026-11-03"). */
+export function dayKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** The conversation's day separator: today, yesterday, or the date with its weekday. */
+export function dayLabel(iso: string, now: number, t: Translate, locale?: string): string {
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return "";
+  const days = Math.round((startOfDay(now) - startOfDay(time)) / 86_400_000);
+  if (days === 0) return t("mainSession.today");
+  if (days === 1) return t("mainSession.yesterday");
+  const sameYear = new Date(time).getFullYear() === new Date(now).getFullYear();
+  return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric", weekday: "short", ...(sameYear ? {} : { year: "numeric" }) }).format(time);
+}
+
+/** "09:00" in local time. */
+export function clockTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 /** "11-03 09:00" in local time. */
@@ -157,6 +274,7 @@ export const ACTION_TAG: Record<EventAction, string> = {
   checker: "k-update",
   closeout: "k-update",
   answer: "k-you",
+  continue: "k-readonly",
   ask: "k-ask",
 };
 

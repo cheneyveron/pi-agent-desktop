@@ -176,3 +176,69 @@ test("the page asks for a model only when the service runs model turns and has n
   assert.equal(h.modelNotice(svc("anthropic/claude-haiku-4-5")), "none");
   assert.equal(h.modelNotice(svc("anthropic/claude-haiku-4-5", { lastError: "boom" })), "failed");
 });
+
+// ── cards ────────────────────────────────────────────────────────────────
+
+test("the client's copy of the service's own answer words matches the service", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const service = await readFile(new URL("../../main-session/actions.ts", import.meta.url), "utf8");
+  const helpers = await readFile(new URL("./main-session-helpers.ts", import.meta.url), "utf8");
+  for (const name of ["ARCHIVE_WORDS", "KEEP_WORDS", "DONE_WORDS", "SNOOZE_WORDS", "DISPATCH_WORDS"]) {
+    const pattern = new RegExp(`const ${name} = (/.*/i);`).exec(service)[1];
+    assert.ok(helpers.includes(`  ${pattern},\n`), `${name} ${pattern}`);
+  }
+  for (const word of ["归档", "保留", "做了", "稍后", "等", "派人查"]) assert.equal(h.goesToSession(word), false, word);
+  for (const word of ["推", "可以", "能", "先别动，等我看完日志", "提到 512Mi"]) assert.equal(h.goesToSession(word), true, word);
+  assert.equal(h.goesToSession("  "), false);
+});
+
+test("a card's text loses the task prefix its head already shows", () => {
+  const task = { id: "CAS-4764", title: "根因修复" };
+  assert.equal(h.withoutTaskPrefix("CAS-4764（P1 PCT-121470 根因修复）：4 天没推", task), "4 天没推");
+  assert.equal(h.withoutTaskPrefix("CAS-4764: 只读检查没通过", task), "只读检查没通过");
+  assert.equal(h.withoutTaskPrefix("先看 CAS-4764：再说", task), "先看 CAS-4764：再说");
+  assert.equal(h.withoutTaskPrefix("CAS-4764：", task), "CAS-4764：");
+});
+
+test("a card shows a waiting dialog before a run, and a run before a finished one", () => {
+  const row = { sessions: ["s1", "s2"], updatedAt: "2026-11-12T10:00:00.000Z" };
+  const at = (iso) => Date.parse(iso);
+  const idle = { running: false, runStartedAt: null, activity: null, waiting: [], lastRun: null };
+  const snap = (entries) => new Map(entries.map(([id, extra]) => [id, { sessionId: id, ...idle, ...extra }]));
+
+  assert.deepEqual(h.cardStateOf(row, snap([])), { kind: "idle" });
+  assert.deepEqual(
+    h.cardStateOf(row, snap([["s1", { running: true, runStartedAt: 5, activity: { kind: "tool", name: "bash" } }]])),
+    { kind: "running", sessionId: "s1", step: "bash", since: 5 },
+  );
+  assert.deepEqual(
+    h.cardStateOf(row, snap([
+      ["s1", { running: true, activity: { kind: "thinking" } }],
+      ["s2", { running: true, waiting: [{ method: "confirm", prompt: "需要你批准", message: "git push", id: "d1" }] }],
+    ])),
+    { kind: "approval", sessionId: "s2", title: "需要你批准", detail: "git push", confirmable: true, id: "d1" },
+  );
+  // A select dialog cannot be answered with yes / no from the card.
+  assert.equal(h.cardStateOf(row, snap([["s1", { waiting: [{ method: "select", prompt: "选一个", id: "d2" }] }]])).confirmable, false);
+
+  // A run that ended after the task last changed stands in for the close-out; an older one is history.
+  const fresh = { outcome: { status: "aborted" }, finishedAt: at("2026-11-12T10:05:00.000Z"), summary: "做到第 2 步" };
+  assert.deepEqual(h.cardStateOf(row, snap([["s1", { lastRun: fresh }]])), { kind: "ended", sessionId: "s1", outcome: "aborted", summary: "做到第 2 步" });
+  const old = { outcome: { status: "done" }, finishedAt: at("2026-11-12T09:00:00.000Z"), summary: "旧的" };
+  assert.deepEqual(h.cardStateOf(row, snap([["s1", { lastRun: old }]])), { kind: "idle" });
+  const failed = { outcome: { status: "failed", error: "429" }, finishedAt: at("2026-11-12T10:06:00.000Z") };
+  assert.deepEqual(h.cardStateOf(row, snap([["s1", { lastRun: fresh }], ["s2", { lastRun: failed }]])), { kind: "ended", sessionId: "s2", outcome: "failed", summary: "", error: "429" });
+  // Sessions of other tasks never show on this card.
+  assert.deepEqual(h.cardStateOf(row, snap([["other", { running: true }]])), { kind: "idle" });
+});
+
+test("the conversation's day separators say today, yesterday, then the date", () => {
+  const now = new Date(2026, 10, 12, 15, 0).getTime();
+  assert.equal(h.dayLabel(new Date(2026, 10, 12, 0, 5).toISOString(), now, t), "mainSession.today");
+  assert.equal(h.dayLabel(new Date(2026, 10, 11, 23, 59).toISOString(), now, t), "mainSession.yesterday");
+  assert.match(h.dayLabel(new Date(2026, 10, 9, 14, 51).toISOString(), now, t, "zh-CN"), /11月9日/);
+  assert.match(h.dayLabel(new Date(2025, 10, 9).toISOString(), now, t, "zh-CN"), /2025/);
+  assert.equal(h.dayKey(new Date(2026, 10, 9, 23, 59).toISOString()), "2026-11-09");
+  assert.equal(h.clockTime(new Date(2026, 10, 9, 9, 5).toISOString()), "09:05");
+  assert.equal(h.elapsedLabel(1_000, 66_000), "1:05");
+});

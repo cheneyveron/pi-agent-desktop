@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { answerTask, archiveTask, startTaskSession, useMainSession } from "@/hooks/useMainSession";
+import { answerTask, archiveTask, openTaskSession, useMainSession } from "@/hooks/useMainSession";
 import { ageLabel, newCount, rowOf, sortRows, type RowView } from "./main-session-helpers";
 
 /** The pinned 主会话 entry under New Session; the dot means new items need the user since the last visit. */
@@ -79,8 +79,9 @@ export function NeedsYouSection({ mainSessionOpen, onOpenTask, onSessionStarted,
   const start = async (row: RowView) => {
     setError(null);
     try {
-      const sessionId = await startTaskSession(row.id, fallbackCwd);
-      onSessionStarted?.(sessionId);
+      // The task's existing session, or a new one only when it has none (never a duplicate).
+      const opened = await openTaskSession(row.id, fallbackCwd);
+      onSessionStarted?.(opened.sessionId);
     } catch (err) {
       setError(t("mainSession.openFailed", { error: err instanceof Error ? err.message : String(err) }));
     }

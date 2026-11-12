@@ -1,7 +1,9 @@
 // The main session's fixed action set (ARCH §4): assign, update, dispatch_readonly, ask,
-// archive, remember, digest, insert, schedule — plus the user's side of an ask (answer, undo).
-// Every action writes one event with its reason. None of them touches a repository or runs a
-// command: dispatch_readonly hands a read-only step to a guarded session (dispatch.ts).
+// archive, remember, digest, insert, schedule, continue — plus the user's side of an ask
+// (answer, undo). Every action writes one event with its reason. None of them touches a
+// repository or runs a command: dispatch_readonly hands a read-only step to a guarded session
+// (dispatch.ts), and continue hands a step to the task's own work session, which the app runs
+// behind its write gate (lib/main-session-gate.ts).
 
 import { createHash, randomUUID } from "node:crypto";
 import { addAliases, findByAlias } from "./aliases.ts";
@@ -10,7 +12,7 @@ import type { MemoryRecord, MemorySink } from "./memory.ts";
 import type { Store } from "./store.ts";
 import type { AskData, MainEvent, ModelRef, NextItem, Schedule, Task, TaskStatus, Wait } from "./types.ts";
 
-export type StreamType = "task" | "digest" | "insert" | "event" | "chat";
+export type StreamType = "task" | "digest" | "insert" | "event" | "chat" | "continue";
 
 export interface DispatchRequest {
   task: Task;
@@ -118,6 +120,7 @@ export function ask(ctx: Ctx, input: AskData & { task: string; why: string; auto
     ...(input.tasks ? { tasks: input.tasks } : {}),
     ...(input.write ? { write: true } : {}),
     ...(input.since ? { since: input.since } : {}),
+    ...(input.others ? { others: input.others } : {}),
     key,
   };
   const event = record(ctx, { task: task.id, action: "ask", auto: input.auto ?? true, why: input.why, data });
@@ -340,6 +343,68 @@ export function insert(ctx: Ctx, input: { sessionId: string; text: string; task?
   return event;
 }
 
+/** Steps the main session may hand to one task's work session per calendar day on its own. */
+export const CONTINUE_DAILY_CAP = 3;
+
+export type ContinueOrigin = "user" | "main";
+
+/**
+ * Have the task's work session carry on: the app sends `text` into the task's latest session
+ * (or starts one in the task's repo) and runs it. `origin: "main"` is the main session acting
+ * on its own: the app runs that turn behind the write gate, the same step is never handed over
+ * twice, and at most CONTINUE_DAILY_CAP steps go to one task per day. `origin: "user"` carries
+ * the user's own answer and is not limited.
+ */
+export function continueSession(ctx: Ctx, input: { task: string; text: string; why: string; origin: ContinueOrigin; auto?: boolean }): MainEvent {
+  const task = requireTask(ctx, input.task);
+  const text = input.text.trim();
+  if (!text) throw new ActionError("text is required");
+  const sessionId = task.sessions[0];
+  if (!sessionId && !task.repo) throw new ActionError(`task ${task.id} has no session and no repo to start one in; ask the user instead`);
+  const key = shortHash(text);
+  if (input.origin === "main") {
+    const earlier = ctx.store.eventsForTask(task.id).filter((e) => e.action === "continue" && e.data?.origin === "main");
+    if (earlier.some((e) => e.data?.key === key)) {
+      throw new ActionError(`this step was already handed to ${task.id}'s session; update where it stands or ask the user instead`);
+    }
+    const today = ctx.clock.day(ctx.now());
+    if (earlier.filter((e) => ctx.clock.day(e.t) === today).length >= CONTINUE_DAILY_CAP) {
+      throw new ActionError(`${task.id} already got ${CONTINUE_DAILY_CAP} steps today; ask the user instead`);
+    }
+  }
+  const event = record(ctx, {
+    task: task.id, action: "continue", auto: input.auto ?? input.origin === "main", why: input.why,
+    data: { text, key, origin: input.origin, ...(sessionId ? { sessionId } : {}) },
+  });
+  ctx.emit("continue", {
+    eventId: event.id, task: task.id, title: task.title, text, origin: input.origin,
+    ...(sessionId ? { sessionId } : {}), ...(task.repo ? { cwd: task.repo } : {}),
+  });
+  return event;
+}
+
+/** The app's report that a continue reached a session (and which one, when it had to start it). */
+export function continueDelivered(ctx: Ctx, eventId: string, input: { sessionId?: string; error?: string }): MainEvent {
+  const event = ctx.store.getEvent(eventId);
+  if (!event || event.action !== "continue") throw new ActionError(`no continue ${eventId}`, 404);
+  const task = event.task ? ctx.store.getTask(event.task) : undefined;
+  if (input.sessionId && task && !task.sessions.includes(input.sessionId)) {
+    task.sessions.unshift(input.sessionId);
+    touch(ctx, task);
+  }
+  const updated: MainEvent = {
+    ...event,
+    data: {
+      ...event.data,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.error ? { error: input.error } : { deliveredAt: nowIso(ctx) }),
+    },
+  };
+  ctx.store.rewriteEvent(updated);
+  ctx.emit("event", updated);
+  return updated;
+}
+
 export function schedule(ctx: Ctx, input: {
   at: string;
   text: string;
@@ -368,6 +433,15 @@ export function schedule(ctx: Ctx, input: {
   });
 }
 
+/** What a failed check found: its answer without the verdict word, cut at a sentence when long. */
+export function failureFinding(result: string): string {
+  const text = result.replace(/^\s*FAIL\s*[:：]?\s*/i, "").replace(/\s+/g, " ").trim();
+  if (text.length <= 220) return text;
+  const cut = text.slice(0, 220);
+  const end = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("；"), cut.lastIndexOf(". "));
+  return end > 80 ? cut.slice(0, end + 1) : `${cut}…`;
+}
+
 /** Start a read-only dispatch. The tool call returns at once; the result arrives as a second event. */
 export function dispatchReadonly(ctx: Ctx, input: { task: string; step: string; why: string; auto?: boolean }): MainEvent {
   const task = requireTask(ctx, input.task);
@@ -383,7 +457,8 @@ export function dispatchReadonly(ctx: Ctx, input: { task: string; step: string; 
     if (result.failed) {
       ask(ctx, {
         task: task.id, immediate: true, category: "immediate",
-        question: `${task.id}: 只读检查没通过 — ${input.step}: ${result.result.slice(0, 160)}`,
+        // The finding, not the instruction the check was given: that is what the user has to read.
+        question: `只读检查没通过：${failureFinding(result.result)}`,
         chips: ["看一下", "稍后"], why: `verification failed (${done.id})`,
       });
     }
