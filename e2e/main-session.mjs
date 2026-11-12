@@ -292,7 +292,7 @@ try {
     assert.equal(closeouts.length, 1);
     assert.equal(closeouts[0].stands, "PR #12 已合进 dev。");
     assert.equal(closeouts[0].id, "co-cas-1", "the re-post carries the close-out id, so it revises that close-out");
-    assert.equal(closeouts[0].trigger, "idle");
+    assert.equal(closeouts[0].trigger, "shutdown");
     assert.deepEqual(closeouts[0].learned[0].anchors, [{ path: "dao/entitlement.js" }], "structured parts survive the edit");
     // Sidebar row actions: reply with a word from the 需要你 group.
     const item = page.locator(".ms-sidebar-item").filter({ hasText: "CAS-4766" });

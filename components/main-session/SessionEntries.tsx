@@ -47,7 +47,10 @@ export function CloseoutCard({ message }: { message: CustomMessage }) {
   const closeout = entry?.closeout ?? null;
   const [edits, setEdits] = useState<Partial<Record<CloseoutField, string>>>({});
   const [send, setSend] = useState<SendState>({ kind: "idle" });
-  if (!entry || !closeout) return null;
+  // A close-out written because the session sat idle goes to the main session without a card:
+  // nothing happened that the user should be shown. The entry stays in the session file (the
+  // next close-out builds on it); compaction and shutdown close-outs still show theirs.
+  if (!entry || !closeout || entry.trigger === "idle") return null;
   const edited = Object.keys(edits).length > 0;
   const time = closeout.t ? shortTime(closeout.t) : message.timestamp ? shortTime(new Date(message.timestamp).toISOString()) : "";
 

@@ -18,7 +18,7 @@ const closeout = {
 const SESSION_MESSAGES = [
   // Shapes as part B records them (lib/closeout-types.ts on PR #7).
   { role: "custom", customType: "main-session-note", display: true, content: [{ type: "text", text: "[主会话提醒] 这个 case 上次的根因在 CAS-4764，修复还没推：a58e342 在本地分支，4 天没推，没有 PR。" }], details: { v: 1, id: "note-1", t: "2026-11-03T10:21:00", text: "这个 case 上次的根因在 CAS-4764，修复还没推：a58e342 在本地分支，4 天没推，没有 PR。", task: "CAS-4764", delivery: "steer" }, timestamp: Date.parse("2026-11-03T10:21:00") },
-  { role: "custom", customType: "closeout", display: true, content: closeout.stands, details: { v: 1, id: "co-cas-1", t: "2026-11-03T10:30:00", trigger: "idle", range: { afterEntryId: null, toEntryId: "e42", entries: 42 }, delivery: { status: "sent", at: "2026-11-03T10:30:01" }, closeout }, timestamp: Date.parse("2026-11-03T10:30:00") },
+  { role: "custom", customType: "closeout", display: true, content: closeout.stands, details: { v: 1, id: "co-cas-1", t: "2026-11-03T10:30:00", trigger: "shutdown", range: { afterEntryId: null, toEntryId: "e42", entries: 42 }, delivery: { status: "sent", at: "2026-11-03T10:30:01" }, closeout }, timestamp: Date.parse("2026-11-03T10:30:00") },
 ];
 
 function Fixture() {

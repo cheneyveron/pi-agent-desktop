@@ -199,6 +199,8 @@ default-deny.
   the question, next steps, the chips, "put the background in the composer". It lives in client
   memory only and goes on send, on close, or when another session is opened. A new session is
   created only when the task has none, or from the row menu's "再开一个新会话".
+- **Close-out cards in a session.** `CloseoutCard` draws nothing for an `idle` close-out (it is
+  still written to the session file and posted); compaction and shutdown close-outs show theirs.
 - **The conversation** holds only what the user and the main session said to each other, with
   a separator per calendar day. The digest is not posted into it (it restates the list above);
   it still drives the daily notification.
