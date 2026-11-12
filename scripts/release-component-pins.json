@@ -4,7 +4,7 @@
     "reason": "Upgrade the bundled SDK to pi 1.5.2; checked against its changelog (missing-cwd Continue/Fork prompt is TUI-only, pi-web keeps its own switchSession; Anthropic OAuth reports a current Claude Code version)."
   },
   "pi-web": {
-    "version": "0.10.0",
-    "reason": "Merged upstream pi-web through main@6fcd7d4 (segments A-G); fork adaptations documented in AGENTS.md."
+    "version": "0.15.0",
+    "reason": "Merged upstream abcwyc/pi-agent-desktop main@1a3d529 (pi-web v0.11.0-v0.15.0 catch-up, docs/merge-history.md); pi-web 0.16.0 is not in upstream yet."
   }
 }
