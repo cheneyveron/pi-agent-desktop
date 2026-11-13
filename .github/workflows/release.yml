@@ -177,67 +177,47 @@ jobs:
           releaseName: pi-agent-desktop v__VERSION__
           releaseCommitish: ${{ github.sha }}
           releaseBody: |
-            ## Pi Agent Desktop 0.7.19
+            ## Pi Agent Desktop 0.7.20
 
-            The main session now moves tasks forward in their own sessions. This release also brings in upstream Pi Agent Desktop 0.8.3–0.8.4.
+            The main session now has its own Settings tab and is off until you turn it on.
 
             ### New
 
-            - **Task cards in the main session.** Rows under "Needs me" and "Watching" show the task's title and its full question instead of one clipped line. Reply right on the card: the reply goes to that task's work session. While the session runs, the card shows the current step with a Stop button; when the session asks for approval, Allow and Deny; when a run ends, the session's last words.
-            - **"Open session" reuses the task's session.** It opens the session the task already has, with a temporary card above the composer saying why the main session sent you there. The card is not saved into the session. A new session starts only when the task has none, or when you choose "Start another session" in the row menu.
-            - **The main session moves work forward.** It can hand the next step to the task's work session itself. In a step it starts, reading, editing files inside the session's folder and a short list of local commands (tests, lint, local `git add` / `git commit`) run without asking; anything else, such as push, merge, deploy or anything outside the folder, waits for your approval on the task's card. It starts at most three such steps per task per day, and never the same step twice. Once you send a message in that session yourself, it runs as usual again.
-            - **Follow-ups in the main session chat.** A chat turn now sees the recent conversation and the tasks it was about, so "那下一步呢" or "它在等谁" refers to the task you were just discussing, and "提醒我明天跟进" without a ticket targets that task.
-            - **Reasoning level for the main session.** Pick it beside the model, on the Main session page or in Settings › General; it is kept when you change the model. Main session replies now appear as they are written instead of after the whole turn.
-            - **Side chats.** Start a side chat from a session: it starts from the conversation so far and opens as a tab in the right panel, so a side question does not go into the main thread.
-            - **Switch the model during a run.** Pick another model while a reply is streaming; the run uses it from its next model request.
-            - **Pin projects, fork from the sidebar.** "Pin project" keeps a project at the top of the list. "Fork" in a session's row menu copies the session into a new one.
-            - **Files and Git changes.** CSV and TSV files open as a table, and binary files show a notice instead of unreadable text. Git changes can be shown as a folder tree. Drop files onto a folder in the file tree to upload them there.
-            - **Network proxy.** In Settings › General › Network & advanced, send this app's requests through an HTTP proxy and test the connection. Other apps are not affected.
+            - **Settings › Main session.** One switch turns the whole feature on or off. While it is off, sessions write no close-outs, the main session runs no checks, digests or model turns, and the Main session row, the "Needs you" section and the daily notification are hidden. The main session's model and reasoning level moved here from Settings › General.
+            - **Continue work on its own, as a separate switch.** With it off, the main session asks you instead of handing the next step to a task's session itself. Your own replies on a task card still go to that session.
+            - **Choose when the main session takes over.** Set how long a session must sit idle before its close-out goes to the main session: 1, 2, 5, 10, 15, 30 or 60 minutes (5 by default).
 
-            ### Improved
+            ### Changed
 
-            - **Fewer questions from the main session.** It asks one question per close-out instead of one per open question. A failed read-only check asks with what it found instead of repeating the instruction it was given.
-            - **The main session conversation holds only your conversation**, separated by day. The daily digest is no longer posted into it; it still arrives as a notification.
-            - **No card for idle close-outs.** A close-out written after five idle minutes no longer shows a card in the session. It is still recorded and handed to the main session.
-            - **Regrouped General settings.** Settings › General uses two columns, with the proxy, terminal, relay and remote access options under "Network & advanced". "Version & Updates" names the latest release's main items in one line.
-            - **pi 1.5.2.** Importing a session whose folder no longer exists no longer leaves duplicate copies, and Anthropic OAuth requests report a current Claude Code version.
+            - **The main session and its automatic continue are both off by default**, including on existing installs. Turn them on in Settings › Main session to keep using them.
 
             ### Fixed
 
-            - **The main session's model picker offered only "None".** It asked the models route for the home folder, which is not an allowed folder, so the list came back empty and no model could be chosen. It now lists the same models the composer offers.
+            - **"Chats outside projects" appeared twice** in Settings › General. It now appears once.
+            - **Installers are checked for this build machine's configuration.** Packaging now fails if the app's own `.pi/` folder, an MCP access key or a private key would be included (from upstream Pi Agent Desktop).
 
             Bundled components: pi 1.5.2, pi-web 0.15.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.19
+            ## Pi Agent Desktop 0.7.20
 
-            主会话现在会在任务自己的会话里把事情往前推。本版还合入了上游 Pi Agent Desktop 0.8.3–0.8.4。
+            主会话有了自己的设置页，在你打开之前不会运行。
 
             ### 新增
 
-            - **主会话任务卡片。** 「需要我的」和「在盯的」里每一行都是卡片，显示任务标题和完整的问题，不再截成一行。直接在卡片上回复，回复会发到这个任务的工作会话。会话运行时，卡片显示当前步骤和「停止」按钮；会话请求批准时显示「允许」和「拒绝」；一次运行结束后显示会话的最后几句话。
-            - **「开会话」打开任务已有的会话。** 打开任务已经有的那个会话，并在输入框上方显示一张临时卡片，说明主会话为什么带你来这里。这张卡片不会存进会话。只有任务还没有会话，或在行菜单里选「再开一个新会话」时，才新建会话。
-            - **主会话推进工作。** 它可以自己把下一步交给任务的工作会话。它发起的步骤里，读取、修改会话文件夹内的文件和少数本地命令（测试、lint、本地 `git add` / `git commit`）直接运行；其他操作，比如 push、合并、部署或任何文件夹以外的操作，都要等你在任务卡片上批准。每个任务每天最多三步，同一步不会发两次。你自己在那个会话里发一条消息后，它恢复正常运行。
-            - **主会话能追问了。** 对话回合现在带上最近的对话和它们提到的任务，「那下一步呢」「它在等谁」指的是刚才聊的那个任务；没写单号的「提醒我明天跟进」也落到那个任务上。
-            - **主会话的推理强度可选。** 在主会话页面或「设置 › 常规」里，模型旁边选择；换模型时保留。主会话的回复现在边写边显示，不再等整个回合结束。
-            - **侧聊。** 从一个会话开一个侧聊：它从当前的对话开始，作为右侧面板里的一个标签页打开，旁支问题不会写进主线。
-            - **运行中切换模型。** 回复还在输出时就能换模型；这次运行从下一次模型请求开始使用新模型。
-            - **置顶项目，从侧栏分叉。** 「置顶项目」让项目固定在列表最上面。会话行菜单里的「分叉」把这个会话复制成一个新会话。
-            - **文件和 Git 改动。** CSV 和 TSV 文件以表格显示，二进制文件显示提示，不再显示乱码。Git 改动可以按文件夹树显示。把文件拖到文件树里的文件夹上即可上传到那里。
-            - **网络代理。** 在「设置 › 常规 › 网络与高级」里，让本应用的请求走 HTTP 代理，并可测试连接。其他应用不受影响。
+            - **「设置 › 主会话」。** 一个开关控制整个功能。关闭时，会话不写交接，主会话不做检查、不发摘要、不调用模型，侧栏的「主会话」入口、「需要你」分区和每日通知都会隐藏。主会话的模型和推理强度从「设置 › 常规」移到了这里。
+            - **主动续做单独一个开关。** 关闭时，主会话不会自己把下一步交给任务的会话，而是先问你。你在任务卡片上的回复仍会送到那个会话。
+            - **可设置主会话多久后接管。** 会话空闲多久后把交接交给主会话：1、2、5、10、15、30 或 60 分钟（默认 5 分钟）。
 
-            ### 改进
+            ### 变更
 
-            - **主会话问得更少。** 每次交接只问一个问题，不再每个未决问题各问一次。只读检查失败时，问题里写的是它查到的结果，而不是重复交给它的指令。
-            - **主会话的对话只保留你和它的对话**，按天分隔。每日摘要不再贴进对话，仍会以通知送达。
-            - **空闲交接不再显示卡片。** 空闲五分钟后写下的交接不再在会话里显示卡片，仍会记录并交给主会话。
-            - **常规设置重排。** 「设置 › 常规」分为两栏，网络代理、终端、远程中继和远程访问归入「网络与高级」。「版本与更新」用一行列出最新版本的主要变化。
-            - **pi 1.5.2。** 导入原文件夹已不存在的会话时不再留下重复副本；Anthropic OAuth 请求会上报当前的 Claude Code 版本。
+            - **主会话和主动续做默认都关闭**，已安装的版本升级后也一样。要继续使用，请在「设置 › 主会话」里打开。
 
             ### 修复
 
-            - **主会话的模型选择只有「不选」一项。** 它向模型列表接口请求的是主目录，而主目录不在允许的文件夹里，列表因此为空，选不了任何模型。现在列出的和输入框里的模型一致。
+            - **「设置 › 常规」里「对话（非项目）」出现了两次。** 现在只出现一次。
+            - **安装包会检查是否带上了构建机的配置。** 如果会打包进本应用自己的 `.pi/` 文件夹、MCP 访问密钥或私钥，打包直接失败（来自上游 Pi Agent Desktop）。
 
             内置组件版本：pi 1.5.2、pi-web 0.15.0。
 
