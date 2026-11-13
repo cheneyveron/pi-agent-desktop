@@ -318,10 +318,13 @@ const FORK_FEATURES = [
     markers: ["node scripts/verify-packaged-main-session.mjs"],
   },
   {
-    name: "main-session model picker in General settings",
+    name: "Settings › Main session tab",
     file: "components/SettingsPanel.tsx",
-    // Fork-only: the second place to choose the main session's model (the 主会话 page is the first).
-    markers: ["<MainSessionSettingsSection />"],
+    // Fork-only: the feature switch (off by default), automatic continue, the takeover delay and the
+    // second place to choose the main session's model (the 主会话 page is the first). It moved out of
+    // General into a tab of its own, and General shows the chats section once, in the right column.
+    markers: ['{ id: "mainSession", labelKey: "settings.mainSession"', 'sectionHost("mainSession", <MainSessionSettings />)'],
+    forbiddenMarkers: ["<MainSessionSettingsSection />"],
   },
   {
     name: "app info and desktop preferences live in General settings",

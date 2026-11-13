@@ -104,7 +104,11 @@ test("the sidebar shows the pinned row with an unread dot and the needs-you sect
 test("the page mounts from ?view=main (with &task=) like the other pages", () => {
   assert.match(shell, /value === "scheduled" \|\| value === "artifacts" \|\| value === "main"/);
   assert.match(shell, /const target = `\?view=main\$\{taskId \? `&task=\$\{encodeURIComponent\(taskId\)\}` : ""\}`;/);
-  assert.match(shell, /\{mainSessionOpen && \(\s*<MainSessionView/);
+  assert.match(shell, /\{mainSessionOpen && mainSessionEnabled && \(\s*<MainSessionView/);
+  // Off in Settings › Main session: a notice instead of the page, and no sidebar row or stream.
+  assert.match(shell, /\{mainSessionOpen && mainSessionSettings\.loaded && !mainSessionEnabled && \(\s*<MainSessionTurnedOff/);
+  assert.match(shell, /onOpenMainSession=\{mainSessionEnabled \? handleOpenMainSession : undefined\}/);
+  assert.match(shell, /useMainSessionNotifications\(mainSessionEnabled\)/);
   assert.match(shell, /if \(sessionId === MAIN_SESSION_NOTIFICATION_ID\) \{\s*handleOpenMainSession\(\);/);
   assert.match(shell, /window\.addEventListener\(MAIN_SESSION_OPEN_EVENT, onOpen\)/);
 });

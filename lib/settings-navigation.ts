@@ -2,6 +2,7 @@ export const SETTINGS_SECTION_VALUES = [
   "general",
   "appearance",
   "models",
+  "mainSession",
   "skills",
   "agents",
   "plugins",
@@ -14,7 +15,7 @@ function isSettingsSection(value: unknown): value is SettingsSection {
   return typeof value === "string"
     && SETTINGS_SECTION_VALUES.includes(value as SettingsSection);
 }
-export type SettingsDetailSection = Exclude<SettingsSection, "general" | "appearance">;
+export type SettingsDetailSection = Exclude<SettingsSection, "general" | "appearance" | "mainSession">;
 
 const STORAGE_KEY = "pi-web:settings-navigation";
 // Sections that need a project to show anything. Settings › MCP is not one: it

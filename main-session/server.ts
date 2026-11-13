@@ -8,6 +8,7 @@ import { createSdkDispatcher } from "./dispatch.ts";
 import { createSdkJudgeRunner } from "./judge.ts";
 import { MainSessionService, type ServiceOptions } from "./service.ts";
 import { Store, defaultStateDir } from "./store.ts";
+import { readMainSessionSettings } from "../lib/main-session-settings.ts";
 import type { MainEvent, Task } from "./types.ts";
 
 export const DEFAULT_PORT = 30180;
@@ -45,6 +46,8 @@ export async function startServer(options: StartOptions = {}): Promise<Started> 
   const service = new MainSessionService({
     ...options,
     store,
+    // Settings › Main session (Pi Web's settings file), read on every use; off by default.
+    settings: options.settings ?? (() => readMainSessionSettings()),
     ...(options.judgeRunner || !modelOn ? {} : { judgeRunner: createSdkJudgeRunner() }),
     ...(options.dispatcher || !modelOn || process.env.MAIN_SESSION_DISPATCH === "off" ? {} : { dispatcher: createSdkDispatcher() }),
   });

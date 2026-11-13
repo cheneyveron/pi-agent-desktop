@@ -139,6 +139,7 @@ app/api/
   artifacts/item/route.ts         GET ?session=&identifier= one artifact with every version
   artifacts/file/route.ts         GET ?path= one written/edited file's calls | ?session=&toolCallId= a write's content
   main-session/[...path]/route.ts GET/POST proxy to the main-session service (127.0.0.1:30180), SSE included
+  main-session-settings/route.ts  GET/PUT Settings › Main session (feature, automatic continue, takeover delay); works while the service is down
 
 lib/
   agent-client.ts      typed fetch helper for /api/agent commands
@@ -148,6 +149,7 @@ lib/
   artifact-settings.ts / artifact-guide-extension.ts  prompt switch file + `<artifacts>` prompt section
   main-session-client.ts  main-session service types + HTTP client; `?mainSessionFixture=1` switches to the fixture backend
   main-session-insert-client.ts  app-side listener on the service stream: `insert` notes and `continue` steps
+  main-session-settings.ts  Settings › Main session in Pi Web's settings file (off by default), read by the app and the service
   main-session-gate.ts    default-deny write gate for turns the main session starts (its `continue` action)
   main-session-arrival.ts temporary "why you are here" card when the main-session page opens a task's session
   main-session-fixture.ts in-memory backend with the prototype's data (dev, unit tests, e2e/main-session.mjs)

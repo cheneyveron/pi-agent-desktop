@@ -82,6 +82,8 @@ import { createPiWebBuiltinExtensions, createSubagentCodemodeExtension, createSu
 import { isMainSessionDisabled, mainSessionUrl, replayCloseoutOutbox } from "./closeout-extension";
 import { MAIN_SESSION_NOTE_PREFIX, MAIN_SESSION_NOTE_TYPE, type MainSessionNoteDetails } from "./closeout-types";
 import { startMainSessionStream, type MainSessionContinueEvent, type MainSessionStream } from "./main-session-insert-client";
+import { readMainSessionSettings } from "./main-session-settings";
+import { getPiWebSettingsPath } from "./artifact-settings";
 import { createMainSessionGateExtension } from "./main-session-gate";
 import type { McpHost } from "./mcp-host";
 import type { DebugMcpHost, DebugSessionLifecycle, DebugWrapperSnapshot } from "./debug-types";
@@ -3244,17 +3246,29 @@ export function ensureMainSessionInsertClient(): void {
   globalThis.__piWebMainSessionStream = startMainSessionStream({
     url: mainSessionUrl(),
     onConnect: () => {
+      // Off in Settings › Main session: queued close-outs wait until it is turned on.
+      if (!readMainSessionSettings(getPiWebSettingsPath()).enabled) return;
       void replayCloseoutOutbox().catch((error) => {
         console.error("[pi-web] close-out outbox replay failed:", error instanceof Error ? error.message : error);
       });
     },
     onInsert: async (event) => {
+      if (!readMainSessionSettings(getPiWebSettingsPath()).enabled) return;
       const result = await injectMainSessionNote(event.sessionId, event.text, event.task, { eventId: event.eventId });
       if (!result.delivered && isVerboseLogging()) {
         console.log(`[pi-web] main-session note for ${event.sessionId} not delivered: ${result.reason}`);
       }
     },
     onContinue: async (event) => {
+      // The service refuses these too; checked again here, where the session would run.
+      const settings = readMainSessionSettings(getPiWebSettingsPath());
+      const refusal = !settings.enabled ? "the main session is turned off in Settings"
+        : event.origin !== "user" && !settings.autoContinue ? "automatic continue is turned off in Settings"
+          : undefined;
+      if (refusal) {
+        await reportContinueDelivery(event.eventId, { error: refusal });
+        return;
+      }
       try {
         const sessionId = await continueFromMainSession(event);
         await reportContinueDelivery(event.eventId, { sessionId });

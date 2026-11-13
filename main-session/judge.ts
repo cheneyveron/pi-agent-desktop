@@ -233,7 +233,9 @@ export function actionTools(ctx: Ctx, trigger: Trigger, sink: MainEvent[]): Judg
       },
     },
   ];
-  return tools.map((tool) => ({
+  // Settings › Main session: without automatic continue the model is not offered the tool at all.
+  const offered = ctx.autoContinue && !ctx.autoContinue() ? tools.filter((tool) => tool.name !== "continue") : tools;
+  return offered.map((tool) => ({
     ...tool,
     async execute(params) {
       try {
@@ -306,6 +308,9 @@ export function buildJudgeInput(ctx: Ctx, trigger: Trigger, alreadyDone: MainEve
     .slice(0, 60)
     .map((t) => taskLine(ctx, t));
   parts.push(`## Board (active in the last 30 days)\n${board.join("\n") || "(empty)"}`);
+  if (ctx.autoContinue && !ctx.autoContinue()) {
+    parts.push("## Note\nThe user turned automatic continue off: there is no `continue` tool. Where you would hand a step to the work session, ask the user instead.");
+  }
   if (alreadyDone.length) {
     parts.push(`## Already done this turn by the service\n${alreadyDone.map((e) => `${e.action} ${e.task ?? ""}: ${e.why}`).join("\n")}`);
   }
@@ -326,11 +331,14 @@ export class Judge {
   private model: () => ModelRef | null;
   private thinking: () => MainThinkingLevel;
 
-  constructor(ctx: Ctx, runner: JudgeRunner | undefined, model: () => ModelRef | null = () => null, thinking: () => MainThinkingLevel = () => "off") {
+  private on: () => boolean;
+
+  constructor(ctx: Ctx, runner: JudgeRunner | undefined, model: () => ModelRef | null = () => null, thinking: () => MainThinkingLevel = () => "off", on: () => boolean = () => true) {
     this.ctx = ctx;
     this.runner = runner;
     this.model = model;
     this.thinking = thinking;
+    this.on = on;
   }
 
   /** Model turns are switched on for this process (a runner exists), model chosen or not. */
@@ -340,7 +348,7 @@ export class Judge {
 
   /** A trigger would run a model turn now. */
   get available(): boolean {
-    return Boolean(this.runner) && this.model() !== null;
+    return Boolean(this.runner) && this.on() && this.model() !== null;
   }
 
   run(trigger: Trigger, alreadyDone: MainEvent[] = [], onText?: (delta: string) => void): Promise<JudgeOutcome> {
@@ -351,7 +359,8 @@ export class Judge {
 
   private async runNow(trigger: Trigger, alreadyDone: MainEvent[], onText?: (delta: string) => void): Promise<JudgeOutcome> {
     const model = this.model();
-    if (!this.runner || !model) return { reply: "", events: [] };
+    // Checked when the turn starts, not when it was queued: turning the feature off stops queued turns.
+    if (!this.runner || !model || !this.on()) return { reply: "", events: [] };
     const events: MainEvent[] = [];
     const tools = actionTools(this.ctx, trigger, events);
     try {

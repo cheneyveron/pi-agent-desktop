@@ -32,6 +32,7 @@ const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileEx
 const TasksView = dynamic(() => import("./tasks/TasksView").then((m) => m.TasksView), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 const MainSessionView = dynamic(() => import("./main-session/MainSessionView").then((m) => m.MainSessionView), { ssr: false });
+const MainSessionTurnedOff = dynamic(() => import("./main-session/MainSessionView").then((m) => m.MainSessionTurnedOff), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel } from "./SettingsPanel";
 import { keepDocumentTitle } from "@/lib/document-title";
@@ -120,6 +121,7 @@ import { addSideTab, pruneSideTabs, readSideTabs, SIDE_TABS_KEY, writeSideTabs, 
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 import { MAIN_SESSION_NOTIFICATION_ID, MAIN_SESSION_OPEN_EVENT } from "@/lib/main-session-client";
 import { useMainSessionNotifications } from "@/hooks/useMainSessionNotifications";
+import { useMainSessionSettings } from "@/hooks/useMainSessionSettings";
 import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
 import { getProjectDisplayName } from "@/lib/project-display";
 
@@ -217,6 +219,9 @@ export function AppShell() {
   const scheduledOpen = workspaceView === "scheduled";
   const artifactsOpen = workspaceView === "artifacts";
   const mainSessionOpen = workspaceView === "main";
+  // Settings › Main session (off by default): off hides the sidebar row, 需要你 and the page.
+  const mainSessionSettings = useMainSessionSettings();
+  const mainSessionEnabled = mainSessionSettings.settings.enabled;
   // The task the main-session page locates (`?view=main&task=`).
   const [mainSessionTask, setMainSessionTask] = useState<string | null>(() => searchParams?.get("task") ?? null);
   const pageOpen = workspaceView !== null;
@@ -1599,7 +1604,7 @@ export function AppShell() {
   });
   useEffect(() => onDesktopNotificationClicked((sessionId) => openNotifiedSessionRef.current(sessionId)), []);
   // A new daily digest from the main session: one desktop notification, opening its page.
-  useMainSessionNotifications();
+  useMainSessionNotifications(mainSessionEnabled);
 
   const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
     if (isHiddenRelation(selectedSession?.relation)) return;
@@ -2190,7 +2195,7 @@ export function AppShell() {
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
-        onOpenMainSession={handleOpenMainSession}
+        onOpenMainSession={mainSessionEnabled ? handleOpenMainSession : undefined}
         mainSessionOpen={mainSessionOpen}
         onMainSessionStarted={handleMainSessionStarted}
         onOpenTasks={handleOpenTasks}
@@ -3229,7 +3234,10 @@ export function AppShell() {
             }}
           />
         )}
-        {mainSessionOpen && (
+        {mainSessionOpen && mainSessionSettings.loaded && !mainSessionEnabled && (
+          <MainSessionTurnedOff onOpenSettings={() => openSettingsSection("mainSession")} />
+        )}
+        {mainSessionOpen && mainSessionEnabled && (
           <MainSessionView
             focusTask={mainSessionTask}
             fallbackCwd={isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd}

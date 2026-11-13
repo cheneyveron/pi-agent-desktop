@@ -39,6 +39,8 @@ export interface Ctx {
   dispatch?: (request: DispatchRequest) => Promise<DispatchResult>;
   /** Called after an action that should get a judgment turn (a dispatch result). */
   onTrigger?(trigger: { kind: string; task?: string; eventId?: string }): void;
+  /** Settings › Main session's automatic continue; absent = allowed (tests, replay). */
+  autoContinue?(): boolean;
 }
 
 export class ActionError extends Error {
@@ -363,6 +365,9 @@ export function continueSession(ctx: Ctx, input: { task: string; text: string; w
   if (!sessionId && !task.repo) throw new ActionError(`task ${task.id} has no session and no repo to start one in; ask the user instead`);
   const key = shortHash(text);
   if (input.origin === "main") {
+    if (ctx.autoContinue && !ctx.autoContinue()) {
+      throw new ActionError("automatic continue is turned off in Settings › Main session; ask the user instead");
+    }
     const earlier = ctx.store.eventsForTask(task.id).filter((e) => e.action === "continue" && e.data?.origin === "main");
     if (earlier.some((e) => e.data?.key === key)) {
       throw new ActionError(`this step was already handed to ${task.id}'s session; update where it stands or ask the user instead`);

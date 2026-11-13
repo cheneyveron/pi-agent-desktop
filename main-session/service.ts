@@ -15,6 +15,7 @@ import { Judge, RECENT_CHAT_TURNS, type JudgeRunner } from "./judge.ts";
 import { createMemhanaSink, type MemorySink } from "./memory.ts";
 import { checkConfiguredModel, envModelRef, formatModelRef, ModelChoiceError, parseModelRef, parseThinkingLevel } from "./pi-runtime.ts";
 import { Store } from "./store.ts";
+import type { MainSessionSettings } from "../lib/main-session-settings.ts";
 import type { DigestLine, MainEvent, MainThinkingLevel, ModelRef, ModelSource, Segment, Task } from "./types.ts";
 import { decorateTask } from "./view.ts";
 
@@ -40,7 +41,14 @@ export interface ServiceOptions {
   envModel?: string | null;
   /** Save-time check of a chosen model. Default: the Pi registry has it and its provider is signed in. */
   checkModel?: (ref: ModelRef) => Promise<void>;
+  /**
+   * Settings › Main session, read whenever it matters. Default: everything on (tests, replay);
+   * server.ts passes the reader of Pi Web's settings file, where the feature is off by default.
+   */
+  settings?: () => MainSessionSettings;
 }
+
+const ALL_ON: MainSessionSettings = { enabled: true, autoContinue: true, takeoverMinutes: 5 };
 
 /** The model in effect for judgment turns and dispatches (GET/POST /model, part of /health). */
 export interface ModelChoice {
@@ -77,8 +85,11 @@ export class MainSessionService {
   private checkModel: (ref: ModelRef) => Promise<void>;
   private modelWrites: Promise<unknown> = Promise.resolve();
   private forwardDelayMs: number;
+  /** Settings › Main session; with the feature off the service keeps its state but does nothing. */
+  readonly settings: () => MainSessionSettings;
 
   constructor(options: ServiceOptions) {
+    this.settings = options.settings ?? (() => ALL_ON);
     this.store = options.store;
     // A malformed MAIN_SESSION_MODEL refuses to start; an unset one leaves the saved choice in charge.
     this.envModel = envModelRef(options.envModel === undefined ? process.env.MAIN_SESSION_MODEL : options.envModel ?? undefined);
@@ -95,17 +106,22 @@ export class MainSessionService {
       memory: options.memory ?? createMemhanaSink(this.store),
       ...(dispatcher ? {
         dispatch: (request: DispatchRequest) => {
+          if (!this.settings().enabled) return Promise.resolve({ ok: false, result: "the main session is turned off in Settings" });
           const model = this.currentModel();
           return model
             ? dispatcher({ ...request, model })
             : Promise.resolve({ ok: false, result: "no model is chosen for the main session; read-only checks are paused" });
         },
       } : {}),
+      autoContinue: () => {
+        const settings = this.settings();
+        return settings.enabled && settings.autoContinue;
+      },
       onTrigger: (trigger) => {
         if (trigger.kind === "dispatch_result") void this.judge.run({ kind: "dispatch_result", ...(trigger.task ? { task: trigger.task } : {}), ...(trigger.eventId ? { eventId: trigger.eventId } : {}) });
       },
     };
-    this.judge = new Judge(this.ctx, options.judgeRunner, () => this.currentModel(), () => this.currentThinkingLevel());
+    this.judge = new Judge(this.ctx, options.judgeRunner, () => this.currentModel(), () => this.currentThinkingLevel(), () => this.settings().enabled);
     this.chatLog = this.loadChat();
     if (!this.store.state.launchedAt) {
       this.store.state.launchedAt = this.ctx.now().toISOString();
@@ -137,7 +153,10 @@ export class MainSessionService {
   startTimers(): void {
     if (this.loop) return;
     // First pass shortly after start: catch up a missed tick and re-send queued memory.
-    setTimeout(() => { void this.onLoop(); void this.ctx.memory.flushOutbox?.(); }, 2_000).unref?.();
+    setTimeout(() => {
+      void this.onLoop();
+      if (this.settings().enabled) void this.ctx.memory.flushOutbox?.();
+    }, 2_000).unref?.();
     this.loop = setInterval(() => { void this.onLoop(); }, LOOP_INTERVAL_MS);
     this.loop.unref?.();
   }
@@ -148,6 +167,8 @@ export class MainSessionService {
   }
 
   async onLoop(): Promise<void> {
+    // Off in Settings: no checks, archives or digest. A missed tick runs once it is turned on.
+    if (!this.settings().enabled) return;
     const now = this.ctx.now();
     processPendingArchives(this.ctx);
     const lastCheck = this.store.state.lastCheckAt ? Date.parse(this.store.state.lastCheckAt) : 0;
@@ -270,6 +291,7 @@ export class MainSessionService {
     return {
       ok: true as const, since: this.since, version: SERVICE_VERSION,
       model: this.modelChoice(),
+      settings: { enabled: this.settings().enabled, autoContinue: this.settings().autoContinue },
       judge: {
         enabled: this.judge.enabled, available: this.judge.available, turns: this.judge.turns,
         ...(this.judge.lastError ? { lastError: this.judge.lastError } : {}),
@@ -366,6 +388,7 @@ export class MainSessionService {
   private forwardAnswer(eventId: string): void {
     const event = this.store.getEvent(eventId);
     if (!event?.task || event.data?.undone || event.data?.forwarded) return;
+    if (!this.settings().enabled) return;
     const ask = event.data?.askId ? this.store.getEvent(event.data.askId) : undefined;
     const question = typeof ask?.data?.question === "string" ? ask.data.question : "";
     const text = question ? `你的决定：${event.data.word}\n（针对：${question}）` : `你的回复：${event.data.word}`;

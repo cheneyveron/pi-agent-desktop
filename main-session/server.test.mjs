@@ -18,6 +18,7 @@ async function withServer(fn, options = {}) {
     dispatcher: async (request) => { dispatched.push(request); return { ok: true, result: "PASS: fine" }; },
     checkModel: async () => undefined,
     memory: { write: async () => "sent" },
+    settings: () => ({ enabled: true, autoContinue: true, takeoverMinutes: 5 }),
     ...options,
   });
   const base = `http://127.0.0.1:${started.port}`;
@@ -334,6 +335,45 @@ test("the demo fixture seeds an empty state for UI work and e2e", async () => {
     assert.ok(need.every((t) => t.ask?.eventId));
     assert.equal((await call("GET", "/tasks?status=done")).body.tasks[0].id, "CAS-4739");
   }, { fixture });
+});
+
+// ── Settings › Main session ──────────────────────────────────────────────
+
+test("with the main session off in Settings, close-outs are recorded but get no turn and nothing is continued", async () => {
+  const settings = { enabled: false, autoContinue: true, takeoverMinutes: 5 };
+  await withServer(async ({ call, service, judged }) => {
+    const sent = [];
+    service.subscribe((type, data) => { if (type === "continue") sent.push(data); });
+    await call("POST", "/model", { model: "anthropic/claude-haiku-4-5" });
+    assert.deepEqual((await call("GET", "/health")).body.settings, { enabled: false, autoContinue: true });
+    assert.equal((await call("POST", "/closeouts", closeout)).status, 201);
+    await call("POST", "/tasks/CAS-4764/answer", { word: "推" });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(judged.length, 0, "no judgment turn while off");
+    assert.deepEqual(sent, [], "no answer goes on while off");
+    assert.equal(service.judge.available, false);
+
+    settings.enabled = true;
+    assert.equal(service.judge.available, true, "read on every use: no restart needed");
+  }, { settings: () => settings, forwardDelayMs: 20 });
+});
+
+test("without automatic continue the judge has no continue tool and the service refuses its own steps", async () => {
+  await withServer(async ({ call, service, judged }) => {
+    await call("POST", "/model", { model: "anthropic/claude-haiku-4-5" });
+    await call("POST", "/closeouts", closeout);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(judged.length >= 1);
+    assert.ok(!judged[0].tools.includes("continue"));
+    assert.match(judged[0].user, /automatic continue off/);
+    const tools = actionTools(service.ctx, { kind: "chat", text: "x" }, []);
+    assert.ok(!tools.some((tool) => tool.name === "continue"));
+    const { continueSession } = await import("./actions.ts");
+    assert.throws(() => continueSession(service.ctx, { task: "CAS-4764", text: "run the tests", origin: "main", why: "w" }), /automatic continue is turned off/);
+    // The user's own answer still reaches the session.
+    const event = continueSession(service.ctx, { task: "CAS-4764", text: "你的回复：推", origin: "user", why: "the user's answer" });
+    assert.equal(event.data.origin, "user");
+  }, { settings: () => ({ enabled: true, autoContinue: false, takeoverMinutes: 5 }) });
 });
 
 // ── answers go on to the task's work session ─────────────────────────────

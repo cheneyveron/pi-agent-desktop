@@ -188,7 +188,9 @@ test("stageMainSession ships the service, lib/exact-system-prompt.ts and typebox
   assert.ok(!existsSync(join(serverDir, "main-session", "fixtures")));
   assert.ok(!existsSync(join(serverDir, "main-session", "server.test.mjs")));
   assert.ok(!existsSync(join(serverDir, "main-session", "test-helpers.mjs")));
-  assert.deepEqual(staged.outside, [join("lib", "exact-system-prompt.ts")]);
+  // Followed transitively: main-session-settings.ts re-exports main-session-settings-core.ts.
+  assert.deepEqual([...staged.outside].sort(), [join("lib", "exact-system-prompt.ts"), join("lib", "main-session-settings-core.ts"), join("lib", "main-session-settings.ts")]);
+  assert.ok(existsSync(join(serverDir, "lib", "main-session-settings-core.ts")));
   assert.ok(existsSync(join(serverDir, "lib", "exact-system-prompt.ts")));
   assert.deepEqual(JSON.parse(await readFile(join(serverDir, "lib", "package.json"), "utf8")).type, "module");
   assert.ok(staged.packages.includes("typebox"));

@@ -43,6 +43,30 @@ so under "Deviations".
   `MAIN_SESSION_FIXTURE=<file>` (seed an empty state dir, e.g. `main-session/fixtures/demo-state.json`),
   `MEMHANA_URL` / `MEMHANA_BANK` / `MAIN_SESSION_MEMHANA=off`, `MAIN_SESSION_TICKET_PREFIXES`.
 
+## Settings › Main session (off by default)
+The Settings dialog has a 主会话 / Main session tab (`components/main-session/MainSessionSettingsSection.tsx`).
+Its three settings live in Pi Web's settings file under `mainSession`
+(`<agentDir>/pi-web/settings.json`, read with `lib/main-session-settings.ts`, written by
+`GET/PUT /api/main-session-settings` — not under `/api/main-session/`, which proxies to the
+service, so they save while the service is down). Both processes read the file on every use, so a
+change applies without a restart.
+- `enabled` (default **false**): the whole feature. Off: the close-out extension writes no
+  close-outs (`defaultEnabled()`), the service keeps its state but its loop does nothing (no
+  checks, archives or digest; a missed tick runs once turned on), no judgment turns run
+  (`Judge`'s `on`), dispatches and answer forwarding stop, the app's stream client drops
+  `insert` / `continue` events and holds the close-out outbox, and the UI hides the sidebar row, 需要你 and the digest
+  notification; `?view=main` shows a "turned off" notice with a link to the tab. The model
+  picker shows only while it is on. `PI_WEB_DISABLE_MAIN_SESSION` still turns everything off.
+- `autoContinue` (default **false**): the main session's own `continue` steps. Off: the judge
+  is not offered the `continue` tool (its input says so), `continueSession({origin: "main"})`
+  refuses, and the app refuses a `continue` event with `origin: "main"`. The user's own
+  answers (`origin: "user"`) still go to the work session.
+- `takeoverMinutes` (default 5; the tab offers 1–60): the idle delay after a run before the
+  session's close-out goes to the service, read when each run settles.
+
+`startServer()` passes the file reader; a `MainSessionService` built without `settings` (tests,
+replay) has everything on. `/health` reports `settings: {enabled, autoContinue}`.
+
 ## Model choice (no default)
 - The model for judgment turns and read-only dispatches is the user's: there is no built-in default
   and no provider allowlist. Until one is chosen the service runs **no model turns**: triggers are
@@ -51,8 +75,7 @@ so under "Deviations".
   rule are deterministic and keep working.
 - Chosen in the UI with `components/main-session/MainSessionModelPicker.tsx` (an `AppSelect`):
   under the band of the 主会话 page with a notice while none is chosen or the last turn failed, in
-  the band once one is, and in Settings › General › Main session
-  (`MainSessionSettingsSection.tsx`). It lists `GET /api/models?cwd=<chat workspace>`'s `modelList` (the home folder the turns run in is not on the file-access allow-list, so the route refuses it; the chat workspace is an allowed root with the same global model scope) — the
+  the band once one is, and in Settings › Main session (`MainSessionSettingsSection.tsx`). It lists `GET /api/models?cwd=<chat workspace>`'s `modelList` (the home folder the turns run in is not on the file-access allow-list, so the route refuses it; the chat workspace is an allowed root with the same global model scope) — the
   same enabledModels-scoped set the composer offers, for the folder the turns run in — plus "none".
 - `POST /model {model: "provider/modelId" | null}` (through the proxy and its write guards) checks
   the ref against the Pi registry (`checkConfiguredModel()`: the model exists and
@@ -157,7 +180,7 @@ app server listens (`lib/main-session-insert-client.ts`) and `continueFromMainSe
 it is not live; a follow-up when it is running), or starts a session in the task's repo when it
 has none, then reports back with `POST /continues/:eventId/delivered {sessionId | error}`.
 
-- `origin: "main"` (the judge chose the step): the prompt is prefixed `[主会话续做] ` and carries
+- `origin: "main"` (the judge chose the step; only with Settings › Main session's automatic continue on): the prompt is prefixed `[主会话续做] ` and carries
   `mainSession: true`, which turns the **write gate** on for that session. The service refuses
   the same step twice for a task (`key` = hash of the text) and more than
   `CONTINUE_DAILY_CAP` (3) a day per task; the judge sees the refusal as text.

@@ -23,6 +23,7 @@ import {
   type CloseoutUserSaid,
   type CloseoutUserSaidKind,
 } from "./closeout-types";
+import { readMainSessionSettings, piWebSettingsFile } from "./main-session-settings";
 import { resolveTitleThinkingLevel } from "./session-title";
 import { userHome } from "./user-home";
 
@@ -35,7 +36,6 @@ import { userHome } from "./user-home";
 export const CLOSEOUT_EXTENSION_NAME = "closeout";
 export const MAIN_SESSION_DISABLE_VARIABLE = "PI_WEB_DISABLE_MAIN_SESSION";
 export const DEFAULT_MAIN_SESSION_PORT = 30180;
-export const CLOSEOUT_IDLE_MS = 5 * 60_000;
 /** How long `session_shutdown` waits for a close-out before the entry is deferred to the next open. */
 export const CLOSEOUT_SHUTDOWN_WAIT_MS = 2_000;
 
@@ -708,9 +708,13 @@ export function flushDeferredCloseoutEntries(
 export interface CloseoutExtensionOptions {
   /** Defaults to the SDK's agent directory, read when needed. */
   agentDir?: string;
+  /** Fixed idle delay (tests). Default: Settings › Main session's takeover minutes, read after each run. */
   idleMs?: number;
   shutdownWaitMs?: number;
-  /** Whether this session closes out. Default: not when the main session is off, and never in a chat. */
+  /**
+   * Whether this session closes out. Default: only while Settings › Main session has the feature
+   * on, not with PI_WEB_DISABLE_MAIN_SESSION, and never in a chat.
+   */
   enabled?: (cwd: string) => boolean;
   complete?: CloseoutCompleter;
   delivery?: CloseoutDeliveryOptions;
@@ -718,25 +722,26 @@ export interface CloseoutExtensionOptions {
   log?: (message: string) => void;
 }
 
-function defaultEnabled(cwd: string): boolean {
-  return !isMainSessionDisabled() && !isChatWorkspacePath(cwd);
+function defaultEnabled(agentDir: string, cwd: string): boolean {
+  return !isMainSessionDisabled() && !isChatWorkspacePath(cwd) && readMainSessionSettings(piWebSettingsFile(agentDir)).enabled;
 }
 
 /**
- * Close-out triggers (contract §4): five idle minutes after a run that used
+ * Close-out triggers (contract §4): idle minutes (Settings › Main session, five by default) after a run that used
  * tools, `session_shutdown` (not a reload), and the start of a compaction.
  * Each run covers only the entries since the previous close-out; runs of one
  * session never overlap.
  */
 export function createCloseoutExtension(options: CloseoutExtensionOptions = {}): ExtensionFactory {
   return (pi: ExtensionAPI) => {
-    const idleMs = options.idleMs ?? CLOSEOUT_IDLE_MS;
     const shutdownWaitMs = options.shutdownWaitMs ?? CLOSEOUT_SHUTDOWN_WAIT_MS;
-    const enabled = options.enabled ?? defaultEnabled;
     const complete = options.complete ?? completeCloseoutWithModel;
     const now = options.now ?? (() => new Date());
     const log = options.log ?? ((message: string) => console.warn(`[pi-web] ${message}`));
     const agentDir = () => options.agentDir ?? getAgentDir();
+    const enabled = options.enabled ?? ((cwd: string) => defaultEnabled(agentDir(), cwd));
+    // Read when each run settles, so a change in Settings applies from the next run on.
+    const idleMs = () => options.idleMs ?? readMainSessionSettings(piWebSettingsFile(agentDir())).takeoverMinutes * 60_000;
     const delivery = () => ({ outboxDir: closeoutOutboxDir(agentDir()), now, ...options.delivery });
 
     let lastCtx: ExtensionContext | undefined;
@@ -838,7 +843,7 @@ export function createCloseoutExtension(options: CloseoutExtensionOptions = {}):
         idleTimer = undefined;
         const current = lastCtx;
         if (current && current.isIdle() && !entriesClosed) void trigger("idle", current);
-      }, idleMs);
+      }, idleMs());
       idleTimer.unref?.();
     });
 

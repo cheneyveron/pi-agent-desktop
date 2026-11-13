@@ -66,6 +66,20 @@ function readListHeight(): number | null {
 
 const IDLE_CARD: CardState = { kind: "idle" };
 
+/** The page while Settings › Main session has the feature off (a `?view=main` link, a card's link). */
+export function MainSessionTurnedOff({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="main-session-view">
+      <div className="ms-offline" role="status">
+        <b>{t("mainSession.turnedOff")}</b>
+        <p>{t("mainSession.turnedOffHint")}</p>
+        <button type="button" className="ms-button" onClick={onOpenSettings}>{t("mainSession.openSettings")}</button>
+      </div>
+    </div>
+  );
+}
+
 export function MainSessionView({ focusTask, onOpenSession, onSessionStarted, fallbackCwd }: Props) {
   const { t, locale } = useI18n();
   const state = useMainSession();
