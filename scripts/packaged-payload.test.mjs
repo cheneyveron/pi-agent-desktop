@@ -90,6 +90,24 @@ test("an armoured key with a body fails even inside an allowlisted path", async 
   }
 });
 
+test("sharp's libvips PEM marker is allowlisted, but a key body beside it is not", async () => {
+  const marker = "-----BEGIN ENCRYPTED PRIVATE KEY-----\0Cannot decrypt PEM-encoded private key\0-----END \0";
+  const body = "-----BEGIN RSA PRIVATE KEY-----\n" + "MIIEowIBAAKCAQEA".padEnd(64, "A") + "\n-----END RSA PRIVATE KEY-----";
+  const root = await fixture({
+    "server/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib": marker,
+    "server/node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.42": marker + body,
+  });
+  try {
+    const result = await scanPayload(root);
+    assert.deepEqual(rulesOf(result), [
+      "private-key-material server/node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.42",
+    ]);
+    assert.equal(result.allowed.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("npm's documented PRIVATE KEY example is allowlisted and reported", async () => {
   const root = await fixture({
     "node/node_modules/npm/docs/content/using-npm/config.md":
