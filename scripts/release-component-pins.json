@@ -5,6 +5,6 @@
   },
   "pi-web": {
     "version": "0.15.0",
-    "reason": "Merged upstream abcwyc/pi-agent-desktop main@1a3d529 (pi-web v0.11.0-v0.15.0 catch-up, docs/merge-history.md); pi-web 0.16.0 is not in upstream yet."
+    "reason": "Merged upstream abcwyc/pi-agent-desktop main@211bd1e (desktop 0.8.7 ships pi-web 0.15.0, docs/merge-history.md); pi-web 0.16.0 is not in upstream yet."
   }
 }

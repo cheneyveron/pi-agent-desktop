@@ -177,47 +177,63 @@ jobs:
           releaseName: pi-agent-desktop v__VERSION__
           releaseCommitish: ${{ github.sha }}
           releaseBody: |
-            ## Pi Agent Desktop 0.7.20
+            ## Pi Agent Desktop 0.7.21
 
-            The main session now has its own Settings tab and is off until you turn it on.
+            This release brings in upstream's 0.8.x work: a Tasks calendar, community plugins, the llama.cpp provider and image-aware composer history.
 
             ### New
 
-            - **Settings › Main session.** One switch turns the whole feature on or off. While it is off, sessions write no close-outs, the main session runs no checks, digests or model turns, and the Main session row, the "Needs you" section and the daily notification are hidden. The main session's model and reasoning level moved here from Settings › General.
-            - **Continue work on its own, as a separate switch.** With it off, the main session asks you instead of handing the next step to a task's session itself. Your own replies on a task card still go to that session.
-            - **Choose when the main session takes over.** Set how long a session must sit idle before its close-out goes to the main session: 1, 2, 5, 10, 15, 30 or 60 minutes (5 by default).
+            - **Tasks calendar.** The Tasks page has a Calendar mode that places each session's prompts, scheduled runs and planned slots by day.
+            - **Community plugins.** Settings › Plugins can browse and search npm packages that declare `pi-package`, read their details, and install one for all projects or only the current one. A listing is the publisher's own claim, not a compatibility check.
+            - **Long pastes.** Pasting 2,000 or more characters into the composer adds them as a "Pasted text" attachment you can open or turn back into text. A message with attachments is never run as a `/command` or `!shell` command.
+            - **llama.cpp.** Settings › Models can add pi's built-in llama.cpp provider pointed at your router server (default `127.0.0.1:8080`). Custom providers can have a display name.
+            - **Thinking-level hints.** When a model refuses the thinking level you chose, the chat says which levels it accepts and links to that model's settings.
+            - **New icon.** The π. mark replaces the old app icon.
 
             ### Changed
 
-            - **The main session and its automatic continue are both off by default**, including on existing installs. Turn them on in Settings › Main session to keep using them.
+            - Closed side panels are out of the Tab order and the screen-reader tree.
+            - Hovering a project in the sidebar shows its full path.
+            - Recalling an earlier prompt from the composer's ↑ history brings back its images too.
+            - Fetching a provider's models also reads its reasoning levels and image input.
 
             ### Fixed
 
-            - **"Chats outside projects" appeared twice** in Settings › General. It now appears once.
-            - **Installers are checked for this build machine's configuration.** Packaging now fails if the app's own `.pi/` folder, an MCP access key or a private key would be included (from upstream Pi Agent Desktop).
+            - Testing a model sends a session id, which fixes `400 MissingSessionID` from opencode.ai; a `!command` API key runs once per test.
+            - Enabled models respect project trust, and `auth.json` / `settings.json` with a BOM or empty content load correctly.
+            - A sign-in the page has already closed no longer crashes the server when an extension answers late.
+            - The project menu is bounded and scrolls inside the window.
 
             Bundled components: pi 1.5.2, pi-web 0.15.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.20
+            ## Pi Agent Desktop 0.7.21
 
-            主会话有了自己的设置页，在你打开之前不会运行。
+            本版合入了上游 0.8.x 的工作：任务日历、社区插件、llama.cpp Provider，以及带图片的输入历史。
 
             ### 新增
 
-            - **「设置 › 主会话」。** 一个开关控制整个功能。关闭时，会话不写交接，主会话不做检查、不发摘要、不调用模型，侧栏的「主会话」入口、「需要你」分区和每日通知都会隐藏。主会话的模型和推理强度从「设置 › 常规」移到了这里。
-            - **主动续做单独一个开关。** 关闭时，主会话不会自己把下一步交给任务的会话，而是先问你。你在任务卡片上的回复仍会送到那个会话。
-            - **可设置主会话多久后接管。** 会话空闲多久后把交接交给主会话：1、2、5、10、15、30 或 60 分钟（默认 5 分钟）。
+            - **任务日历。** 「任务」页新增日历视图，按天显示每个会话的提示、定时运行和计划时段。
+            - **社区插件。** 「设置 › 插件」可以浏览和搜索 npm 上声明了 `pi-package` 的包，查看详情，并安装到全部项目或仅当前项目。收录仅代表发布者自己的声明，不代表已验证兼容性。
+            - **长文本作附件。** 在输入框粘贴 2,000 个字符以上的文本时，会添加为「粘贴文本」附件，可打开查看，或改回正文。带附件的消息不会被当作 `/命令` 或 `!shell` 命令执行。
+            - **llama.cpp。** 「设置 › 模型」可以添加 pi 内置的 llama.cpp Provider，指向你的路由服务器（默认 `127.0.0.1:8080`）。自定义 Provider 可以设置显示名称。
+            - **推理强度提示。** 模型拒绝你选择的推理强度时，对话会说明它接受哪些强度，并链接到该模型的设置。
+            - **新图标。** 应用图标换为新的 π. 标志。
 
             ### 变更
 
-            - **主会话和主动续做默认都关闭**，已安装的版本升级后也一样。要继续使用，请在「设置 › 主会话」里打开。
+            - 关闭的侧边面板不再出现在 Tab 顺序和屏幕阅读器中。
+            - 鼠标悬停在侧栏项目上时会显示完整路径。
+            - 从输入框的 ↑ 历史中调回以前的提示时，其中的图片也会一并恢复。
+            - 拉取 Provider 的模型列表时，同时读取推理强度和图片输入能力。
 
             ### 修复
 
-            - **「设置 › 常规」里「对话（非项目）」出现了两次。** 现在只出现一次。
-            - **安装包会检查是否带上了构建机的配置。** 如果会打包进本应用自己的 `.pi/` 文件夹、MCP 访问密钥或私钥，打包直接失败（来自上游 Pi Agent Desktop）。
+            - 测试模型时会带上会话 ID，修复 opencode.ai 返回 `400 MissingSessionID` 的问题；`!command` 形式的 API 密钥每次测试只执行一次。
+            - 已启用模型列表遵循项目信任设置；带 BOM 或为空的 `auth.json` / `settings.json` 可以正常读取。
+            - 页面已关闭的登录流程，在扩展延迟回应时不再导致服务器崩溃。
+            - 项目菜单有了高度上限，并在窗口内滚动。
 
             内置组件版本：pi 1.5.2、pi-web 0.15.0。
 
