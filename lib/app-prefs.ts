@@ -26,6 +26,8 @@ export const APP_PREF_KEYS = {
   expandedProjects: "pi-web:expanded-projects",
   /** "1" while the sidebar Chats section is folded. */
   collapsedChats: "pi-web:collapsed-chats",
+  /** Session ids whose subagent / side chat rows the user unfolded (folded by default, #237). */
+  expandedSubagentRows: "pi-web:expanded-subagent-rows",
   /** Projects header fold; independent of individual project/archive folds. */
   collapsedProjectsSection: "pi-web:collapsed-projects-section",
   /** Additional five-chat pages shown past the Chats preview cap. */
@@ -48,6 +50,12 @@ export const APP_PREF_KEYS = {
   notifyOnComplete: "pi-desktop-notify-on-complete",
   chatDrafts: "pi-chat-drafts-v1",
   diffViewMode: "pi-diff-view-mode",
+  /** Tasks page layout: "calendar" or the list (anything else). */
+  tasksMode: "pi-web:tasks-mode",
+  /** Tasks calendar range: "week" or "month". */
+  tasksCalendarView: "pi-web:tasks-calendar-view",
+  /** Tasks calendar filter: project keys and `type:*` keys switched off. */
+  tasksCalendarHidden: "pi-web:tasks-calendar-hidden",
   /** Last open session / cwd / file tabs for desktop cold-start restore. */
   workspace: "pi-workspace-v1",
   /** Height in px of the main-session page's task list, set by dragging its handle. */

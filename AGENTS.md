@@ -100,6 +100,7 @@ app/api/
   agent/running/route.ts          GET currently-running session ids
   agent/running/events/route.ts   GET SSE stream of currently-running session ids
   agent/tasks/route.ts            GET live task snapshots (running step, waiting dialogs, last outcome) for the Tasks page
+  calendar/route.ts               GET ?from=&to= (ms) prompts per session, scheduled runs and planned slots for the Tasks calendar
   remote-access/route.ts          GET/PUT Tailscale remote-access setting (PUT only from loopback)
   network-proxy/route.ts          GET/PUT the app's HTTP proxy setting (PUT only from this computer); test/route.ts POST a connection test
   push/{config,subscribe,unsubscribe,test}/route.ts  Web Push key, device subscriptions, test send
@@ -122,6 +123,7 @@ app/api/
   models-config/route.ts          GET/PUT — read/write ~/.pi/agent/models.json
   models-config/catalog/route.ts  GET models.dev pricing presets
   models-config/discover/route.ts POST fetch a configured provider's upstream model list
+  models-config/builtin-match/route.ts GET ?baseUrl=&modelId= built-in providers at that endpoint + pi's settings for the model
   models-config/test/route.ts     POST test a configured model/provider
   plugins/route.ts                GET/POST package plugin management
   plugins/settings/route.ts       GET/PUT a package's `pi.settings` file (schema-driven form)
@@ -172,6 +174,7 @@ lib/
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   scheduled-tasks/    scheduler, runner, cron, store, run index for scheduled tasks (see docs/agents/scheduled-tasks.md)
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
+  session-prompts.ts  every user prompt with its time and reply, read on demand for the Tasks calendar (fingerprint cache)
   tool-presets.ts     PRESET_NONE/DEFAULT/FULL + getPresetFromTools()
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
@@ -197,7 +200,7 @@ components/
   PluginSettingsForm.tsx  schema-driven Settings section of a package (see docs/agents/settings-ui.md)
   SkillsConfig.tsx    modal for loaded/search/installable skills
   scheduled/          Scheduled page (list, detail, editor, run history) and its sidebar row
-  tasks/              Tasks page (waiting / running / recent across projects) and its sidebar row
+  tasks/              Tasks page (waiting / running / recent across projects), its Calendar mode (TaskCalendar, calendar-helpers) and its sidebar row
   RemoteAccessSection.tsx  Settings › General › Remote access (Tailscale) and "Notify this device"
   RelaySection.tsx    Settings › General › Remote relay: relay config, pairing QR, approvals, paired phones
   SettingsPanel.tsx   settings dialog; its General tab hosts the app intro, Version & Updates and the desktop-only switches
@@ -301,7 +304,7 @@ Each one undid a real regression; the linked note has the reasoning.
 ---
 
 ### Two kinds of branching — don't confuse them
-- **Fork** (Fork button on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.
+- **Fork** (Fork button on user message): creates a new independent `.jsonl` file (`parentSession` header field). In the sidebar it is a row of its own beside its source, marked with the fork glyph; only subagent runs and side chats nest under a row, folded by default (`lib/sidebar-session-nodes.ts`, `lib/sidebar-subagent-expansion.ts`, #237).
 - **In-session branch** (Continue button / BranchNavigator): calls `navigate_tree` within the same file. Multiple entries share the same `parentId`. Switching between them calls `/api/sessions/[id]/context?leafId=`.
 
 ### Upstream merge sentinels (not the same "fork" as session fork)

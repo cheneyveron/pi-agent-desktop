@@ -56,6 +56,17 @@ optimistic/delivered/history updates, real ChatInput text/attachment admission,
 cancel, edit drafts and resend without a model call.
 This is a MessageView integration replay, not a full authenticated SSE round trip.
 
+## Composer input history (↑)
+
+`lib/composer-history.ts` builds the ↑ menu from the transcript. Each entry keeps
+the prompt text **and** its images, so selecting an earlier image question
+restores the attachments instead of dropping them. It reuses the same image-note
+projection as the message bubble, so an SDK resize note never returns as typed
+text, and image-only prompts appear (labelled by image count). Selection follows
+the same admission rule as history editing: a non-empty draft or pending
+attachment is left untouched. Chat file chips come back through
+`splitMessageForComposer`. Tests: `node --test lib/composer-history.test.mjs`.
+
 ## Composer clearing and history-edit admission
 
 `ChatInput.replaceMessage()` returns whether it actually restored history. A
@@ -123,6 +134,7 @@ shared radius, spacing and semantic colors in both themes.
 ### Pinned sessions
 
 Any root session row (a chat or a project session, never a subagent child) can be pinned from its row menu (native and DOM, "Pin" / "Unpin", `sidebar.pinSession`). The behaviour follows Claude Desktop: a pinned session leaves its own section and is listed under a "Pinned" section above Chats and Projects, ordered by recency, with a subtitle naming where it came from (no pin mark: the section header already says so) (the project's display name, or "Chats"). Its project keeps its row (the group tree, its folded count and chips just skip the pinned rows), the chronological view skips it too, and the pin wins over archiving: a pinned session of an archived project or an archived chat stays under Pinned. The section renders only while something is pinned, folds like Chats (`collapsedPinned`), and a search ignores the fold. Pins are a browser preference (`pinnedSessions`, keyed by root session id; `lib/pinned-sessions.ts` folds the older chat-only `pinnedChats` key in on first read and drops it); deleting a session drops its pin. Pinned by `components/SessionSidebar.test.mjs` and `lib/pinned-sessions.test.mjs`.
+The sidebar project tree nests only subagent runs and side chats under the session that started them (`buildSessionTree()` in `lib/sidebar-session-nodes.ts`); a fork (`relation.kind: "fork"`) is a row of its own beside its source, with the fork glyph and "Forked from …" in its tooltip, so it keeps its own pin / archive / Fork menu and is never hidden by folding its source. A fork's own subagents nest under the fork. Children start folded: the row's toggle shows their count, the folded row still carries their running and selected state, and the ids of rows the user unfolded live in localStorage (`pi-web:expanded-subagent-rows`, newest 300; `lib/sidebar-subagent-expansion.ts`, read through `useSyncExternalStore` so the first render matches the server's all-folded HTML). A selected child unfolds the rows above it (#237).
 
 The sidebar project tree is a keyboard `tree`: rows move focus with Up/Down/Home/End, project and subagent groups expand/collapse with Right/Left, Enter/Space activates, F2 starts rename, and Delete opens the same shared confirmation dialog as the row menu. Roving-tabindex extraction is intentionally not used yet because timeline rows and future non-session tree rows still need one shared focus model.
 
@@ -161,6 +173,7 @@ Single project sessions archive the same way chats do (#200): the session row's 
 ## Settings dialog: one tab per concern
 - The sidebar gear opens Settings directly through `openSettingsAtLastSection`, the same entry used by the keyboard shortcut. First use opens General; subsequent visits restore the last available section. Category navigation lives inside Settings; do not restore an intermediate section menu.
 - The settings sections are `general`, `appearance`, `models`, `skills`, `agents`, `plugins`, `mcp` (`SETTINGS_SECTION_VALUES`). Appearance is available without a project and owns mode, background and the custom stylesheet through `AppearanceSettings.tsx`. General keeps language, chat controls, product/version information and the self-hiding desktop window/tray switches (`components/desktop/DesktopAppSection.tsx`). Do not duplicate appearance controls in General or reintroduce the former Desktop tab. `components/AppUpdatesSection.tsx` owns the update check and its chips.
+- Navigation (#227): on every desktop platform the sections are a pane on the left under the dialog's title, the content beside it (the header is `display: contents` on the surface's grid). Between 641px and 899px the pane is an icon rail (labels stay as `.settings-section-tab-label`, visually hidden, plus the `title` tooltip); at 640px and below the phone drill-down is unchanged. Windows keeps its Fluent accent bar and caption close, GNOME its round close. The list is one tab stop (`tabIndex` only on the selected row) and arrow keys / Home / End move within it. General's two columns are a container query on `.settings-section-host` (760px of section width), not a viewport breakpoint, since the pane takes 208px. Rules live in `app/native-theme.css`; `app/settings.css` stays upstream's.
 - A signed desktop update installs and relaunches the app, so `AppUpdatesSection` reports `busy` up to `SettingsPanel`, which keeps backdrop clicks and Escape from dismissing the dialog mid-upgrade. That is the reason for the `onBusyChange` prop; don't drop it when refactoring the panel.
 - `UpdateReminder` opens the panel at `general`, where the update status now lives. `components/fork-extractions.test.mjs` pins that the update/desktop code stays in those fork-owned files instead of being regrouped into `SettingsPanel.tsx`.
 

@@ -33,7 +33,8 @@ import type { GitFileDiffResponse } from "@/lib/git-types";
 import { getTurnFilePatch, subscribeTurnFilePatches } from "@/lib/turn-file-patches";
 import { getFileIcon } from "./FileIcons";
 import { revealLabelKey } from "@/lib/file-context-menu";
-import { useDesktopChrome } from "./desktop/useDesktopChrome";
+import { appNotify } from "@/lib/notification-store";
+import { getDesktopPlatform } from "@/lib/desktop-window";
 import { useI18n } from "@/hooks/useI18n";
 import {
   resolveInitialFileDisplayMode,
@@ -304,34 +305,32 @@ function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceS
 
 function DesktopPathActions({ filePath }: { filePath: string }) {
   const { t } = useI18n();
-  const { isDesktop, platform } = useDesktopChrome();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  if (!isDesktop) return null;
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    void import("@/lib/desktop-native").then(({ isTauriDesktop }) => {
+      setDesktop(isTauriDesktop());
+    });
+  }, []);
+  if (!desktop) return null;
 
-  const run = async (action: "openPathNative" | "revealItemInDirNative") => {
-    setBusy(true);
-    setError(null);
-    try {
-      const native = await import("@/lib/desktop-native");
-      await native[action](filePath);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
+  const openLabel = t("fileViewer.openDefaultApp");
+  const revealLabel = t(revealLabelKey(getDesktopPlatform()));
+  const run = (action: (nativeApi: typeof import("@/lib/desktop-native")) => Promise<void>) => {
+    import("@/lib/desktop-native").then(action).catch((error: unknown) => {
+      appNotify.error({
+        message: t("fileViewer.actionFailed", { error: error instanceof Error ? error.message : String(error) }),
+      });
+    });
   };
 
   return (
     <>
-      {error && <span role="alert">{error}</span>}
       <button
         type="button"
-        disabled={busy}
-        title={t("files.openDefaultApp")}
-        aria-label={t("files.openDefaultApp")}
+        title={openLabel}
+        aria-label={openLabel}
         className="file-viewer-icon-button"
-        onClick={() => void run("openPathNative")}
+        onClick={() => run(({ openPathNative }) => openPathNative(filePath))}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -341,11 +340,10 @@ function DesktopPathActions({ filePath }: { filePath: string }) {
       </button>
       <button
         type="button"
-        disabled={busy}
-        title={t(revealLabelKey(platform))}
-        aria-label={t(revealLabelKey(platform))}
+        title={revealLabel}
+        aria-label={revealLabel}
         className="file-viewer-icon-button"
-        onClick={() => void run("revealItemInDirNative")}
+        onClick={() => run(({ revealItemInDirNative }) => revealItemInDirNative(filePath))}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
@@ -370,7 +368,9 @@ function FileViewerToolbar({
   sourceSessionId?: string | null;
   children?: ReactNode;
 }) {
+  const { t } = useI18n();
   const relativePath = getRelativeFilePath(filePath, cwd);
+  const liveLabel = watching ? t("i18n.liveSync") : t("i18n.notWatching");
   return (
     <div className="file-viewer-toolbar">
       <div className="file-viewer-identity">
@@ -381,12 +381,12 @@ function FileViewerToolbar({
         {metadata && <span className="file-viewer-meta" title={metadata}>{metadata}</span>}
       </div>
       <span
-        title={watching ? "Live sync active" : "Live sync unavailable"}
-        aria-label={watching ? "Live sync active" : "Live sync unavailable"}
+        title={liveLabel}
+        aria-label={liveLabel}
         className={`file-viewer-live-status${watching ? " is-live" : ""}`}
       >
         <span className="file-viewer-live-indicator" />
-        <span>{watching ? "Live" : "Static"}</span>
+        <span>{watching ? t("fileViewer.live") : t("fileViewer.static")}</span>
       </span>
       <div className="file-viewer-controls">
         {children}

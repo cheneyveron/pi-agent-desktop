@@ -73,8 +73,8 @@ export const PAYLOAD_ALLOWED = [
   },
   {
     rule: "private-key",
-    path: /(^|\/)node_modules\/@img\/sharp-libvips-[^/]+\/lib\//,
-    reason: "libvips (sharp) embeds the PEM marker `-----BEGIN ENCRYPTED PRIVATE KEY-----` as a parser constant beside its error strings; the macOS build carries it",
+    path: /(^|\/)node_modules\/@img\/sharp-libvips-[^/]+\/lib\/[^/]+\.(dylib|dll|so(\.\d+)*)$/,
+    reason: "sharp's prebuilt libvips shared libraries (macOS dylib, Linux .so, Windows dll) embed the PEM marker `-----BEGIN ENCRYPTED PRIVATE KEY-----` as a parser constant beside its error strings; only the library binaries are allowed, not other files in lib/",
   },
 ];
 

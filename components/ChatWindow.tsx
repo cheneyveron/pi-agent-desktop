@@ -11,6 +11,7 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { isHiddenRelation, SIDE_BOUNDARY_MESSAGE_TYPE } from "@/lib/session-family";
 import { EXTENSION_DIALOG_BASE_WIDTH, fitExtensionDialogWidth } from "@/lib/extension-dialog-fit";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { buildComposerHistory } from "@/lib/composer-history";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
@@ -36,7 +37,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
 import { formatAttachmentSize } from "@/lib/chat-attachments";
 import type { ToolEntry } from "@/lib/tool-presets";
-import type { SettingsSection } from "@/lib/settings-navigation";
+import { rememberModelSettingsFocus, type SettingsSection } from "@/lib/settings-navigation";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import {
   captureScrollDistance,
@@ -343,6 +344,11 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  // A refused thinking level's error opens Settings › Models on that model.
+  const openModelSettings = useCallback((provider: string, modelId: string) => {
+    rememberModelSettingsFocus(provider, modelId);
+    onOpenSettings?.("models");
+  }, [onOpenSettings]);
   // A chat's folder and whether it may use the computer; the server owns both.
   const chatAccess = useChatAccess(session?.id, chatOnly && Boolean(session) && !isNew, handleChatAccessRebuilt);
   const handleToggleChatUnlocked = useCallback((nextUnlocked: boolean) => {
@@ -944,18 +950,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     }
     return map;
   }, [activeToolResults, messages]);
-  const inputHistory = useMemo(() => {
-    const seen = new Set<string>();
-    const history: string[] = [];
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const text = getUserInputText(messages[i]);
-      if (!text || seen.has(text)) continue;
-      seen.add(text);
-      history.push(text);
-      if (history.length >= 50) break;
-    }
-    return history.reverse();
-  }, [messages]);
+  const inputHistory = useMemo(() => buildComposerHistory(messages), [messages]);
 
   const isEmptyNew = isNew && !loading && !error && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
   useScrollbarVisibility(scrollContainerRef, Boolean(session?.id) || !isEmptyNew);
@@ -1154,6 +1149,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       if (editEntryId) chatInputRef?.current?.insertText(text);
       else void handleSend(text);
     },
+    // A preview's `sendPrompt` only fills the composer; the user sends it.
+    chatInputRef ? (text) => chatInputRef.current?.insertText(text) : undefined,
   );
 
 
@@ -1483,6 +1480,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     onCompact={options.recoverTruncation ? handleCompact : undefined}
                     isCompacting={options.recoverTruncation ? isCompacting : undefined}
                     compactError={options.recoverTruncation ? compactError : undefined}
+                    onOpenModelSettings={onOpenSettings ? openModelSettings : undefined}
                   />
                 );
                 if (!isVisible || currentRefIdx === undefined) return view;

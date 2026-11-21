@@ -1,8 +1,21 @@
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies, sideChatTitle } from "@/lib/session-family";
+import {
+  buildSessionTree,
+  countTreeDescendants,
+  sessionRowTitle,
+  treeContainsSession,
+  type SessionTreeNode,
+} from "@/lib/sidebar-session-nodes";
+import {
+  readExpandedSubagentRows,
+  serverExpandedSubagentRows,
+  setSubagentRowExpanded,
+  subscribeExpandedSubagentRows,
+} from "@/lib/sidebar-subagent-expansion";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { copyText } from "@/lib/clipboard";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -24,7 +37,7 @@ import {
   type WorktreeEntry,
 } from "./ProjectContextMenu";
 import { useProjectWorktreeActions } from "@/hooks/useProjectWorktreeActions";
-import { getRecentProjects } from "./path-ui";
+import { getRecentProjects, PathLabel } from "./path-ui";
 import { APP_PREF_KEYS, getPref, getPrefJson, removePref, setPref, setPrefJson } from "@/lib/app-prefs";
 import { groupByProject } from "@/lib/project-group";
 import { getProjectDisplayName, getProjectDisplayNames } from "@/lib/project-display";
@@ -165,11 +178,6 @@ function loadProjectViewMode(): ProjectViewMode {
 
 
 
-interface SessionTreeNode {
-  session: SessionInfo;
-  children: SessionTreeNode[];
-}
-
 const MAX_VISIBLE_PROJECT_SESSIONS = 5;
 const MAX_VISIBLE_CHAT_SESSIONS = 5;
 
@@ -240,54 +248,6 @@ function handleSidebarTreeKeyDown(
       handlers.requestDelete?.();
       break;
   }
-}
-
-function treeContainsSession(node: SessionTreeNode, sessionId: string): boolean {
-  return node.session.id === sessionId || node.children.some((child) => treeContainsSession(child, sessionId));
-}
-
-function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
-  const byId = new Map<string, SessionTreeNode>();
-  for (const s of sessions) {
-    byId.set(s.id, { session: s, children: [] });
-  }
-
-  // Build a map of parentSessionId chains so we can resolve missing ancestors
-  const parentOf = new Map<string, string>();
-  for (const s of sessions) {
-    if (s.parentSessionId) parentOf.set(s.id, s.parentSessionId);
-  }
-
-  // Walk up the parentSessionId chain to find the nearest ancestor that exists in byId
-  function resolveAncestor(id: string): string | null {
-    let cur = parentOf.get(id);
-    const visited = new Set<string>();
-    while (cur) {
-      if (visited.has(cur)) return null; // cycle guard
-      visited.add(cur);
-      if (byId.has(cur)) return cur;
-      cur = parentOf.get(cur);
-    }
-    return null;
-  }
-
-  const roots: SessionTreeNode[] = [];
-  for (const node of byId.values()) {
-    const ancestor = resolveAncestor(node.session.id);
-    if (ancestor) {
-      byId.get(ancestor)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-
-  // Sort each level by modified desc
-  const sort = (nodes: SessionTreeNode[]) => {
-    nodes.sort((a, b) => b.session.modified.localeCompare(a.session.modified));
-    nodes.forEach((n) => sort(n.children));
-  };
-  sort(roots);
-  return roots;
 }
 
 // The Chats fold lives in localStorage, which the server cannot read. Reading it
@@ -481,6 +441,37 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const projectViewMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [projectMenu, setProjectMenu] = useState<{ root: string; archived?: boolean } | null>(null);
   const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [projectPathHint, setProjectPathHint] = useState<{ root: string; top: number; left: number; height: number } | null>(null);
+  const projectPathHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideProjectPathHint = useCallback(() => {
+    if (projectPathHintTimerRef.current !== null) clearTimeout(projectPathHintTimerRef.current);
+    projectPathHintTimerRef.current = null;
+    setProjectPathHint(null);
+  }, []);
+  const scheduleProjectPathHint = useCallback((target: HTMLElement, root: string) => {
+    hideProjectPathHint();
+    if (projectMenu) return;
+    projectPathHintTimerRef.current = setTimeout(() => {
+      projectPathHintTimerRef.current = null;
+      if (!target.isConnected) return;
+      const row = target.closest<HTMLElement>(".sidebar-project-tree-row");
+      const sidebar = target.closest<HTMLElement>(".session-sidebar");
+      if (!row || !sidebar) return;
+      const rowRect = row.getBoundingClientRect();
+      setProjectPathHint({ root, top: rowRect.top, left: sidebar.getBoundingClientRect().right, height: rowRect.height });
+    }, 350);
+  }, [hideProjectPathHint, projectMenu]);
+  useEffect(() => {
+    window.addEventListener("scroll", hideProjectPathHint, true);
+    window.addEventListener("resize", hideProjectPathHint);
+    window.addEventListener("pointerdown", hideProjectPathHint, true);
+    return () => {
+      window.removeEventListener("scroll", hideProjectPathHint, true);
+      window.removeEventListener("resize", hideProjectPathHint);
+      window.removeEventListener("pointerdown", hideProjectPathHint, true);
+      if (projectPathHintTimerRef.current !== null) clearTimeout(projectPathHintTimerRef.current);
+    };
+  }, [hideProjectPathHint]);
   const [projectMenuAnchor, setProjectMenuAnchor] = useState<MenuAnchor | null>(null);
   const [projectBranchMenu, setProjectBranchMenu] = useState<ProjectBranchMenuState | null>(null);
   const [projectMenuView, setProjectMenuView] = useState<ProjectMenuView>("actions");
@@ -1452,6 +1443,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   /** "…" opens the menu under the button; a right-click opens it at the cursor. */
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLElement>, projectRoot: string, archived = false) => {
+    hideProjectPathHint();
     const atCursor = e.type === "contextmenu";
     if (atCursor) e.preventDefault();
     e.stopPropagation();
@@ -1478,7 +1470,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setProjectBranchMenu(null);
     setProjectMenuView("actions");
     setProjectRevealError(null);
-  }, [closeProjectMenu, projectMenu, resetWorktreeActions, showNativeProjectMenu]);
+  }, [closeProjectMenu, hideProjectPathHint, projectMenu, resetWorktreeActions, showNativeProjectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
   const trimmedSessionQuery = sessionQuery.trim().toLowerCase();
@@ -1515,6 +1507,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   );
   const pinnedFamilies = [...pinnedChatFamilies, ...pinnedProjectFamilies]
     .sort((a, b) => b.latestModified.localeCompare(a.latestModified));
+  const sessionsById = useMemo(() => new Map(allSessions.map((session) => [session.id, session])), [allSessions]);
   const allProjects = groupByProject(projectSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
   const activeProjects = pinnedFirst(
     allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot)),
@@ -1582,6 +1575,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const id = family.root.id;
     return (
       <SessionFamilyItem
+        sessionsById={sessionsById}
         node={node}
         familySessions={[family.root, ...family.subagents]}
         subtitle={subtitle}
@@ -1719,6 +1713,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
     const isMenuOpen = projectMenu?.root === group.projectRoot;
     const rowTitle = branchSubtitle ? `${group.projectRoot} · ${branchSubtitle}` : group.projectRoot;
+    const displayName = (archived ? archivedDisplayNames : projectDisplayNames).get(group.projectRoot) ?? group.displayName;
 
     return (
       <div key={group.projectRoot} className={`sidebar-project-tree-group${isCollapsed ? " is-collapsed" : ""}${isActive ? " is-active" : ""}${archived ? " is-archived" : ""}`}>
@@ -1735,7 +1730,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             aria-selected={isActive}
             onClick={toggleCollapse}
             aria-expanded={!isCollapsed}
-            title={rowTitle}
+            aria-label={`${displayName} · ${rowTitle}`}
+            onMouseEnter={(e) => scheduleProjectPathHint(e.currentTarget, group.projectRoot)}
+            onMouseLeave={hideProjectPathHint}
+            onClickCapture={hideProjectPathHint}
             onKeyDown={(e) => handleSidebarTreeKeyDown(e, {
               activate: toggleCollapse,
               expand: () => {
@@ -1762,7 +1760,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </svg>
             </span>
             <span className="sidebar-project-tree-name">
-              {(archived ? archivedDisplayNames : projectDisplayNames).get(group.projectRoot) ?? group.displayName}
+              {displayName}
             </span>
             {/* A folded project hides its rows, so the count (and any running
                 or unread chips) must stay readable on the header itself. */}
@@ -1829,6 +1827,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               );
               return (
               <SessionFamilyItem
+                sessionsById={sessionsById}
                 key={node.session.id}
                 node={node}
                 familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
@@ -1882,6 +1881,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 return (
                   <div key={node.session.id} className="sidebar-chats-archived-row">
                     <SessionFamilyItem
+                      sessionsById={sessionsById}
                       node={node}
                       familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
                       selectedSessionId={selectedSessionId}
@@ -1918,6 +1918,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         const familySessions = [family.root, ...family.subagents];
         return (
           <SessionFamilyItem
+            sessionsById={sessionsById}
             key={family.root.id}
             node={node}
             familySessions={familySessions}
@@ -2484,6 +2485,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onClose={() => setProjectViewMenuPos(null)}
         />
       )}
+      {projectPathHint && createPortal(
+        <div
+          className="sidebar-project-path-hint"
+          aria-hidden="true"
+          style={{ top: projectPathHint.top, left: projectPathHint.left, height: projectPathHint.height, maxWidth: `min(60vw, 640px, ${Math.max(0, window.innerWidth - projectPathHint.left - 8)}px)` }}
+        >
+          <PathLabel text={projectPathHint.root} style={{ lineHeight: 1 }} />
+        </div>,
+        document.body,
+      )}
       {projectSessionsDelete && createPortal(
         <ChatConfirmDialog
           title={t("sidebar.deleteProjectSessionsHeading", { name: projectSessionsDelete.name })}
@@ -2628,9 +2639,12 @@ function SessionFamilyItem({
   familySessions,
   sideFamily,
   subtitle,
+  sessionsById,
 }: {
   node: SessionTreeNode;
   familySessions?: SessionInfo[];
+  /** Every listed session, to name a fork's source in its row's tooltip (#237). */
+  sessionsById?: ReadonlyMap<string, SessionInfo>;
   /** C1: the family a side chat row is numbered in, as its tab and the Agents panel number it. */
   sideFamily?: SessionInfo[];
   depth?: number;
@@ -2658,8 +2672,25 @@ function SessionFamilyItem({
   subtitle?: string;
 }) {
   const { t } = useI18n();
-  const [collapsed, setCollapsed] = useState(false);
+  // Subagent runs and side chats start folded under their row; the rows the
+  // user unfolds are remembered (#237). Folded, the row still carries their
+  // running and selected state (familySessions) and shows how many there are.
+  const expandedRows = useSyncExternalStore(subscribeExpandedSubagentRows, readExpandedSubagentRows, serverExpandedSubagentRows);
   const hasChildren = node.children.length > 0;
+  const collapsed = hasChildren && !expandedRows.has(node.session.id);
+  const childCount = hasChildren ? countTreeDescendants(node) : 0;
+  const selectedInChildren = Boolean(selectedSessionId)
+    && node.session.id !== selectedSessionId
+    && treeContainsSession(node, selectedSessionId!);
+  // A selected subagent (opened from the Agents panel, a link, a restore) must
+  // be visible in the tree: unfold the rows above it.
+  useEffect(() => {
+    if (collapsed && selectedInChildren) setSubagentRowExpanded(node.session.id, true);
+  }, [collapsed, node.session.id, selectedInChildren]);
+  const forkOriginId = node.session.relation?.kind === "fork"
+    ? node.session.relation.originSessionId ?? node.session.parentSessionId
+    : undefined;
+  const forkOrigin = forkOriginId ? sessionsById?.get(forkOriginId) : undefined;
 
   return (
     <div
@@ -2693,8 +2724,11 @@ function SessionFamilyItem({
           onFork={depth === 0 ? onFork : undefined}
           sideTitle={node.session.relation?.kind === "side" ? sideChatTitle(node.session, t("sideChat.title"), sideFamily ?? familySessions ?? []) : undefined}
           hasChildren={hasChildren}
+          childCount={childCount}
           collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((v) => !v)}
+          onToggleCollapse={() => setSubagentRowExpanded(node.session.id, collapsed)}
+          isFork={node.session.relation?.kind === "fork"}
+          forkSourceTitle={forkOrigin ? sessionRowTitle(forkOrigin) : undefined}
           subtitle={subtitle}
         />
       </div>
@@ -2716,6 +2750,7 @@ function SessionFamilyItem({
               onOpenFullHistory={onOpenFullHistory}
               sideFamily={sideFamily ?? familySessions}
               subtitle={subtitle}
+              sessionsById={sessionsById}
             />
           ))}
         </div>
@@ -2843,9 +2878,12 @@ function SessionItem({
   onFork,
   sideTitle,
   hasChildren = false,
+  childCount = 0,
   collapsed = false,
   onToggleCollapse,
   isSubagentChild = false,
+  isFork = false,
+  forkSourceTitle,
   subtitle,
 }: {
   session: SessionInfo;
@@ -2869,9 +2907,15 @@ function SessionItem({
   /** C1: a side chat's numbered name ("Side chat 2") while it has none of its own. */
   sideTitle?: string;
   hasChildren?: boolean;
+  /** Subagent runs and side chats below this row, shown beside its fold toggle. */
+  childCount?: number;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   isSubagentChild?: boolean;
+  /** A fork: a row of its own, with the fork glyph instead of the chat bubble. */
+  isFork?: boolean;
+  /** The fork's source session, named in the row's tooltip when it is listed. */
+  forkSourceTitle?: string;
   /** Cross-project context; omitted inside the project tree where the group already names it. */
   subtitle?: string;
 }) {
@@ -3156,6 +3200,7 @@ function SessionItem({
       tabIndex={0}
       role="treeitem"
       aria-selected={isSelected}
+      aria-expanded={hasChildren ? !collapsed : undefined}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setTreeFocused(false);
       }}
@@ -3238,6 +3283,13 @@ function SessionItem({
               <rect x="5" y="7" width="14" height="11" rx="2" />
               <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
             </svg>
+          ) : isFork ? (
+            <svg className="session-item-glyph session-item-fork-glyph" aria-label={t("sidebar.forkRow")} role="img" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <circle cx="6" cy="5" r="2" />
+              <circle cx="18" cy="5" r="2" />
+              <circle cx="12" cy="19" r="2" />
+              <path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5" />
+            </svg>
           ) : (
             <svg className="session-item-glyph" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -3245,7 +3297,10 @@ function SessionItem({
           )}
           <span
             className="session-item-title"
-            title={subtitle ? `${title} · ${subtitle}` : title}
+            title={[
+              subtitle ? `${title} · ${subtitle}` : title,
+              isFork ? (forkSourceTitle ? t("sidebar.forkedFrom", { title: forkSourceTitle }) : t("sidebar.forkRow")) : null,
+            ].filter(Boolean).join("\n")}
             style={{
               flex: 1,
               minWidth: 0,
@@ -3266,21 +3321,23 @@ function SessionItem({
             </span>
           )}
 
-          {/* Collapse toggle — always visible when has children */}
+          {/* Fold toggle for the subagent runs and side chats below: folded
+              by default, with their count so a folded row says what it holds (#237). */}
           {hasChildren && (
             <button
+              type="button"
+              className={`session-item-children-toggle${collapsed ? " is-collapsed" : ""}`}
               onClick={(e) => { e.stopPropagation(); onToggleCollapse?.(); }}
-              title={t(collapsed ? "sidebar.expandSubagents" : "sidebar.collapseSubagents")}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 20, height: 20, padding: 0, flexShrink: 0,
-                background: "none", border: "none",
-                color: "var(--text-dim)", cursor: "pointer",
-                transform: collapsed ? "rotate(-90deg)" : "none",
-                transition: "transform var(--dur-base) var(--ease-native)",
-              }}
+              title={t(collapsed ? "sidebar.expandSubagentsCount" : "sidebar.collapseSubagentsCount", { count: childCount })}
+              aria-label={t(collapsed ? "sidebar.expandSubagentsCount" : "sidebar.collapseSubagentsCount", { count: childCount })}
+              aria-expanded={!collapsed}
             >
-              <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg className="session-item-children-glyph" aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="7" width="14" height="11" rx="2" />
+                <path d="M9 11h.01M15 11h.01M12 7V4" />
+              </svg>
+              <span className="session-item-children-count">{childCount}</span>
+              <svg className="session-item-children-chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="2 3.5 5 6.5 8 3.5" />
               </svg>
             </button>
