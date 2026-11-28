@@ -177,63 +177,51 @@ jobs:
           releaseName: pi-agent-desktop v__VERSION__
           releaseCommitish: ${{ github.sha }}
           releaseBody: |
-            ## Pi Agent Desktop 0.7.21
+            ## Pi Agent Desktop 0.7.22
 
-            This release brings in upstream's 0.8.x work: a Tasks calendar, community plugins, the llama.cpp provider and image-aware composer history.
+            This release brings in upstream's latest fixes and rendering work: charts in Markdown, quieter tool steps, a one-time star request and update checks that no longer go stale.
 
             ### New
 
-            - **Tasks calendar.** The Tasks page has a Calendar mode that places each session's prompts, scheduled runs and planned slots by day.
-            - **Community plugins.** Settings › Plugins can browse and search npm packages that declare `pi-package`, read their details, and install one for all projects or only the current one. A listing is the publisher's own claim, not a compatibility check.
-            - **Long pastes.** Pasting 2,000 or more characters into the composer adds them as a "Pasted text" attachment you can open or turn back into text. A message with attachments is never run as a `/command` or `!shell` command.
-            - **llama.cpp.** Settings › Models can add pi's built-in llama.cpp provider pointed at your router server (default `127.0.0.1:8080`). Custom providers can have a display name.
-            - **Thinking-level hints.** When a model refuses the thinking level you chose, the chat says which levels it accepts and links to that model's settings.
-            - **New icon.** The π. mark replaces the old app icon.
+            - **Charts.** A ```chart fence renders as a themed SVG chart, and hovering a mark shows its exact values. Charts and diagrams are tuned for narrow windows and streaming replies.
+            - **Thinking in working steps.** Thinking rows inside tool steps are hidden by default. Settings › General › Thinking in working steps switches them on or off.
+            - **Star request.** After a week of use and a run that did real work, the app asks once for a GitHub star. Dismissing or starring retires the request.
 
             ### Changed
 
-            - Closed side panels are out of the Tab order and the screen-reader tree.
-            - Hovering a project in the sidebar shows its full path.
-            - Recalling an earlier prompt from the composer's ↑ history brings back its images too.
-            - Fetching a provider's models also reads its reasoning levels and image input.
+            - Runs of tool-only steps fold into one row, and the model name appears once per run of steps. Tool steps have no Copy button.
+            - Tool-call arguments show as rows again, with streamed input parsed as it arrives.
+            - A preview or Mermaid diagram that fails to render offers Retry, and reports blank previews or parse errors with Ask to fix.
 
             ### Fixed
 
-            - Testing a model sends a session id, which fixes `400 MissingSessionID` from opencode.ai; a `!command` API key runs once per test.
-            - Enabled models respect project trust, and `auth.json` / `settings.json` with a BOM or empty content load correctly.
-            - A sign-in the page has already closed no longer crashes the server when an extension answers late.
-            - The project menu is bounded and scrolls inside the window.
+            - App update checks re-check a stale cached release instead of reporting an old version.
+            - Session titles retry when the endpoint refuses the effort level "none".
 
             Bundled components: pi 1.5.2, pi-web 0.15.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.21
+            ## Pi Agent Desktop 0.7.22
 
-            本版合入了上游 0.8.x 的工作：任务日历、社区插件、llama.cpp Provider，以及带图片的输入历史。
+            本版合入上游的最新修复与渲染工作：Markdown 图表、更安静的工具步骤、一次性的 GitHub 星标提示，以及不再滞留的更新检查。
 
             ### 新增
 
-            - **任务日历。** 「任务」页新增日历视图，按天显示每个会话的提示、定时运行和计划时段。
-            - **社区插件。** 「设置 › 插件」可以浏览和搜索 npm 上声明了 `pi-package` 的包，查看详情，并安装到全部项目或仅当前项目。收录仅代表发布者自己的声明，不代表已验证兼容性。
-            - **长文本作附件。** 在输入框粘贴 2,000 个字符以上的文本时，会添加为「粘贴文本」附件，可打开查看，或改回正文。带附件的消息不会被当作 `/命令` 或 `!shell` 命令执行。
-            - **llama.cpp。** 「设置 › 模型」可以添加 pi 内置的 llama.cpp Provider，指向你的路由服务器（默认 `127.0.0.1:8080`）。自定义 Provider 可以设置显示名称。
-            - **推理强度提示。** 模型拒绝你选择的推理强度时，对话会说明它接受哪些强度，并链接到该模型的设置。
-            - **新图标。** 应用图标换为新的 π. 标志。
+            - **图表。** ```chart 代码块会渲染为跟随主题的 SVG 图表，悬停在数据点上可看到确切数值。图表和示意图已针对窄窗口和流式回复调整。
+            - **过程中的思考。** 工具步骤内的思考行默认隐藏。「设置 › 通用 › 过程中的思考」可以切换显示。
+            - **星标提示。** 使用满一周并完成一次有实际工作的运行后，应用会请你在 GitHub 上点一次星标。关闭或点星标后，此提示不再出现。
 
             ### 变更
 
-            - 关闭的侧边面板不再出现在 Tab 顺序和屏幕阅读器中。
-            - 鼠标悬停在侧栏项目上时会显示完整路径。
-            - 从输入框的 ↑ 历史中调回以前的提示时，其中的图片也会一并恢复。
-            - 拉取 Provider 的模型列表时，同时读取推理强度和图片输入能力。
+            - 连续的纯工具步骤会合并为一行，模型名称每组步骤只显示一次。工具步骤不再有「复制」按钮。
+            - 工具调用参数重新以行的形式显示，流式输入会随到达实时解析。
+            - 预览或 Mermaid 图渲染失败时提供「重试」，空白预览或解析错误可使用「请求修复」。
 
             ### 修复
 
-            - 测试模型时会带上会话 ID，修复 opencode.ai 返回 `400 MissingSessionID` 的问题；`!command` 形式的 API 密钥每次测试只执行一次。
-            - 已启用模型列表遵循项目信任设置；带 BOM 或为空的 `auth.json` / `settings.json` 可以正常读取。
-            - 页面已关闭的登录流程，在扩展延迟回应时不再导致服务器崩溃。
-            - 项目菜单有了高度上限，并在窗口内滚动。
+            - 应用更新检查会重新检查过期的缓存版本，不再显示旧版本。
+            - 端点拒绝推理强度 "none" 时，会话标题会重试。
 
             内置组件版本：pi 1.5.2、pi-web 0.15.0。
 

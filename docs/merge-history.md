@@ -137,3 +137,10 @@ Merged 5669c38..211bd1e (upstream desktop 0.8.5–0.8.7, 64 commits). Adopted: t
 - **Payload scan**: the libvips allowlist covers library binaries only (`.dylib`, `.dll`, `.so*`) on every platform, which satisfies both the fork's Linux/Windows test and upstream's "a stray file beside the library is rejected" test.
 - `FileViewer`'s `DesktopPathActions` takes upstream's version (its test pins it). CSS baseline is `211bd1e9`.
 - Build note: `npm run build` is killed by the 6 GB cgroup while `src-tauri/target` (~10 GB) sits under the project root; it passes with that directory moved out temporarily.
+
+## Merge of upstream ec443f6b (2026-11-28, on desktop 0.7.22)
+Merged 211bd1e..ec443f6b (upstream main, 19 commits: chart fences as themed SVG charts with hover values, tool-step folding and the process-thinking switch, the one-time GitHub star prompt, re-checking a stale cached app-update release, the title retry on an "none" effort refusal, and retry-vs-fix wording for failing previews). The Mermaid / chart fix flow shares the fork's `fixable` path; the star prompt links to this fork's repository (`lib/branding.ts`).
+- **Conflicts resolved by hand**: `MessageView` takes upstream's new tool-step structure and `hideModel`, and keeps the fork's `toolCallsInFlight` plumbing (the executing-turn guard, the memo comparison and the `aborted` rule) that upstream's rewrite had dropped; `MarkdownBody` keeps the fork's `sessionId` argument and adds upstream's `artifacts` flag as the trailing `assistantText` argument; `AppShell` keeps the fork's `void hydrateSelectedSession` next to the star prompt; `useAgentSession` keeps the fork's `liveRunEpochRef` and upstream's `runStatsRef` on `agent_start`.
+- **Dependency**: `diagrammatic` 0.0.4 (chart rendering), locked; `package-lock.json` keeps the tauri pins.
+- **Components unchanged**: pi 1.5.2, pi-web 0.15.0. Desktop version 0.7.22.
+- CSS baseline is `ec443f6b`. Drift measured after the merge (informational).

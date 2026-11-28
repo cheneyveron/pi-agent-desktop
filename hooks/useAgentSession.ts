@@ -194,6 +194,10 @@ export type BuiltinSlashCommandResult =
 /** How a run ended, for completion feedback: `aborted` when it was stopped rather than finished. */
 export interface AgentEndInfo {
   aborted: boolean;
+  /** Top-level tool calls this view saw during the run (a run joined mid-way undercounts). */
+  toolCalls?: number;
+  /** Wall time since this view saw the run start. */
+  durationMs?: number;
 }
 
 export interface UseAgentSessionOptions {
@@ -364,6 +368,17 @@ type SlashCommandsResponse = {
   commands?: SlashCommandInfo[];
 };
 
+/** Reads and clears the finished run's size for onAgentEnd. */
+function takeRunStats(
+  ref: { current: { startedAt: number; toolCalls: number } | null },
+  aborted: boolean,
+): AgentEndInfo {
+  const stats = ref.current;
+  ref.current = null;
+  if (!stats) return { aborted };
+  return { aborted, toolCalls: stats.toolCalls, durationMs: Date.now() - stats.startedAt };
+}
+
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
@@ -448,6 +463,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // straggler async refresh from the first A load cannot overwrite state
   // written after the second A load landed.
   const sessionGenerationRef = useRef(0);
+  // Size of the run in flight, reported with onAgentEnd (the star prompt's "complex task").
+  const runStatsRef = useRef<{ startedAt: number; toolCalls: number } | null>(null);
   const pendingInitialScrollTopRef = useRef<number | null>(null);
   const sessionPropIdRef = useRef<string | null>(session?.id ?? null);
   // False while the session carries no tool selection of its own, so its loadout
@@ -589,6 +606,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const previousIdentity = appliedIdentity;
     setAppliedIdentity(sessionIdentity);
     sessionGenerationRef.current += 1;
+    runStatsRef.current = null;
     if (previousIdentity && scrollContainerRef.current) {
       const container = scrollContainerRef.current;
       rememberScrollPosition(previousIdentity, container);
@@ -1385,7 +1403,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const notifyPromptStage = useCallback((runId: number, aborted = false) => {
     if (notifiedPromptRunIdRef.current === runId) return false;
     notifiedPromptRunIdRef.current = runId;
-    onAgentEnd?.({ aborted });
+    onAgentEnd?.(takeRunStats(runStatsRef, aborted));
     return true;
   }, [onAgentEnd]);
 
@@ -1469,7 +1487,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (promptWasPending) {
         notifyPromptStage(runId);
       } else if (agentWasActive && wasRunning) {
-        onAgentEnd?.({ aborted: false });
+        onAgentEnd?.(takeRunStats(runStatsRef, false));
       }
       if (sid) scheduleEventStreamClose(sid);
     }
@@ -1632,6 +1650,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "agent_start":
         liveRunEpochRef.current += 1;
+        runStatsRef.current ??= { startedAt: Date.now(), toolCalls: 0 };
         cancelEventStreamGrace();
         sdkAgentActiveRef.current = true;
         agentRunningRef.current = true;
@@ -1688,7 +1707,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           void loadSession(sid);
           scheduleEventStreamClose(sid);
         }
-        if (wasRunning) onAgentEnd?.({ aborted: event.aborted === true });
+        if (wasRunning) onAgentEnd?.(takeRunStats(runStatsRef, event.aborted === true));
         break;
       }
       case "prompt_done":
@@ -1796,6 +1815,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // parent's card; listed here it would show as a top-level running tool,
         // and a call cut off by its script can end after the parent did.
         if (isNestedToolExecutionEvent(event)) break;
+        if (runStatsRef.current) runStatsRef.current.toolCalls += 1;
         const id = event.toolCallId as string;
         const name = event.toolName as string;
         setAgentPhase((prev) => {
@@ -1972,6 +1992,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setMessages((prev) => [...prev, userMsg]);
     optimisticUserMessageKeyRef.current = userMessageKey(userMsg);
     promptRunIdRef.current = promptRunId;
+    runStatsRef.current = { startedAt: Date.now(), toolCalls: 0 };
     agentRunningRef.current = true;
     setAgentRunning(true);
     setAgentPhase(isSlashCommandPrompt ? { kind: "running_command" } : { kind: "waiting_model" });
