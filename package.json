@@ -89,7 +89,7 @@
     "diagrammatic": "0.0.4",
     "js-yaml": "^5.4.2",
     "mammoth": "^1.12.0",
-    "next": "16.4.4",
+    "next": "16.4.5",
     "node-pty": "1.2.0-beta.15",
     "proper-lockfile": "4.1.2",
     "qrcode-generator": "2.0.4",
